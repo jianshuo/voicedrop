@@ -1,0 +1,3 @@
+git_url("https://github.com/jianshuo/VoiceDrop-certs.git")
+storage_mode("git")
+type("appstore")

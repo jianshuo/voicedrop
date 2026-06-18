@@ -1,0 +1,64 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ secrets.FEEDBACK_PAT }}
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.2'
+          bundler-cache: true
+
+      # VoiceDrop uses XcodeGen + a gitignored Secrets.xcconfig (FILES_TOKEN).
+      # Recreate both before any build step.
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Write Secrets.xcconfig
+        run: printf 'FILES_TOKEN = %s\n' "${{ secrets.FILES_TOKEN }}" > Secrets.xcconfig
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      # PRs: build only (verify it compiles, no signing)
+      - name: Build for verification
+        if: github.event_name == 'pull_request'
+        run: |
+          xcodebuild build \
+            -project VoiceDrop.xcodeproj \
+            -scheme VoiceDrop \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO
+
+      # Push to main → TestFlight
+      - name: Run fastlane
+        if: github.event_name != 'pull_request'
+        env:
+          MATCH_PASSWORD:       ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_BASIC_AUTH: ${{ secrets.MATCH_GIT_BASIC_AUTH }}
+          ASC_API_KEY_ID:       ${{ secrets.ASC_API_KEY_ID }}
+          ASC_API_ISSUER_ID:    ${{ secrets.ASC_API_ISSUER_ID }}
+          ASC_API_KEY_CONTENT:  ${{ secrets.ASC_API_KEY_CONTENT }}
+        run: bundle exec fastlane beta
+
+      - name: Push tags
+        if: success() && github.event_name != 'pull_request'
+        run: git push --tags || true
