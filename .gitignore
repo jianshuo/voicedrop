@@ -23,3 +23,6 @@ fastlane/test_output/
 
 # Agent / editor state
 .claude/
+
+# Downloaded VoiceDrop recordings (personal audio — never commit)
+archive/
