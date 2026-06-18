@@ -35,10 +35,10 @@
 ### 数据流
 
 ```
-麦克风 ──AVAudioRecorder──> Documents/VoiceDrop-YYYY-MM-DD-HHMMSS.m4a
-                                    │ 停止
+麦克风 ──AVAudioRecorder──> Documents/VoiceDrop-<时间戳>.m4a（临时名，崩溃也可补传）
+                                    │ 停止：reverse-geocode + 时长 → 改富名
                                     v
-                     Uploader.upload(file)
+                     Uploader.upload(enriched-file)
                                     │
               PUT /files/api/upload/<name>  (Authorization: Bearer FILES_TOKEN)
                     │成功                       │失败
@@ -53,7 +53,7 @@
 | 项 | 决定 | 理由 |
 |---|---|---|
 | 录音格式 | m4a/AAC（44.1k/单声道/~64kbps，语音够用） | iOS 原生，无需 LAME；Mac 转写直接吃 m4a，需 mp3 再 ffmpeg |
-| 文件名 | `VoiceDrop-YYYY-MM-DD-HHMMSS.m4a` | 可读、可排序、秒级唯一、桶里好认 |
+| 文件名 | `VoiceDrop-<时间戳>-<时长>-<星期>-<时段>[-<城市-城区>].m4a`，全 ASCII | 列表里自描述；前缀/后缀不变，挖文章 skill 照认；地名走 CLGeocoder（en locale）反向地理编码，best-effort 3s 超时、拿不到就省略 |
 | 上传鉴权 | `FILES_TOKEN` 走 `Secrets.xcconfig` → Info.plist → 运行时读 | 私有自用 App 可接受 token 编译进二进制；**绝不进公开 repo**；example 文件占位 |
 | 上传端点 | 复用现有 `jianshuo.dev/files`（R2 + Pages Functions），单文件 ≤100MB | 零新基建 |
 | 失败处理 | Documents 目录即待传队列 + 前台自动重传 | 绝不丢录音，无额外状态文件 |

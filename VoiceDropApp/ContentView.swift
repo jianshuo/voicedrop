@@ -15,6 +15,7 @@ struct ContentView: View {
 
     @State private var recorder = AudioRecorder()
     @State private var uploader = Uploader()
+    @State private var location = LocationTagger()
     @State private var phase: Phase = .requesting
     @Environment(\.scenePhase) private var scenePhase
 
@@ -30,7 +31,7 @@ struct ContentView: View {
             guard newValue == .active, phase != .recording, phase != .uploading else { return }
             Task { await drainQueue() }
         }
-        .onAppear { recorder.onInterrupted = { url in Task { await self.uploadFinished(url) } } }
+        .onAppear { recorder.onInterrupted = { take in Task { await self.finalize(take) } } }
     }
 
     // MARK: - Screens
@@ -150,6 +151,7 @@ struct ContentView: View {
     private func begin() async {
         let granted = await AudioRecorder.ensurePermission()
         guard granted else { phase = .denied; return }
+        location.start()                // best-effort, never blocks recording
         await drainQueue()              // push up anything left over from last session
         startRecording()
     }
@@ -164,18 +166,29 @@ struct ContentView: View {
     }
 
     private func stopAndUpload() async {
-        guard let url = recorder.stop() else { phase = .done; return }
-        await uploadFinished(url)
+        guard let take = recorder.stop() else { phase = .done; return }
+        await finalize(take)
     }
 
-    private func uploadFinished(_ url: URL) async {
+    /// Enrich the provisional filename with duration + weekday/period + place,
+    /// rename the file, then upload. Place geocoding is best-effort (3s cap);
+    /// if it's unavailable the name simply omits it.
+    private func finalize(_ take: AudioRecorder.Recording) async {
         phase = .uploading
-        let ok = await uploader.upload(url)
-        if ok {
-            phase = .done
-        } else {
-            phase = .failed(uploader.lastError ?? "上传失败")
+        let place = await location.placeTag()
+        let finalName = RecordingName.make(start: take.start, duration: take.duration, place: place)
+        var toUpload = take.url
+        if finalName != take.url.lastPathComponent {
+            let finalURL = AudioRecorder.documentsDir.appending(path: finalName)
+            do {
+                try FileManager.default.moveItem(at: take.url, to: finalURL)
+                toUpload = finalURL
+            } catch {
+                // keep the provisional file — still a valid VoiceDrop-*.m4a upload
+            }
         }
+        let ok = await uploader.upload(toUpload)
+        phase = ok ? .done : .failed(uploader.lastError ?? "上传失败")
     }
 
     private func drainQueue() async {

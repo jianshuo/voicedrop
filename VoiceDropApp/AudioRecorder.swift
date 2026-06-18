@@ -5,9 +5,20 @@ import Observation
 /// Wraps AVAudioRecorder. Records mono AAC into Documents/VoiceDrop-<timestamp>.m4a,
 /// exposes a live elapsed time, and handles audio-session interruptions
 /// (e.g. an incoming call) by finalizing the current recording.
+///
+/// The file is named VoiceDrop-<start-timestamp>.m4a up front (so it's already a
+/// valid queue entry if the app is killed mid-recording). At stop, ContentView
+/// renames it to the enriched name (duration + weekday + place) before upload.
 @MainActor
 @Observable
 final class AudioRecorder {
+
+    /// A finished take, handed to ContentView for enrichment + upload.
+    struct Recording: Sendable {
+        let url: URL
+        let start: Date
+        let duration: TimeInterval
+    }
 
     enum RecorderError: LocalizedError {
         case couldNotStart
@@ -19,12 +30,11 @@ final class AudioRecorder {
 
     private var recorder: AVAudioRecorder?
     private var currentURL: URL?
-    private var tickTask: Task<Void, Never>?
     private var startDate: Date?
+    private var tickTask: Task<Void, Never>?
 
     /// Called when a recording is finalized by an external interruption.
-    /// ContentView sets this so it can kick off the upload.
-    var onInterrupted: ((URL) -> Void)?
+    var onInterrupted: ((Recording) -> Void)?
 
     init() {
         NotificationCenter.default.addObserver(
@@ -57,7 +67,8 @@ final class AudioRecorder {
         try session.setCategory(.playAndRecord, mode: .default, options: [.duckOthers])
         try session.setActive(true)
 
-        let url = Self.makeFileURL()
+        let now = Date()
+        let url = Self.provisionalURL(start: now)
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
             AVSampleRateKey: 44_100,
@@ -70,25 +81,25 @@ final class AudioRecorder {
 
         recorder = rec
         currentURL = url
+        startDate = now
         isRecording = true
-        startDate = Date()
         elapsed = 0
         startTicking()
     }
 
-    /// Stops recording and returns the finished file URL (nil if not recording).
+    /// Stops recording and returns the finished take (nil if not recording).
     @discardableResult
-    func stop() -> URL? {
-        guard isRecording else { return nil }
+    func stop() -> Recording? {
+        guard isRecording, let url = currentURL, let start = startDate else { return nil }
         recorder?.stop()
         recorder = nil
         stopTicking()
         isRecording = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
-        let url = currentURL
+        let take = Recording(url: url, start: start, duration: elapsed)
         currentURL = nil
         startDate = nil
-        return url
+        return take
     }
 
     // MARK: - Interruption
@@ -100,8 +111,8 @@ final class AudioRecorder {
             AVAudioSession.InterruptionType(rawValue: raw) == .began
         else { return }
         Task { @MainActor in
-            if let url = self.stop() {
-                self.onInterrupted?(url)
+            if let take = self.stop() {
+                self.onInterrupted?(take)
             }
         }
     }
@@ -125,11 +136,10 @@ final class AudioRecorder {
 
     // MARK: - File naming
 
-    static func makeFileURL() -> URL {
-        let fmt = DateFormatter()
-        fmt.locale = Locale(identifier: "en_US_POSIX")
-        fmt.dateFormat = "yyyy-MM-dd-HHmmss"
-        let name = "VoiceDrop-\(fmt.string(from: Date())).m4a"
+    /// Provisional name = VoiceDrop-<start timestamp>.m4a. Already a valid queue
+    /// entry; renamed to the enriched name at stop.
+    static func provisionalURL(start: Date) -> URL {
+        let name = "VoiceDrop-\(RecordingName.timestamp(start)).m4a"
         return documentsDir.appending(path: name)
     }
 
