@@ -1,0 +1,33 @@
+name: VoiceDrop
+options:
+  bundleIdPrefix: com.wangjianshuo
+  deploymentTarget:
+    iOS: "26.0"
+
+targets:
+  VoiceDrop:
+    type: application
+    platform: iOS
+    deploymentTarget: "26.0"
+    sources:
+      - path: VoiceDropApp
+    configFiles:
+      Debug: Secrets.xcconfig
+      Release: Secrets.xcconfig
+    info:
+      path: VoiceDropApp/Info.plist
+      properties:
+        CFBundleDisplayName: VoiceDrop
+        NSMicrophoneUsageDescription: "VoiceDrop 录下你的口述，并上传到你的文件中转站。"
+        UILaunchScreen:
+          UIColorName: ""
+        FILES_TOKEN: $(FILES_TOKEN)
+    settings:
+      base:
+        SWIFT_VERSION: "6.0"
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        PRODUCT_BUNDLE_IDENTIFIER: com.wangjianshuo.VoiceDrop
+        DEVELOPMENT_TEAM: 97XBW2A43H
+        TARGETED_DEVICE_FAMILY: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon

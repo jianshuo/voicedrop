@@ -1,0 +1,22 @@
+# Secrets — NEVER commit the real token
+Secrets.xcconfig
+
+# Xcode / build
+.build/
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+!*.xcworkspace/contents.xcworkspacedata
+*.ipa
+*.dSYM
+*.dSYM.zip
+xcuserdata/
+.swiftpm/
+
+# Fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/
+fastlane/test_output/
+
+.DS_Store

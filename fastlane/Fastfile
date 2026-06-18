@@ -1,0 +1,24 @@
+default_platform(:ios)
+
+BUNDLE_ID = "com.wangjianshuo.VoiceDrop"
+
+# Minimal TestFlight lane, mirrors the `drop` project's signing setup.
+# Requires an App Store Connect API key (set via APP_STORE_CONNECT_API_KEY_* env
+# or fastlane match for signing). Untested end-to-end here — the primary install
+# path during development is a USB cable build from Xcode.
+platform :ios do
+  desc "Build and upload a TestFlight build"
+  lane :beta do
+    sh("cd .. && xcodegen generate")
+    build_number = (latest_testflight_build_number(
+      app_identifier: BUNDLE_ID, initial_build_number: 0
+    ) + 1 rescue 1)
+    increment_build_number(xcodeproj: "VoiceDrop.xcodeproj", build_number: build_number)
+    build_app(
+      project: "VoiceDrop.xcodeproj",
+      scheme: "VoiceDrop",
+      export_method: "app-store"
+    )
+    upload_to_testflight(skip_waiting_for_build_processing: true)
+  end
+end
