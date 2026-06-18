@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import Security
+import CryptoKit
 
 /// Holds the per-user session token minted by jianshuo.dev/files after a
 /// "Sign in with Apple" exchange. The token is the bearer credential for this
@@ -24,6 +25,15 @@ final class AuthStore {
     /// anonymous iCloud-Keychain token (zero-login; same Apple ID -> same token
     /// across devices and reinstalls). Always non-empty.
     var bearer: String { session ?? anonToken }
+
+    /// The user-facing identity string — exactly the server's storage prefix
+    /// (`users/<anonId>/`). Safe to show and share: it's a one-way hash of the
+    /// secret, not the secret itself. Lets 王建硕 pin "which folder is me".
+    var anonId: String {
+        let hex = SHA256.hash(data: Data(anonToken.utf8))
+            .map { String(format: "%02x", $0) }.joined()
+        return "anon-" + String(hex.prefix(32))
+    }
 
     /// Where the session is exchanged. Public URL, not a secret.
     private let authURL = URL(string: "https://jianshuo.dev/files/api/auth/apple")!

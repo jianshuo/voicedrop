@@ -20,6 +20,7 @@ struct ContentView: View {
     @State private var location = LocationTagger()
     @State private var authStore = AuthStore.shared
     @State private var phase: Phase = .requesting
+    @State private var idCopied = false
 
     // Interim: zero-login via an anonymous iCloud-Keychain token. Flip to true
     // once Sign in with Apple's App ID capability has propagated on Apple's
@@ -32,6 +33,7 @@ struct ContentView: View {
             Color.black.ignoresSafeArea()
             content
             pendingBadge
+            myIdBadge
         }
         .task { await begin() }
         .onChange(of: scenePhase) { _, newValue in
@@ -160,6 +162,25 @@ struct ContentView: View {
             Button(actionTitle, action: action)
                 .buttonStyle(.borderedProminent).tint(.white).foregroundStyle(.black)
                 .padding(.top, 8)
+        }
+    }
+
+    // Unobtrusive footer: tap to copy "my id" (the server storage prefix), so
+    // 王建硕 can pin which users/anon-<hash>/ folder is his. Hidden while recording.
+    @ViewBuilder private var myIdBadge: some View {
+        if phase != .recording {
+            VStack {
+                Spacer()
+                Button {
+                    UIPasteboard.general.string = authStore.anonId
+                    idCopied = true
+                } label: {
+                    Text(idCopied ? "已复制 ✓" : authStore.anonId)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.white.opacity(0.3))
+                }
+                .padding(.bottom, 8)
+            }
         }
     }
 
