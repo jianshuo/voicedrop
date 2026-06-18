@@ -20,8 +20,6 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
-	<key>FILES_TOKEN</key>
-	<string>$(FILES_TOKEN)</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>VoiceDrop 把当前位置（如城市/城区）写进录音文件名，方便日后辨认。可拒绝，录音照常。</string>
 	<key>NSMicrophoneUsageDescription</key>

@@ -24,7 +24,6 @@ targets:
           - audio
         UILaunchScreen:
           UIColorName: ""
-        FILES_TOKEN: $(FILES_TOKEN)
         NSUbiquitousContainers:
           iCloud.com.wangjianshuo.VoiceDrop:
             NSUbiquitousContainerIsDocumentScopePublic: true
@@ -33,6 +32,8 @@ targets:
     entitlements:
       path: VoiceDropApp/VoiceDrop.entitlements
       properties:
+        com.apple.developer.applesignin:
+          - Default
         com.apple.developer.icloud-container-identifiers:
           - iCloud.com.wangjianshuo.VoiceDrop
         com.apple.developer.ubiquity-container-identifiers:

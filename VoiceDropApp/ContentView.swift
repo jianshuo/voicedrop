@@ -1,10 +1,12 @@
 import SwiftUI
+import AuthenticationServices
 
 /// The whole app: one screen, one state machine.
-/// idle/requesting -> recording -> uploading -> done | failed
+/// needsSignIn -> requesting -> recording -> uploading -> done | failed
 struct ContentView: View {
 
     enum Phase: Equatable {
+        case needsSignIn         // not signed in with Apple yet
         case requesting          // asking for mic permission
         case denied              // permission refused
         case recording
@@ -16,6 +18,7 @@ struct ContentView: View {
     @State private var recorder = AudioRecorder()
     @State private var uploader = Uploader()
     @State private var location = LocationTagger()
+    @State private var authStore = AuthStore.shared
     @State private var phase: Phase = .requesting
     @Environment(\.scenePhase) private var scenePhase
 
@@ -38,6 +41,9 @@ struct ContentView: View {
 
     @ViewBuilder private var content: some View {
         switch phase {
+        case .needsSignIn:
+            signInScreen
+
         case .requesting:
             ProgressView().tint(.white)
 
@@ -70,6 +76,28 @@ struct ContentView: View {
                     .padding(.horizontal, 40)
                 Text("录音已存好，会自动重传。").foregroundStyle(.white.opacity(0.4)).font(.footnote)
                 startButton(title: "再录一条")
+            }
+        }
+    }
+
+    private var signInScreen: some View {
+        VStack(spacing: 24) {
+            Image(systemName: "waveform")
+                .font(.system(size: 56)).foregroundStyle(.white.opacity(0.85))
+            Text("VoiceDrop").foregroundStyle(.white).font(.largeTitle.bold())
+            Text("用 Apple 登录。你的录音只存在你自己的空间，别人看不到。")
+                .foregroundStyle(.white.opacity(0.55)).font(.callout)
+                .multilineTextAlignment(.center).padding(.horizontal, 44)
+            SignInWithAppleButton(.signIn) { request in
+                request.requestedScopes = []        // we only need the identity token
+            } onCompletion: { result in
+                handleSignIn(result)
+            }
+            .signInWithAppleButtonStyle(.white)
+            .frame(height: 50).padding(.horizontal, 44).padding(.top, 8)
+            if let err = authStore.lastError {
+                Text(err).foregroundStyle(.orange).font(.footnote)
+                    .multilineTextAlignment(.center).padding(.horizontal, 44)
             }
         }
     }
@@ -149,6 +177,7 @@ struct ContentView: View {
     // MARK: - Flow
 
     private func begin() async {
+        guard authStore.isAuthenticated else { phase = .needsSignIn; return }
         let granted = await AudioRecorder.ensurePermission()
         guard granted else { phase = .denied; return }
         location.start()                // best-effort, never blocks recording
@@ -197,8 +226,30 @@ struct ContentView: View {
     }
 
     private func drainQueue() async {
-        guard uploader.pendingCount > 0 else { return }
+        guard authStore.isAuthenticated, uploader.pendingCount > 0 else { return }
         _ = await uploader.drainPending()
+    }
+
+    private func handleSignIn(_ result: Result<ASAuthorization, Error>) {
+        switch result {
+        case .success(let auth):
+            guard
+                let cred = auth.credential as? ASAuthorizationAppleIDCredential,
+                let tokenData = cred.identityToken,
+                let token = String(data: tokenData, encoding: .utf8)
+            else {
+                authStore.lastError = "无法获取 Apple 凭证"
+                return
+            }
+            phase = .requesting
+            Task {
+                await authStore.exchange(identityToken: token)
+                if authStore.isAuthenticated { await begin() }
+                else { phase = .needsSignIn }
+            }
+        case .failure(let error):
+            authStore.lastError = error.localizedDescription
+        }
     }
 
     private func openSettings() {

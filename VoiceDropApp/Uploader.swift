@@ -14,13 +14,11 @@ final class Uploader {
     /// Base URL is public (not a secret), so it's hardcoded.
     private let baseURL = URL(string: "https://jianshuo.dev/files/api")!
 
-    /// Token is injected via Secrets.xcconfig -> Info.plist -> here.
-    private var token: String {
-        (Bundle.main.object(forInfoDictionaryKey: "FILES_TOKEN") as? String)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    }
+    /// Per-user session minted after Sign in with Apple. Uploads land in this
+    /// user's own `users/<sub>/` space — never the shared master namespace.
+    private var token: String { AuthStore.shared.session ?? "" }
 
-    var hasValidToken: Bool { !token.isEmpty && token != "REPLACE_ME" }
+    var hasValidToken: Bool { !token.isEmpty }
 
     init() { refreshPending() }
 
@@ -43,7 +41,7 @@ final class Uploader {
     @discardableResult
     func upload(_ url: URL) async -> Bool {
         guard hasValidToken else {
-            lastError = "缺少 FILES_TOKEN（请填 Secrets.xcconfig）"
+            lastError = "请先用 Apple 登录"
             return false
         }
         let endpoint = baseURL
