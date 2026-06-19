@@ -171,15 +171,22 @@ struct ContentView: View {
         if phase != .recording {
             VStack {
                 Spacer()
-                Button {
-                    UIPasteboard.general.string = authStore.anonId
-                    idCopied = true
-                } label: {
-                    Text(idCopied ? "已复制 ✓" : authStore.anonId)
-                        .font(.caption2.monospaced())
-                        .foregroundStyle(.white.opacity(0.3))
-                }
-                .padding(.bottom, 8)
+                Text(idCopied ? "已复制 ✓" : authStore.anonId)
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.white.opacity(0.3))
+                    .onTapGesture {
+                        UIPasteboard.general.string = authStore.anonId
+                        idCopied = true
+                    }
+                    .contextMenu {
+                        Button("复制 id（文件夹名，可分享）") {
+                            UIPasteboard.general.string = authStore.anonId
+                        }
+                        Button("复制访问令牌（私密，用于 jianshuo.dev/files 或 curl）") {
+                            UIPasteboard.general.string = authStore.anonToken
+                        }
+                    }
+                    .padding(.bottom, 8)
             }
         }
     }
