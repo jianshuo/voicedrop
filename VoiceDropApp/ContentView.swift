@@ -22,9 +22,10 @@ struct ContentView: View {
     @State private var phase: Phase = .requesting
     @State private var idCopied = false
 
-    // Sign in with Apple restored (capability has propagated). Set to false to
-    // fall back to the zero-login anonymous iCloud-Keychain token.
-    private let requireAppleSignIn = true
+    // Zero-login via anonymous iCloud-Keychain token. Sign in with Apple still
+    // returns AKAuthenticationError -7074 on Apple's side; flip to true to
+    // retry once it works (the SiwA code stays wired up).
+    private let requireAppleSignIn = false
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
