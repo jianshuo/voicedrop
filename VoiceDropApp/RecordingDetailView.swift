@@ -12,7 +12,6 @@ struct RecordingDetailView: View {
     @State private var emptyReason: String?
     @State private var loadingDoc = true
     @State private var loadingAudio = false
-    @State private var tab = 0                 // 0 = 文章, 1 = 字幕
     @State private var articleIndex = 0
     @State private var sharing = false
     @State private var shareLink: IdentifiableURL?
@@ -27,17 +26,13 @@ struct RecordingDetailView: View {
                 Spacer(); ProgressView().tint(.white); Spacer()
             } else if recording.isEmpty {
                 Spacer(); emptyState; Spacer()
-            } else if articles.isEmpty && (doc?.srt ?? "").isEmpty {
+            } else if articles.isEmpty {
                 Spacer(); pending; Spacer()
             } else {
-                Picker("", selection: $tab) {
-                    Text("文章\(articles.count > 1 ? " (\(articles.count))" : "")").tag(0)
-                    Text("字幕").tag(1)
-                }
-                .pickerStyle(.segmented)
-                .padding(.horizontal, 16).padding(.vertical, 10)
-
-                if tab == 0 { articlePane } else { srtPane }
+                // No 文章/字幕 tabs — show the article directly. The only switcher
+                // is the per-article chip row inside articlePane, shown only when
+                // there's more than one article.
+                articlePane
             }
         }
         .background(Color.black.ignoresSafeArea())
@@ -157,19 +152,6 @@ struct RecordingDetailView: View {
                         .padding(20)
                 }
             }
-        }
-    }
-
-    // MARK: SRT
-
-    private var srtPane: some View {
-        ScrollView {
-            Text((doc?.srt?.isEmpty == false ? doc!.srt! : (doc?.transcript ?? "")))
-                .font(.callout.monospaced())
-                .foregroundStyle(.white.opacity(0.75))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .textSelection(.enabled)
-                .padding(20)
         }
     }
 

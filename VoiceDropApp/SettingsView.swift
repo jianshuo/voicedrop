@@ -108,7 +108,7 @@ struct SettingsView: View {
                                 .focused($focused)
                                 .foregroundStyle(.white)
                                 .scrollContentBackground(.hidden)
-                                .frame(minHeight: 220)
+                                .frame(height: 200)        // fixed box; long text scrolls inside, never grows the page
                                 .padding(8)
                                 .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                             Text("把蒸馏出来的文风文本贴进来。服务器挖文章时会带上它，让文章更像你。")
@@ -159,12 +159,21 @@ struct SettingsView: View {
                 }
                 .padding(20)
             }
+            .scrollDismissesKeyboard(.interactively)   // swipe down to put the keyboard away
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black.ignoresSafeArea())
             .navigationTitle("设置")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(Color.black, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                // A 完成 button above the keyboard — the reliable way to dismiss it
+                // and get back to the tab bar after editing 文风.
+                ToolbarItemGroup(placement: .keyboard) {
+                    Spacer()
+                    Button("完成") { focused = false }
+                }
+            }
             .onChange(of: store.name) { _, _ in store.saved = false }
             .onChange(of: store.style) { _, _ in store.saved = false }
         }
