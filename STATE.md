@@ -82,7 +82,7 @@ Three tabs (`RootView.swift`, `TabView(selection:)`, reloads on tab activation):
 ## CI / CD & concurrency
 
 - `mine.yml`: `concurrency {group: mine, cancel-in-progress: false}` → **never two mine runs in parallel** (serialized, latest pending wins).
-- `build.yml`: **no concurrency** → parallel runs ARE possible on rapid pushes; risk of duplicate TestFlight build numbers (both read `latest_testflight_build_number+1`). **TODO: add `concurrency {group: build, cancel-in-progress: false}`.**
+- `build.yml`: `concurrency {group: build, cancel-in-progress: false}` → also serialized, so two builds can't collide on the same `latest_testflight_build_number+1`. Ignores `mining/**` pushes (miner changes don't trigger TestFlight builds).
 
 ## Release state (as of 2026-06-20)
 
@@ -92,7 +92,6 @@ Three tabs (`RootView.swift`, `TabView(selection:)`, reloads on tab activation):
 
 ## Known issues / TODO
 
-- Add `concurrency` to `build.yml` (parallel-build dup-build-number risk).
 - A few pre-fix recordings may carry garbage/empty article JSONs from old buggy miner runs; the Gianyar one was re-mined clean. Could sweep R2 for stragglers.
 - App's title cache is in-memory; a re-mine done outside the app won't refresh the row title until app restart.
 
