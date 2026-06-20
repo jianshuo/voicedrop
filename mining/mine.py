@@ -201,10 +201,31 @@ def transcribe(audio_path, timeout_s):
 
 
 def _parse_llm_json(text):
-    if text.startswith("```"):                       # strip code fences
-        text = text.strip("`")
-        text = text[4:].strip() if text.lower().startswith("json") else text
-    return json.loads(text)
+    """Extract a JSON object however the model wrapped it: strip ``` / ```json
+    fences, drop a stray leading 'json' token, then take the outermost {...}."""
+    t = text.strip()
+    if t.startswith("```"):
+        t = t.strip("`").strip()
+        if t[:4].lower() == "json":
+            t = t[4:].lstrip()
+    i, j = t.find("{"), t.rfind("}")
+    if i != -1 and j > i:
+        t = t[i:j + 1]
+    return json.loads(t)
+
+
+def _articles_from(text):
+    """Parse + clean the articles array from a model reply, or None."""
+    try:
+        obj = _parse_llm_json(text)
+    except Exception:
+        return None
+    arts = obj.get("articles") if isinstance(obj, dict) else obj
+    cleaned = [
+        {"title": (a.get("title") or "(无题)").strip(), "body": (a.get("body") or "").strip()}
+        for a in (arts or []) if isinstance(a, dict) and (a.get("body") or "").strip()
+    ]
+    return cleaned or None
 
 
 def generate_articles(transcript, claude_md=""):
@@ -215,7 +236,10 @@ def generate_articles(transcript, claude_md=""):
     system = SYSTEM if not claude_md else f"{SYSTEM}\n\n---\n\n{claude_md}"
     payload = {
         "model": MODEL, "max_tokens": 8000, "system": system,
-        "messages": [{"role": "user", "content": f"口述转写：\n\n{transcript}"}],
+        "messages": [
+            {"role": "user", "content": f"口述转写：\n\n{transcript}"},
+            {"role": "assistant", "content": "{"},   # prefill → force a JSON object, no prose/fences
+        ],
     }
     raw = _req("POST", "https://api.anthropic.com/v1/messages",
                data=json.dumps(payload).encode(),
@@ -223,21 +247,15 @@ def generate_articles(transcript, claude_md=""):
                         "content-type": "application/json"})
     resp = json.loads(raw)
     text = "".join(b.get("text", "") for b in resp.get("content", [])
-                   if b.get("type") == "text").strip()
-    try:
-        obj = _parse_llm_json(text)
-        arts = obj.get("articles") if isinstance(obj, dict) else obj
-        cleaned = [
-            {"title": (a.get("title") or "(无题)").strip(), "body": (a.get("body") or "").strip()}
-            for a in (arts or []) if isinstance(a, dict) and (a.get("body") or "").strip()
-        ]
-        if cleaned:
-            return cleaned
-    except Exception:
-        pass
-    # Fallback: treat the whole reply as one article.
-    lines = [l for l in text.splitlines() if l.strip()]
-    return [{"title": (lines[0][:40] if lines else "(无题)"), "body": text}]
+                   if b.get("type") == "text")
+    # The reply continues the prefilled "{"; also try it raw in case the model
+    # echoed a full object or wrapped it in a fence.
+    for candidate in ("{" + text, text):
+        arts = _articles_from(candidate)
+        if arts:
+            return arts
+    # Never store raw model text as an article body — retry next cycle instead.
+    raise RuntimeError("LLM did not return parseable article JSON")
 
 
 def main():
