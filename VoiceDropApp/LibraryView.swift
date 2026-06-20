@@ -54,16 +54,21 @@ struct LibraryView: View {
         .onChange(of: active) { _, nowActive in
             if nowActive { Task { await store.load() } }
         }
-        .alert("删除这条录音？", isPresented: .init(
+        .confirmationDialog("删除", isPresented: .init(
             get: { confirmDelete != nil },
             set: { if !$0 { confirmDelete = nil } }
-        ), presenting: confirmDelete) { rec in
-            Button("删除", role: .destructive) {
+        ), titleVisibility: .visible, presenting: confirmDelete) { rec in
+            Button("删除整条录音", role: .destructive) {
                 Task { await store.delete(rec) }
+            }
+            if rec.hasArticles || rec.isEmpty {
+                Button("只删除文章，下次重新生成", role: .destructive) {
+                    Task { await store.deleteArticle(rec) }
+                }
             }
             Button("取消", role: .cancel) {}
         } message: { _ in
-            Text("音频和已挖出的文章都会从云端删除，不可恢复。")
+            Text("「删除整条录音」会连音频一起从云端删除，不可恢复。\n「只删除文章」保留录音、清除已生成的文章和标记，下个周期会重新挖一遍。")
         }
     }
 

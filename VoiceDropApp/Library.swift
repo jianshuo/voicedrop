@@ -161,6 +161,19 @@ final class LibraryStore {
         return true
     }
 
+    /// Delete only the generated article + every marker (json/srt/empty), keeping
+    /// the audio. The recording drops back to 待处理 and the server re-mines it on
+    /// the next cycle, regenerating the article. Reloads to reflect the new state.
+    @discardableResult
+    func deleteArticle(_ rec: Recording) async -> Bool {
+        guard !token.isEmpty else { error = "请先登录"; return false }
+        _ = await del(rec.articleKey)
+        _ = await del(rec.srtKey)
+        _ = await del(rec.emptyKey)
+        await load()
+        return true
+    }
+
     /// DELETE one key. Treats 2xx and 404 as success (idempotent).
     private func del(_ relName: String) async -> Bool {
         let enc = relName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? relName
