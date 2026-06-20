@@ -8,6 +8,7 @@ struct RecordingDetailView: View {
 
     @State private var player = AudioPlayer()
     @State private var doc: ArticleDoc?
+    @State private var emptyReason: String?
     @State private var loadingDoc = true
     @State private var loadingAudio = false
     @State private var tab = 0                 // 0 = 文章, 1 = 字幕
@@ -21,6 +22,8 @@ struct RecordingDetailView: View {
             Divider().overlay(Color.white.opacity(0.1))
             if loadingDoc {
                 Spacer(); ProgressView().tint(.white); Spacer()
+            } else if recording.isEmpty {
+                Spacer(); emptyState; Spacer()
             } else if articles.isEmpty && (doc?.srt ?? "").isEmpty {
                 Spacer(); pending; Spacer()
             } else {
@@ -40,7 +43,12 @@ struct RecordingDetailView: View {
         .toolbarBackground(Color.black, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
         .task {
-            doc = await store.fetchDoc(recording); loadingDoc = false
+            if recording.isEmpty {
+                emptyReason = await store.fetchEmptyReason(recording)
+            } else {
+                doc = await store.fetchDoc(recording)
+            }
+            loadingDoc = false
         }
         .onDisappear { player.stop() }
     }
@@ -148,6 +156,25 @@ struct RecordingDetailView: View {
             Text("服务器每 2 小时自动处理一次，过会儿再来看。")
                 .foregroundStyle(.white.opacity(0.45)).font(.callout)
                 .multilineTextAlignment(.center).padding(.horizontal, 40)
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "speaker.slash")
+                .font(.system(size: 36)).foregroundStyle(.white.opacity(0.35))
+            Text("没检测到语音").foregroundStyle(.white.opacity(0.7)).font(.headline)
+            Text(emptyReasonText)
+                .foregroundStyle(.white.opacity(0.45)).font(.callout)
+                .multilineTextAlignment(.center).padding(.horizontal, 40)
+        }
+    }
+
+    private var emptyReasonText: String {
+        switch emptyReason {
+        case "corrupt": return "这条录音的文件损坏了，没法转写。"
+        case "silent":  return "这条录音太短或几乎是静音，没有可转写的内容。"
+        default:        return "这条录音里没有识别到说话声，已标记为无语音。"
         }
     }
 }

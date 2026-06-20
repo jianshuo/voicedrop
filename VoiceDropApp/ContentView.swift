@@ -2,13 +2,14 @@ import SwiftUI
 import AuthenticationServices
 
 /// The whole app: one screen, one state machine.
-/// needsSignIn -> requesting -> recording -> uploading -> done | failed
+/// needsSignIn -> requesting -> idle -> recording -> uploading -> done | failed
 struct ContentView: View {
 
     enum Phase: Equatable {
         case needsSignIn         // not signed in with Apple yet
         case requesting          // asking for mic permission
         case denied              // permission refused
+        case idle                // ready, waiting for the user to tap record
         case recording
         case uploading
         case done                // uploaded, ready for next take
@@ -19,7 +20,7 @@ struct ContentView: View {
     @State private var uploader = Uploader()
     @State private var location = LocationTagger()
     @State private var authStore = AuthStore.shared
-    @State private var phase: Phase = .requesting
+    @State private var phase: Phase = .idle
     @State private var idCopied = false
 
     // Zero-login via anonymous iCloud-Keychain token. Sign in with Apple still
@@ -53,6 +54,9 @@ struct ContentView: View {
 
         case .requesting:
             ProgressView().tint(.white)
+
+        case .idle:
+            readyScreen(checkmark: false)
 
         case .denied:
             messageScreen(
@@ -215,8 +219,8 @@ struct ContentView: View {
         guard granted else { phase = .denied; return }
         location.start()                // best-effort, never blocks recording
         AudioRecorder.cleanupStaleStaging()   // drop any half-written take from a prior kill
-        startRecording()                // start immediately — timer moves at once
-        Task { await drainQueue() }     // safe: the live take is a staging file the queue ignores
+        phase = .idle                   // wait for the user to tap record — no auto-start
+        Task { await drainQueue() }     // push up any backlog in the background
     }
 
     private func startRecording() {

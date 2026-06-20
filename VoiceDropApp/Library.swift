@@ -37,10 +37,13 @@ struct Recording: Identifiable {
     let audioName: String        // relative key, e.g. "VoiceDrop-….m4a"
     let uploaded: String
     let hasArticles: Bool
+    let isEmpty: Bool            // a `articles/<stem>.empty` marker exists (no usable speech)
 
     var id: String { audioName }
     var stem: String { String(audioName.dropLast(4)) }          // strip .m4a
     var articleKey: String { "articles/\(stem).json" }
+    var emptyKey: String { "articles/\(stem).empty" }
+    var srtKey: String { "articles/\(stem).srt" }
 
     /// "6月18日 14:30 · Xuhui" style label parsed from the rich filename;
     /// falls back to the stem when the name doesn't match.
@@ -103,7 +106,8 @@ final class LibraryStore {
                 let stem = String($0.name.dropLast(4))
                 return Recording(audioName: $0.name,
                                  uploaded: $0.uploaded ?? "",
-                                 hasArticles: names.contains("articles/\(stem).json"))
+                                 hasArticles: names.contains("articles/\(stem).json"),
+                                 isEmpty: names.contains("articles/\(stem).empty"))
             }
             .sorted { $0.audioName > $1.audioName }   // newest first (timestamped names)
         } catch {
@@ -131,6 +135,44 @@ final class LibraryStore {
         guard rec.hasArticles else { return nil }
         do { return try JSONDecoder().decode(ArticleDoc.self, from: await get(rec.articleKey)) }
         catch { return nil }
+    }
+
+    /// Fetch the human-readable reason from a `.empty` marker (silent / corrupt /
+    /// no-speech). Returns nil if the marker is missing or unreadable.
+    func fetchEmptyReason(_ rec: Recording) async -> String? {
+        guard rec.isEmpty else { return nil }
+        struct EmptyMarker: Decodable { let reason: String? }
+        do { return try JSONDecoder().decode(EmptyMarker.self, from: await get(rec.emptyKey)).reason }
+        catch { return nil }
+    }
+
+    /// Delete a whole recording from R2: the audio plus every sidecar marker
+    /// (article JSON, SRT, empty marker). The audio delete must succeed; the
+    /// sidecars are best-effort (a missing one is fine). Removes the row on
+    /// success. Returns false (and sets `error`) if the audio couldn't be deleted.
+    @discardableResult
+    func delete(_ rec: Recording) async -> Bool {
+        guard !token.isEmpty else { error = "请先登录"; return false }
+        guard await del(rec.audioName) else { error = "删除失败"; return false }
+        _ = await del(rec.articleKey)
+        _ = await del(rec.srtKey)
+        _ = await del(rec.emptyKey)
+        recordings.removeAll { $0.id == rec.id }
+        return true
+    }
+
+    /// DELETE one key. Treats 2xx and 404 as success (idempotent).
+    private func del(_ relName: String) async -> Bool {
+        let enc = relName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? relName
+        guard let url = URL(string: "\(base.absoluteString)/file/\(enc)") else { return false }
+        var req = URLRequest(url: url)
+        req.httpMethod = "DELETE"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        do {
+            let (_, resp) = try await URLSession.shared.data(for: req)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            return (200..<300).contains(code) || code == 404
+        } catch { return false }
     }
 
     /// Download the audio to a temp file for local playback.

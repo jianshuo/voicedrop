@@ -5,6 +5,7 @@ import SwiftUI
 /// is never blocked by this.
 struct LibraryView: View {
     @State private var store = LibraryStore()
+    @State private var confirmDelete: Recording?
 
     var body: some View {
         NavigationStack {
@@ -23,6 +24,13 @@ struct LibraryView: View {
                             row(rec)
                         }
                         .listRowBackground(Color.white.opacity(0.04))
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) {
+                                confirmDelete = rec
+                            } label: {
+                                Label("删除", systemImage: "trash")
+                            }
+                        }
                     }
                     .listStyle(.plain)
                     .scrollContentBackground(.hidden)
@@ -38,6 +46,17 @@ struct LibraryView: View {
         }
         .preferredColorScheme(.dark)
         .task { await store.load() }
+        .alert("删除这条录音？", isPresented: .init(
+            get: { confirmDelete != nil },
+            set: { if !$0 { confirmDelete = nil } }
+        ), presenting: confirmDelete) { rec in
+            Button("删除", role: .destructive) {
+                Task { await store.delete(rec) }
+            }
+            Button("取消", role: .cancel) {}
+        } message: { _ in
+            Text("音频和已挖出的文章都会从云端删除，不可恢复。")
+        }
     }
 
     private func row(_ rec: Recording) -> some View {
@@ -54,6 +73,9 @@ struct LibraryView: View {
                     if rec.hasArticles {
                         Label("已成文", systemImage: "doc.text")
                             .foregroundStyle(.green.opacity(0.85)).font(.caption2)
+                    } else if rec.isEmpty {
+                        Label("无语音", systemImage: "speaker.slash")
+                            .foregroundStyle(.white.opacity(0.35)).font(.caption2)
                     } else {
                         Text("待处理").foregroundStyle(.orange.opacity(0.8)).font(.caption2)
                     }
