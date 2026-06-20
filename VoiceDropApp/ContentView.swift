@@ -21,6 +21,7 @@ struct ContentView: View {
     @State private var authStore = AuthStore.shared
     @State private var phase: Phase = .requesting
     @State private var idCopied = false
+    @State private var showLibrary = false
 
     // Zero-login via anonymous iCloud-Keychain token. Sign in with Apple still
     // returns AKAuthenticationError -7074 on Apple's side; flip to true to
@@ -33,8 +34,10 @@ struct ContentView: View {
             Color.black.ignoresSafeArea()
             content
             pendingBadge
+            libraryBadge
             myIdBadge
         }
+        .sheet(isPresented: $showLibrary) { LibraryView() }
         .task { await begin() }
         .onChange(of: scenePhase) { _, newValue in
             // Coming back to the foreground: drain anything left in the queue.
@@ -188,6 +191,26 @@ struct ContentView: View {
                     }
                     .padding(.bottom, 8)
             }
+        }
+    }
+
+    // Top-left: open the Library (recordings + mined articles + SRT). Hidden
+    // while recording so the capture screen stays a single big stop button.
+    @ViewBuilder private var libraryBadge: some View {
+        if phase != .recording && phase != .uploading {
+            VStack {
+                HStack {
+                    Button { showLibrary = true } label: {
+                        Image(systemName: "books.vertical.fill")
+                            .font(.footnote).foregroundStyle(.white.opacity(0.6))
+                            .padding(9).background(.white.opacity(0.08), in: Circle())
+                    }
+                    .padding(.leading, 16)
+                    Spacer()
+                }
+                Spacer()
+            }
+            .padding(.top, 8)
         }
     }
 

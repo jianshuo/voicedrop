@@ -1,0 +1,199 @@
+import Foundation
+import Observation
+import AVFoundation
+
+// MARK: - Models
+
+/// One mined article (v2 schema: many per recording).
+struct MinedArticle: Decodable, Identifiable {
+    let title: String
+    let body: String
+    var id: String { title + "\(body.count)" }
+}
+
+/// The `articles/<stem>.json` document the server miner writes. Handles both the
+/// v2 schema (`articles: [...]`) and the v1 schema (a single `title`/`body`).
+struct ArticleDoc: Decodable {
+    let id: String?
+    let sourceAudio: String?
+    let createdAt: String?
+    let transcript: String?
+    let srt: String?
+    let articles: [MinedArticle]?
+    // v1 fallback fields
+    let title: String?
+    let body: String?
+
+    var resolvedArticles: [MinedArticle] {
+        if let a = articles, !a.isEmpty { return a }
+        if let b = body, !b.isEmpty { return [MinedArticle(title: title ?? "(无题)", body: b)] }
+        return []
+    }
+}
+
+/// A recording as seen in the user's R2 space: the audio key plus whether the
+/// miner has produced an article JSON for it yet.
+struct Recording: Identifiable {
+    let audioName: String        // relative key, e.g. "VoiceDrop-….m4a"
+    let uploaded: String
+    let hasArticles: Bool
+
+    var id: String { audioName }
+    var stem: String { String(audioName.dropLast(4)) }          // strip .m4a
+    var articleKey: String { "articles/\(stem).json" }
+
+    /// "6月18日 14:30 · Xuhui" style label parsed from the rich filename;
+    /// falls back to the stem when the name doesn't match.
+    var displayTitle: String {
+        let p = stem.components(separatedBy: "-")
+        // VoiceDrop - YYYY - MM - DD - HHMMSS - 0m33s - Thu - Period - City - District
+        guard p.count >= 5, p[0] == "VoiceDrop", p[1].count == 4 else { return stem }
+        var bits: [String] = []
+        if let mo = Int(p[2]), let da = Int(p[3]) { bits.append("\(mo)月\(da)日") }
+        if p.count >= 5, p[4].count == 6 {
+            let t = p[4]
+            bits.append("\(t.prefix(2)):\(t.dropFirst(2).prefix(2))")
+        }
+        let place = p.count >= 10 ? p[9] : (p.count >= 9 ? p[8] : "")
+        if !place.isEmpty { bits.append(place) }
+        return bits.isEmpty ? stem : bits.joined(separator: " · ")
+    }
+
+    /// "0m33s"-style duration field if present.
+    var durationLabel: String? {
+        stem.components(separatedBy: "-").first { $0.range(of: #"^\d+m\d+s$"#, options: .regularExpression) != nil }
+    }
+}
+
+// MARK: - Store
+
+@MainActor
+@Observable
+final class LibraryStore {
+    var recordings: [Recording] = []
+    var loading = false
+    var error: String?
+
+    private let base = URL(string: "https://jianshuo.dev/files/api")!
+    private var token: String { AuthStore.shared.bearer }
+
+    private struct ListResponse: Decodable {
+        struct Item: Decodable { let name: String; let uploaded: String? }
+        let files: [Item]
+    }
+
+    func load() async {
+        guard !token.isEmpty else { error = "请先登录"; return }
+        loading = true; error = nil
+        defer { loading = false }
+        var req = URLRequest(url: base.appending(path: "list"))
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            guard (resp as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) == true else {
+                error = "加载失败"; return
+            }
+            let list = try JSONDecoder().decode(ListResponse.self, from: data)
+            let names = Set(list.files.map(\.name))
+            let audios = list.files.filter {
+                let leaf = $0.name.components(separatedBy: "/").last ?? $0.name
+                return leaf.hasPrefix("VoiceDrop-") && leaf.hasSuffix(".m4a")
+            }
+            recordings = audios.map {
+                let stem = String($0.name.dropLast(4))
+                return Recording(audioName: $0.name,
+                                 uploaded: $0.uploaded ?? "",
+                                 hasArticles: names.contains("articles/\(stem).json"))
+            }
+            .sorted { $0.audioName > $1.audioName }   // newest first (timestamped names)
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func downloadURL(_ relName: String) -> URL {
+        let enc = relName.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? relName
+        return URL(string: "\(base.absoluteString)/download/\(enc)")!
+    }
+
+    private func get(_ relName: String) async throws -> Data {
+        var req = URLRequest(url: downloadURL(relName))
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (data, resp) = try await URLSession.shared.data(for: req)
+        guard (resp as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) == true else {
+            throw NSError(domain: "library", code: 1, userInfo: [NSLocalizedDescriptionKey: "下载失败"])
+        }
+        return data
+    }
+
+    /// Fetch the mined article document for a recording (nil if not mined yet).
+    func fetchDoc(_ rec: Recording) async -> ArticleDoc? {
+        guard rec.hasArticles else { return nil }
+        do { return try JSONDecoder().decode(ArticleDoc.self, from: await get(rec.articleKey)) }
+        catch { return nil }
+    }
+
+    /// Download the audio to a temp file for local playback.
+    func downloadAudio(_ rec: Recording) async -> URL? {
+        do {
+            let data = try await get(rec.audioName)
+            let url = FileManager.default.temporaryDirectory
+                .appending(path: rec.audioName.components(separatedBy: "/").last ?? "audio.m4a")
+            try data.write(to: url)
+            return url
+        } catch { return nil }
+    }
+}
+
+// MARK: - Audio playback
+
+@MainActor
+@Observable
+final class AudioPlayer: NSObject, AVAudioPlayerDelegate {
+    var isPlaying = false
+    var progress: Double = 0       // 0...1
+    var duration: TimeInterval = 0
+
+    private var player: AVAudioPlayer?
+    private var timer: Timer?
+
+    func load(_ url: URL) {
+        stop()
+        try? AVAudioSession.sharedInstance().setCategory(.playback)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        player = try? AVAudioPlayer(contentsOf: url)
+        player?.delegate = self
+        duration = player?.duration ?? 0
+    }
+
+    func toggle() {
+        guard let player else { return }
+        if player.isPlaying { player.pause(); isPlaying = false; timer?.invalidate() }
+        else { player.play(); isPlaying = true; startTimer() }
+    }
+
+    func seek(to fraction: Double) {
+        guard let player else { return }
+        player.currentTime = fraction * player.duration
+        progress = fraction
+    }
+
+    func stop() {
+        player?.stop(); player = nil
+        isPlaying = false; progress = 0; timer?.invalidate()
+    }
+
+    private func startTimer() {
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, let p = self.player, p.duration > 0 else { return }
+                self.progress = p.currentTime / p.duration
+            }
+        }
+    }
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in self.isPlaying = false; self.progress = 0; self.timer?.invalidate() }
+    }
+}

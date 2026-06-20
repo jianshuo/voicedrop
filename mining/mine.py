@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
-"""VoiceDrop server-side miner (v1).
+"""VoiceDrop server-side miner (v2).
 
 For every VoiceDrop-*.m4a in R2 (jianshuo.dev/files) that has no matching
-article yet:  download -> Volcano ASR -> Claude (王建硕 voice) -> write the
-article JSON back next to the audio, under  <prefix>/articles/<stem>.json
-so the app can pull it. No WeChat. Idempotent: audio that already has an
-article is skipped, so re-runs are safe and cheap.
+article yet:  download -> Volcano ASR (-> SRT) -> Claude (王建硕 voice, split
+into 1+ standalone articles) -> write the result JSON back under the user's
+own prefix at  <prefix>/articles/<stem>.json  (+ a <stem>.srt sidecar) so the
+app can pull it. No WeChat. Idempotent: audio that already has an article JSON
+is skipped, so re-runs are safe and cheap.
+
+Output JSON schema (v2):
+  { "id", "sourceAudio", "createdAt", "transcript", "srt",
+    "articles": [ {"title", "body"}, ... ], "status": "ready", "model",
+    "schema": 2 }
 
 Env:
   FILES_TOKEN            master/admin token for jianshuo.dev/files
@@ -13,7 +19,7 @@ Env:
   VOLC_ASR_APPID         huo shan ASR app id
   VOLC_ASR_ACCESS_TOKEN  huo shan ASR access token
   MINE_MODEL             optional, default claude-sonnet-4-6
-  MINE_DRY              if set, list what WOULD be mined and exit (no ASR/LLM)
+  MINE_DRY               if set, list what WOULD be mined and exit (no ASR/LLM)
 """
 import os, sys, json, subprocess, tempfile, urllib.request
 from urllib.parse import quote
@@ -25,9 +31,18 @@ MODEL = os.environ.get("MINE_MODEL", "claude-sonnet-4-6")
 DRY = bool(os.environ.get("MINE_DRY"))
 HERE = os.path.dirname(os.path.abspath(__file__))
 
-SYSTEM = """你是王建硕，在写自己的微信公众号文章。下面给你一段你自己的口述录音转写，把它整理成一篇可发布的公众号文章。
+# Balanced split: 1+ standalone articles, one per *clearly distinct* topic,
+# leaning to fewer/meatier pieces — not one-per-paragraph. Each article obeys
+# the 王建硕 voice DNA in full.
+SYSTEM = """你是王建硕，在写自己的微信公众号文章。下面给你一段你自己的口述录音转写。把它挖成一篇或多篇可以各自独立发布的公众号文章。
 
-语气 DNA（必须遵守）：
+拆分规则（重要）：
+- 默认尽量合并。只有当转写里明显包含几个互不相关的主题时，才拆成多篇。
+- 倾向「少而厚」：宁可一篇 1000 字讲透，也不要拆成三篇各 300 字的碎片。
+- 一段口述大多只产出 1 篇；只有真的跳了好几个不相干的话题，才产出 2–3 篇。
+- 每一篇都必须能独立成立：有自己的标题、自己的开头结尾，不依赖其它篇。
+
+每一篇都遵守的语气 DNA：
 - 胸有成竹地下断言，不绕弯、不加「我觉得可能也许」的缓冲。
 - 不讲故事、不铺垫，直接给结论再给理由；开头一句就立住，绝不用小白式提问钩子。
 - 第一人称用「我」，绝不用「笔者」。称呼 AI / Claude 一律用「他」，不用「它」。
@@ -35,10 +50,10 @@ SYSTEM = """你是王建硕，在写自己的微信公众号文章。下面给�
 - 细节能列就用表格 / 列表，不在叙述句里堆细节。
 - 保留口语词（吧 / 呢 / 啊 / 了）、自造词、家常比喻——这是你的声音，别改成书面语。
 - 不加 AI 味连接词（首先 / 其次 / 综上所述 / 值得注意的是），不加 emoji。
-- 默认 800–1000 字。中英文之间留一个空格（盘古之白）。
+- 每篇 800–1000 字。中英文之间留一个空格（盘古之白）。
 - 只用转写里出现的事实，绝不编造。不提任何公司具体名字，需要时用「我们公司」。
 
-只输出一个 JSON 对象：{"title": "标题", "body": "正文 markdown"}，不要输出任何其它文字。"""
+只输出一个 JSON 对象：{"articles": [{"title": "标题", "body": "正文 markdown"}, ...]}，不要输出任何其它文字。"""
 
 
 # Always go direct (no proxy) with a normal UA: Cloudflare 403s the default
@@ -49,7 +64,7 @@ _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 def _req(method, url, data=None, headers=None):
     h = dict(headers or {})
-    h.setdefault("User-Agent", "voicedrop-miner/1")
+    h.setdefault("User-Agent", "voicedrop-miner/2")
     req = urllib.request.Request(url, data=data, method=method, headers=h)
     with _OPENER.open(req, timeout=300) as r:
         return r.read()
@@ -72,27 +87,70 @@ def api_put(key, body_bytes, content_type):
          headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": content_type})
 
 
-def article_key_for(audio_key):
-    # users/anon-x/VoiceDrop-Y.m4a -> users/anon-x/articles/VoiceDrop-Y.json
-    # VoiceDrop-Y.m4a (flat)       -> articles/VoiceDrop-Y.json
+def _stem_keys(audio_key):
+    # users/anon-x/VoiceDrop-Y.m4a -> (users/anon-x/articles/VoiceDrop-Y.json,
+    #                                  users/anon-x/articles/VoiceDrop-Y.srt)
+    # VoiceDrop-Y.m4a (flat)       -> (articles/VoiceDrop-Y.json, articles/VoiceDrop-Y.srt)
     parts = audio_key.rsplit("/", 1)
     stem = parts[-1][:-4]  # strip .m4a
     prefix = parts[0] + "/" if len(parts) == 2 else ""
-    return f"{prefix}articles/{stem}.json"
+    return f"{prefix}articles/{stem}.json", f"{prefix}articles/{stem}.srt"
+
+
+def article_key_for(audio_key):
+    return _stem_keys(audio_key)[0]
+
+
+def _ms_to_ts(ms):
+    ms = max(0, int(ms))
+    h, ms = divmod(ms, 3600000)
+    m, ms = divmod(ms, 60000)
+    s, ms = divmod(ms, 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+
+
+def build_srt(utterances):
+    """One SRT cue per ASR utterance, using its ms start/end timestamps.
+    A missing/zero start falls back to the previous cue's end; a non-positive
+    span is padded to 2s so players don't choke."""
+    out, idx, prev_end = [], 1, 0
+    for u in utterances:
+        text = (u.get("text") or "").strip()
+        if not text:
+            continue
+        start = u.get("start_time") or prev_end
+        end = u.get("end_time") or (start + 2000)
+        if end <= start:
+            end = start + 2000
+        out += [str(idx), f"{_ms_to_ts(start)} --> {_ms_to_ts(end)}", text, ""]
+        prev_end, idx = end, idx + 1
+    return ("\n".join(out).strip() + "\n") if out else ""
 
 
 def transcribe(audio_path):
+    """Return (plain_transcript, srt). srt may be '' if the ASR returned no
+    per-utterance timestamps."""
     out = audio_path + ".asr.json"
     subprocess.run([sys.executable, os.path.join(HERE, "volc_asr_stream.py"),
                     audio_path, out], check=True)
     res = json.load(open(out)).get("result", {})
-    text = res.get("text") or "".join(u.get("text", "") for u in res.get("utterances", []))
-    return text.strip()
+    utts = res.get("utterances", [])
+    text = res.get("text") or "".join(u.get("text", "") for u in utts)
+    return text.strip(), build_srt(utts)
 
 
-def generate_article(transcript):
+def _parse_llm_json(text):
+    if text.startswith("```"):                       # strip code fences
+        text = text.strip("`")
+        text = text[4:].strip() if text.lower().startswith("json") else text
+    return json.loads(text)
+
+
+def generate_articles(transcript):
+    """Return a list of {title, body}. Balanced split: usually 1, more only on
+    clearly distinct topics. Falls back to a single article on parse failure."""
     payload = {
-        "model": MODEL, "max_tokens": 4000, "system": SYSTEM,
+        "model": MODEL, "max_tokens": 8000, "system": SYSTEM,
         "messages": [{"role": "user", "content": f"口述转写：\n\n{transcript}"}],
     }
     raw = _req("POST", "https://api.anthropic.com/v1/messages",
@@ -102,15 +160,20 @@ def generate_article(transcript):
     resp = json.loads(raw)
     text = "".join(b.get("text", "") for b in resp.get("content", [])
                    if b.get("type") == "text").strip()
-    if text.startswith("```"):                       # strip code fences
-        text = text.strip("`")
-        text = text[4:].strip() if text.lower().startswith("json") else text
     try:
-        obj = json.loads(text)
-        return obj.get("title", "(no title)"), obj.get("body", "")
+        obj = _parse_llm_json(text)
+        arts = obj.get("articles") if isinstance(obj, dict) else obj
+        cleaned = [
+            {"title": (a.get("title") or "(无题)").strip(), "body": (a.get("body") or "").strip()}
+            for a in (arts or []) if isinstance(a, dict) and (a.get("body") or "").strip()
+        ]
+        if cleaned:
+            return cleaned
     except Exception:
-        lines = [l for l in text.splitlines() if l.strip()]
-        return (lines[0][:40] if lines else "(no title)"), text
+        pass
+    # Fallback: treat the whole reply as one article.
+    lines = [l for l in text.splitlines() if l.strip()]
+    return [{"title": (lines[0][:40] if lines else "(无题)"), "body": text}]
 
 
 def main():
@@ -135,28 +198,33 @@ def main():
             with tempfile.TemporaryDirectory() as td:
                 local = os.path.join(td, os.path.basename(audio))
                 api_download(audio, local)
-                transcript = transcribe(local)
+                transcript, srt = transcribe(local)
                 if not transcript:
                     print(f"  skip (empty transcript): {audio}")
                     continue
-                title, body = generate_article(transcript)
+                articles = generate_articles(transcript)
+                json_key, srt_key = _stem_keys(audio)
                 art = {
+                    "schema": 2,
                     "id": os.path.basename(audio)[:-4],
-                    "title": title,
-                    "createdAt": uploaded.get(audio, ""),
                     "sourceAudio": os.path.basename(audio),
+                    "createdAt": uploaded.get(audio, ""),
                     "transcript": transcript,
-                    "body": body,
+                    "srt": srt,
+                    "articles": articles,
                     "status": "ready",
+                    "model": MODEL,
                 }
-                api_put(article_key_for(audio),
-                        json.dumps(art, ensure_ascii=False).encode(),
+                api_put(json_key, json.dumps(art, ensure_ascii=False).encode(),
                         "application/json")
+                if srt:
+                    api_put(srt_key, srt.encode(), "application/x-subrip; charset=utf-8")
                 done += 1
-                print(f"  mined: {audio} -> {article_key_for(audio)}  [{title}]")
+                titles = " | ".join(a["title"] for a in articles)
+                print(f"  mined: {audio} -> {json_key}  [{len(articles)}] {titles}")
         except Exception as e:
             print(f"  FAILED {audio}: {e}", file=sys.stderr)
-    print(f"done: {done} new article(s)")
+    print(f"done: {done} audio mined")
 
 
 if __name__ == "__main__":
