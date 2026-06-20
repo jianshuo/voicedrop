@@ -45,6 +45,24 @@ struct RecordingDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Color.black, for: .navigationBar)
         .toolbarColorScheme(.dark, for: .navigationBar)
+        .toolbar {
+            if !articles.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task {
+                            sharing = true
+                            if let u = await store.shareURL(recording) { shareLink = IdentifiableURL(url: u) }
+                            sharing = false
+                        }
+                    } label: {
+                        if sharing { ProgressView().tint(.white) }
+                        else { Image(systemName: "square.and.arrow.up") }
+                    }
+                    .disabled(sharing)
+                    .accessibilityLabel("分享文章")
+                }
+            }
+        }
         .task {
             if recording.isEmpty {
                 emptyReason = await store.fetchEmptyReason(recording)
@@ -57,28 +75,7 @@ struct RecordingDetailView: View {
         .sheet(item: $shareLink) { ShareSheet(items: [$0.url]) }
     }
 
-    // MARK: Share + article rendering
-
-    private var shareButton: some View {
-        Button {
-            Task {
-                sharing = true
-                if let u = await store.shareURL(recording) { shareLink = IdentifiableURL(url: u) }
-                sharing = false
-            }
-        } label: {
-            roundIcon(sharing ? "ellipsis" : "square.and.arrow.up")
-        }
-        .disabled(sharing)
-        .accessibilityLabel("分享文章")
-    }
-
-    private func roundIcon(_ name: String) -> some View {
-        Image(systemName: name)
-            .font(.callout).foregroundStyle(.white)
-            .frame(width: 22, height: 22)
-            .padding(12).background(.white.opacity(0.14), in: Circle())
-    }
+    // MARK: Article rendering
 
     /// Title + body as one styled, selectable AttributedString. Body markdown is
     /// parsed inline while preserving paragraph breaks.
@@ -152,23 +149,12 @@ struct RecordingDetailView: View {
                 ScrollView {
                     // One selectable block (title + body) so a long-press → Select
                     // All → Copy grabs the whole article, not a single paragraph.
+                    // Sharing lives in the top-right toolbar; its sheet has Copy.
                     Text(articleAttributed(a))
                         .lineSpacing(5)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(20)
-                }
-                .overlay(alignment: .bottomTrailing) {
-                    HStack(spacing: 12) {
-                        shareButton
-                        Button {
-                            UIPasteboard.general.string = a.title + "\n\n" + a.body
-                        } label: {
-                            roundIcon("doc.on.doc")
-                        }
-                        .accessibilityLabel("拷贝全文")
-                    }
-                    .padding(18)
                 }
             }
         }
