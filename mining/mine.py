@@ -21,8 +21,13 @@ Env:
   MINE_MODEL             optional, default claude-sonnet-4-6
   MINE_DRY               if set, list what WOULD be mined and exit (no ASR/LLM)
 """
-import os, sys, json, subprocess, tempfile, urllib.request
+import os, sys, json, time, subprocess, tempfile, urllib.request
 from urllib.parse import quote
+
+
+def log(msg):
+    """Wall-clock-stamped progress line, flushed so CI logs stream live."""
+    print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 BASE = "https://jianshuo.dev/files/api"
 TOKEN = os.environ["FILES_TOKEN"]
@@ -101,6 +106,38 @@ def article_key_for(audio_key):
     return _stem_keys(audio_key)[0]
 
 
+def empty_key_for(audio_key):
+    # sidecar marking "processed, but no usable speech": articles/<stem>.empty
+    parts = audio_key.rsplit("/", 1)
+    stem = parts[-1][:-4]
+    prefix = parts[0] + "/" if len(parts) == 2 else ""
+    return f"{prefix}articles/{stem}.empty"
+
+
+def probe_duration(path):
+    """Seconds of decodable audio, or None if the file won't probe (corrupt /
+    missing moov atom / 0-byte)."""
+    try:
+        out = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "csv=p=0", path],
+            capture_output=True, text=True, timeout=30)
+        return float(out.stdout.strip())
+    except Exception:
+        return None
+
+
+def write_empty(audio, reason):
+    """Mark a recording processed-but-empty so it's never re-mined and the app
+    can show a 无语音 badge. reason ∈ {corrupt, silent, no-speech}."""
+    key = empty_key_for(audio)
+    body = {"schema": 2, "status": "empty", "reason": reason,
+            "id": os.path.basename(audio)[:-4],
+            "sourceAudio": os.path.basename(audio)}
+    api_put(key, json.dumps(body, ensure_ascii=False).encode(), "application/json")
+    return key
+
+
 def _ms_to_ts(ms):
     ms = max(0, int(ms))
     h, ms = divmod(ms, 3600000)
@@ -177,37 +214,72 @@ def generate_articles(transcript):
 
 
 def main():
+    t_list = time.time()
     files = api_list()
     names = {f["name"] for f in files}
     uploaded = {f["name"]: f.get("uploaded", "") for f in files}
     audios = [f["name"] for f in files
               if f["name"].rsplit("/", 1)[-1].startswith("VoiceDrop-")
               and f["name"].endswith(".m4a")]
-    todo = [a for a in audios if article_key_for(a) not in names]
-    print(f"{len(audios)} audio total, {len(todo)} to mine")
+    # "processed" = an article JSON OR an empty marker already exists.
+    todo = [a for a in audios
+            if article_key_for(a) not in names and empty_key_for(a) not in names]
+    log(f"list: {len(audios)} audio · {len(todo)} unprocessed ({time.time()-t_list:.1f}s)")
     if DRY:
         for a in todo:
-            print(f"  would mine: {a} -> {article_key_for(a)}")
+            log(f"  would mine: {a} -> {article_key_for(a)}")
         return
     if not CLAUDE_KEY:
         sys.exit("CLAUDE_API_KEY not set")
 
-    done = 0
-    for audio in todo:
+    run_t0 = time.time()
+    mined = empty = 0
+    tot_net = tot_asr = tot_llm = 0.0   # phase totals for the bottleneck breakdown
+
+    for i, audio in enumerate(todo, 1):
+        leaf = os.path.basename(audio)
+        rec_t0 = time.time()
+        log(f"── {leaf}  ({i}/{len(todo)})")
         try:
             with tempfile.TemporaryDirectory() as td:
-                local = os.path.join(td, os.path.basename(audio))
+                local = os.path.join(td, leaf)
+
+                t = time.time()
                 api_download(audio, local)
-                transcript, srt = transcribe(local)
-                if not transcript:
-                    print(f"  skip (empty transcript): {audio}")
+                dl = time.time() - t; tot_net += dl
+                size = os.path.getsize(local)
+                log(f"   download {size/1024:.0f}KB ({dl:.1f}s)")
+
+                # Corrupt / silent files never reach ASR — mark and move on.
+                dur = probe_duration(local)
+                if dur is None or dur < 1.0:
+                    reason = "corrupt" if dur is None else "silent"
+                    write_empty(audio, reason)
+                    empty += 1
+                    log(f"   ✗ {reason} → marked 无语音 (total {time.time()-rec_t0:.1f}s)")
                     continue
+
+                t = time.time()
+                transcript, srt = transcribe(local)
+                asr = time.time() - t; tot_asr += asr
+                log(f"   ASR → {len(transcript)} chars ({asr:.1f}s)")
+
+                if not transcript:
+                    write_empty(audio, "no-speech")
+                    empty += 1
+                    log(f"   ✗ no-speech → marked 无语音 (total {time.time()-rec_t0:.1f}s)")
+                    continue
+
+                t = time.time()
                 articles = generate_articles(transcript)
+                llm = time.time() - t; tot_llm += llm
+                log(f"   Claude mine → {len(articles)} article(s) ({llm:.1f}s)")
+
                 json_key, srt_key = _stem_keys(audio)
                 art = {
                     "schema": 2,
-                    "id": os.path.basename(audio)[:-4],
-                    "sourceAudio": os.path.basename(audio),
+                    "id": leaf[:-4],
+                    "sourceAudio": leaf,
                     "createdAt": uploaded.get(audio, ""),
                     "transcript": transcript,
                     "srt": srt,
@@ -215,16 +287,27 @@ def main():
                     "status": "ready",
                     "model": MODEL,
                 }
+                t = time.time()
                 api_put(json_key, json.dumps(art, ensure_ascii=False).encode(),
                         "application/json")
                 if srt:
                     api_put(srt_key, srt.encode(), "application/x-subrip; charset=utf-8")
-                done += 1
+                tot_net += time.time() - t
+                mined += 1
                 titles = " | ".join(a["title"] for a in articles)
-                print(f"  mined: {audio} -> {json_key}  [{len(articles)}] {titles}")
+                log(f"   ✓ {len(articles)} article(s): {titles} (total {time.time()-rec_t0:.1f}s)")
         except Exception as e:
+            log(f"   FAILED {leaf}: {e}")
             print(f"  FAILED {audio}: {e}", file=sys.stderr)
-    print(f"done: {done} audio mined")
+
+    total = time.time() - run_t0
+    if total > 0:
+        pct = lambda x: round(100 * x / total)
+        other = max(0, total - tot_asr - tot_llm - tot_net)
+        log(f"DONE: {mined} mined · {empty} empty · {total:.0f}s total  "
+            f"[ASR {pct(tot_asr)}% · LLM {pct(tot_llm)}% · net {pct(tot_net)}% · other {pct(other)}%]")
+    else:
+        log(f"DONE: {mined} mined · {empty} empty")
 
 
 if __name__ == "__main__":
