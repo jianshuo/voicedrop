@@ -1,10 +1,11 @@
-VoiceDrop is the simplest possible voice memo: open it, talk, done.
+VoiceDrop turns what you say into articles.
 
-An idea, a to-do, a thought on the road — say it out loud and let VoiceDrop handle the rest.
+Open it and it records; tap stop and it's saved. The rest is automatic:
 
 • One-tap recording, keeps going in the background
-• Auto-names each file by time + current location (city / district) so you recognize it later
-• Auto-uploads to your own file inbox and archives to iCloud
-• Minimal interface, no clutter
+• Auto-named by time + current location (city / district) so you recognize it later
+• Each recording is transcribed to subtitles (SRT) and mined into readable articles
+• Listen to the audio, read the subtitles, and read the articles — right in the app
+• Minimal interface, no ads, no third-party tracking
 
-Capture it so you never lose it. VoiceDrop catches every passing thought.
+Say it, and it's done. VoiceDrop catches every passing thought and writes it up.

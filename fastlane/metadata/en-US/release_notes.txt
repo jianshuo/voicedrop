@@ -1,1 +1,1 @@
-Initial release.
+Initial release. Recordings are auto-transcribed to subtitles and turned into articles you can listen to and read right in the app.
