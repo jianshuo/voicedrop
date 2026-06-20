@@ -31,7 +31,19 @@ final class Uploader {
             at: dir, includingPropertiesForKeys: nil)) ?? []
         return files
             .filter { $0.lastPathComponent.hasPrefix("VoiceDrop-") && $0.pathExtension == "m4a" }
+            .filter { Self.isUploadable($0) }   // skip 0-byte / moov-less junk so it can't block the queue
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
+    }
+
+    /// A finalized AAC/MP4 take has a `moov` atom and real payload. A file read
+    /// mid-recording (or a 0-byte stub) lacks it and is unplayable — never PUT it.
+    static func isUploadable(_ url: URL) -> Bool {
+        guard
+            let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size]) as? Int,
+            size > 1024,
+            let data = try? Data(contentsOf: url, options: .mappedIfSafe)
+        else { return false }
+        return data.range(of: Data("moov".utf8)) != nil
     }
 
     func refreshPending() { pendingCount = pendingFiles().count }
@@ -43,6 +55,10 @@ final class Uploader {
     func upload(_ url: URL) async -> Bool {
         guard hasValidToken else {
             lastError = "请先用 Apple 登录"
+            return false
+        }
+        guard Self.isUploadable(url) else {
+            lastError = "录音文件损坏，已跳过上传"
             return false
         }
         let endpoint = baseURL

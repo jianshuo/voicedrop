@@ -214,8 +214,9 @@ struct ContentView: View {
         let granted = await AudioRecorder.ensurePermission()
         guard granted else { phase = .denied; return }
         location.start()                // best-effort, never blocks recording
+        AudioRecorder.cleanupStaleStaging()   // drop any half-written take from a prior kill
         startRecording()                // start immediately — timer moves at once
-        Task { await drainQueue() }     // push up any backlog in the background
+        Task { await drainQueue() }     // safe: the live take is a staging file the queue ignores
     }
 
     private func startRecording() {
@@ -232,21 +233,28 @@ struct ContentView: View {
         await finalize(take)
     }
 
-    /// Enrich the provisional filename with duration + weekday/period + place,
-    /// rename the file, then upload. Place geocoding is best-effort (3s cap);
-    /// if it's unavailable the name simply omits it.
+    /// Promote the staging file to its enriched VoiceDrop-* name (duration +
+    /// weekday/period + place), then upload. Place geocoding is best-effort (3s
+    /// cap); if it's unavailable the name simply omits it. Only after this
+    /// promotion is the file eligible for the upload queue — which means the
+    /// recorder has already finalized it (moov atom written).
     private func finalize(_ take: AudioRecorder.Recording) async {
         phase = .uploading
         let place = await location.placeTag()
         let finalName = RecordingName.make(start: take.start, duration: take.duration, place: place)
         var toUpload = take.url
-        if finalName != take.url.lastPathComponent {
-            let finalURL = AudioRecorder.documentsDir.appending(path: finalName)
-            do {
-                try FileManager.default.moveItem(at: take.url, to: finalURL)
-                toUpload = finalURL
-            } catch {
-                // keep the provisional file — still a valid VoiceDrop-*.m4a upload
+        let finalURL = AudioRecorder.documentsDir.appending(path: finalName)
+        do {
+            try FileManager.default.moveItem(at: take.url, to: finalURL)
+            toUpload = finalURL
+        } catch {
+            // Enriched move failed (e.g. a name clash): fall back to a plain
+            // VoiceDrop-<timestamp>.m4a so the take still becomes a valid queue
+            // entry and gets retried — never stranded under the staging name.
+            let basicURL = AudioRecorder.documentsDir
+                .appending(path: "VoiceDrop-\(RecordingName.timestamp(take.start)).m4a")
+            if (try? FileManager.default.moveItem(at: take.url, to: basicURL)) != nil {
+                toUpload = basicURL
             }
         }
         // Mirror to iCloud Drive before upload (upload deletes the local file on

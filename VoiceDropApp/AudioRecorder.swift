@@ -2,13 +2,15 @@ import Foundation
 import AVFoundation
 import Observation
 
-/// Wraps AVAudioRecorder. Records mono AAC into Documents/VoiceDrop-<timestamp>.m4a,
+/// Wraps AVAudioRecorder. Records mono AAC into Documents/recording-<timestamp>.m4a,
 /// exposes a live elapsed time, and handles audio-session interruptions
 /// (e.g. an incoming call) by finalizing the current recording.
 ///
-/// The file is named VoiceDrop-<start-timestamp>.m4a up front (so it's already a
-/// valid queue entry if the app is killed mid-recording). At stop, ContentView
-/// renames it to the enriched name (duration + weekday + place) before upload.
+/// While recording, the file lives under a staging name (`recording-<ts>.m4a`)
+/// that the upload queue does NOT match. At stop, ContentView promotes it to the
+/// enriched `VoiceDrop-*.m4a` name (duration + weekday + place), and only then is
+/// it eligible for upload. This prevents a concurrent drain from ever picking up
+/// a half-written take (the cause of the moov-less / 0-byte corrupt uploads).
 @MainActor
 @Observable
 final class AudioRecorder {
@@ -68,7 +70,7 @@ final class AudioRecorder {
         try session.setActive(true)
 
         let now = Date()
-        let url = Self.provisionalURL(start: now)
+        let url = Self.stagingURL(start: now)
         let settings: [String: Any] = [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
             AVSampleRateKey: 44_100,
@@ -136,11 +138,27 @@ final class AudioRecorder {
 
     // MARK: - File naming
 
-    /// Provisional name = VoiceDrop-<start timestamp>.m4a. Already a valid queue
-    /// entry; renamed to the enriched name at stop.
-    static func provisionalURL(start: Date) -> URL {
-        let name = "VoiceDrop-\(RecordingName.timestamp(start)).m4a"
+    /// Staging name = recording-<start timestamp>.m4a. Deliberately NOT a
+    /// `VoiceDrop-*` name, so the upload queue ignores it while it's being
+    /// written. `ContentView.finalize` promotes it to the enriched VoiceDrop
+    /// name once the recorder has closed the file.
+    static let stagingPrefix = "recording-"
+
+    static func stagingURL(start: Date) -> URL {
+        let name = "\(stagingPrefix)\(RecordingName.timestamp(start)).m4a"
         return documentsDir.appending(path: name)
+    }
+
+    /// Discard any staging file left behind by an app kill mid-recording. Such a
+    /// file was never finalized (no moov atom → unplayable), so it's safe to drop
+    /// rather than promote it into the upload queue.
+    static func cleanupStaleStaging() {
+        let dir = documentsDir
+        let files = (try? FileManager.default.contentsOfDirectory(
+            at: dir, includingPropertiesForKeys: nil)) ?? []
+        for f in files where f.lastPathComponent.hasPrefix(stagingPrefix) {
+            try? FileManager.default.removeItem(at: f)
+        }
     }
 
     static var documentsDir: URL {
