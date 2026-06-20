@@ -190,10 +190,19 @@ def _shift(res, off_ms):
     return res
 
 
+EMPTY_EXIT = 3   # distinct code: ffmpeg decoded no audio (corrupt / silent file)
+
+
 def main():
     inp, outp = sys.argv[1], sys.argv[2]
     pcm = to_pcm(inp)
     chunk_bytes = CHUNK_SEC * BYTES_PER_SEC
+
+    # Fail fast on empty audio. A moov-corrupt / 0-byte / silent file decodes to
+    # no PCM; feeding b"" to the streaming API just hangs the recv() loop for
+    # ~15 min before failing. Bail immediately instead.
+    if len(pcm) < BYTES_PER_SEC // 2:        # < 0.5s of audio
+        print(f"NO AUDIO ({len(pcm)} PCM bytes)"); sys.exit(EMPTY_EXIT)
 
     if len(pcm) <= chunk_bytes:
         result = transcribe_pcm(pcm)

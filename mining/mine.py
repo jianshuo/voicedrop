@@ -164,12 +164,23 @@ def build_srt(utterances):
     return ("\n".join(out).strip() + "\n") if out else ""
 
 
-def transcribe(audio_path):
+EMPTY_ASR_EXIT = 3   # volc_asr_stream.py: ffmpeg decoded no audio (corrupt/silent)
+
+
+def transcribe(audio_path, timeout_s):
     """Return (plain_transcript, srt). srt may be '' if the ASR returned no
-    per-utterance timestamps."""
+    per-utterance timestamps; transcript is '' if the file decoded to no audio.
+    Bounded by timeout_s so a wedged ASR connection can't stall the whole run."""
     out = audio_path + ".asr.json"
-    subprocess.run([sys.executable, os.path.join(HERE, "volc_asr_stream.py"),
-                    audio_path, out], check=True)
+    try:
+        p = subprocess.run([sys.executable, os.path.join(HERE, "volc_asr_stream.py"),
+                            audio_path, out], timeout=timeout_s)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"ASR timed out after {timeout_s}s")
+    if p.returncode == EMPTY_ASR_EXIT:        # decoded to no audio → treat as empty
+        return "", ""
+    if p.returncode != 0:
+        raise RuntimeError(f"ASR failed (exit {p.returncode})")
     res = json.load(open(out)).get("result", {})
     utts = res.get("utterances", [])
     text = res.get("text") or "".join(u.get("text", "") for u in utts)
@@ -259,8 +270,10 @@ def main():
                     log(f"   ✗ {reason} → marked 无语音 (total {time.time()-rec_t0:.1f}s)")
                     continue
 
+                # ASR streams at ~realtime (chunked + parallel); bound generously
+                # at 2× duration + 2min so a wedged connection fails fast.
                 t = time.time()
-                transcript, srt = transcribe(local)
+                transcript, srt = transcribe(local, timeout_s=max(180, int(dur * 2) + 120))
                 asr = time.time() - t; tot_asr += asr
                 log(f"   ASR → {len(transcript)} chars ({asr:.1f}s)")
 
