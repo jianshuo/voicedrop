@@ -133,27 +133,35 @@ struct ContentView: View {
         }
     }
 
+    // Same bottom-anchored skeleton as recordingScreen, so the round button never
+    // changes place between idle / recording / done — only its glyph and the
+    // top content (a 已上传 check) differ.
     private func readyScreen(checkmark: Bool) -> some View {
-        VStack(spacing: 28) {
+        VStack {
+            Spacer()
             if checkmark {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 48)).foregroundStyle(.green)
-                Text("已上传").foregroundStyle(.white.opacity(0.7)).font(.title3)
+                VStack(spacing: 10) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 48)).foregroundStyle(.green)
+                    Text("已上传").foregroundStyle(.white.opacity(0.7)).font(.title3)
+                }
             }
-            startButton(title: "开始录音")
+            Spacer()
+            startButton(title: checkmark ? "再录一条" : "开始录音")
+            Spacer().frame(height: 60)
         }
     }
 
     private func startButton(title: String) -> some View {
-        Button(action: { startRecording() }) {
-            ZStack {
-                Circle().strokeBorder(.white.opacity(0.6), lineWidth: 3).frame(width: 88, height: 88)
-                Circle().fill(.red).frame(width: 64, height: 64)
+        VStack(spacing: 8) {
+            Button(action: { startRecording() }) {
+                ZStack {
+                    Circle().strokeBorder(.white.opacity(0.6), lineWidth: 3).frame(width: 88, height: 88)
+                    Circle().fill(.red).frame(width: 64, height: 64)
+                }
             }
-        }
-        .accessibilityLabel(title)
-        .overlay(alignment: .bottom) {
-            Text(title).foregroundStyle(.white.opacity(0.5)).font(.footnote).offset(y: 30)
+            .accessibilityLabel(title)
+            Text(title).foregroundStyle(.white.opacity(0.5)).font(.footnote)
         }
     }
 

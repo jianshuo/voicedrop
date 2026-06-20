@@ -4,6 +4,10 @@ import SwiftUI
 /// them. Presented as a sheet from the record screen — the record flow itself
 /// is never blocked by this.
 struct LibraryView: View {
+    /// True while this tab is the selected one. Switching to it triggers a fresh
+    /// server pull, so newly-mined articles show up without a manual swipe-down.
+    var active: Bool = true
+
     @State private var store = LibraryStore()
     @State private var confirmDelete: Recording?
 
@@ -46,6 +50,9 @@ struct LibraryView: View {
         }
         .preferredColorScheme(.dark)
         .task { await store.load() }
+        .onChange(of: active) { _, nowActive in
+            if nowActive { Task { await store.load() } }
+        }
         .alert("删除这条录音？", isPresented: .init(
             get: { confirmDelete != nil },
             set: { if !$0 { confirmDelete = nil } }
