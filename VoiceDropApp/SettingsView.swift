@@ -12,6 +12,8 @@ final class SettingsStore {
     var saving = false
     var saved = false
     var error: String?
+    var mining = false
+    var mineMsg: String?
 
     private let base = URL(string: "https://jianshuo.dev/files/api")!
     private var token: String { AuthStore.shared.bearer }
@@ -67,6 +69,21 @@ final class SettingsStore {
             saved = true
         } catch { self.error = error.localizedDescription }
     }
+
+    /// Kick the server article-miner now instead of waiting for the hourly cron.
+    func triggerMine() async {
+        guard !token.isEmpty else { mineMsg = "请先登录"; return }
+        mining = true; mineMsg = nil
+        defer { mining = false }
+        var req = URLRequest(url: base.appending(path: "mine"))
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        do {
+            let (_, resp) = try await URLSession.shared.data(for: req)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            mineMsg = (200..<300).contains(code) ? "已触发，过一会儿回「文章」看" : "触发失败（\(code)）"
+        } catch { mineMsg = error.localizedDescription }
+    }
 }
 
 struct SettingsView: View {
@@ -113,6 +130,31 @@ struct SettingsView: View {
                     .disabled(store.saving)
                     if let e = store.error {
                         Text(e).font(.footnote).foregroundStyle(.orange)
+                    }
+
+                    Divider().overlay(Color.white.opacity(0.08)).padding(.vertical, 6)
+
+                    field(title: "加急处理") {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("不等每小时的自动处理，现在就让服务器立刻挖一遍新录音。")
+                                .font(.caption).foregroundStyle(.white.opacity(0.4))
+                            Button {
+                                Task { await store.triggerMine() }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    if store.mining { ProgressView().tint(.white) }
+                                    else { Image(systemName: "bolt.fill") }
+                                    Text("立即处理")
+                                }
+                                .frame(maxWidth: .infinity).padding(.vertical, 12)
+                                .background(Color.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 12))
+                                .foregroundStyle(.white)
+                            }
+                            .disabled(store.mining)
+                            if let m = store.mineMsg {
+                                Text(m).font(.footnote).foregroundStyle(.white.opacity(0.6))
+                            }
+                        }
                     }
                 }
                 .padding(20)
