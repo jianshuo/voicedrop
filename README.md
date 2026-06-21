@@ -82,4 +82,4 @@ open VoiceDrop.xcodeproj                 # 数据线连真机直接 Run（最简
 - **已知坑**：模拟器无麦克风 → 录音恒为 -91dB 静音；`CLGeocoder` 在 iOS 26 标记 deprecated（仍可用，将来可迁 `MKReverseGeocodingRequest`）。
 - **相关**：`~/code/drop` / `~/code/DuduCam`（同款 XcodeGen+fastlane iOS 工程，可参照签名/发布）。
 
-仓库：https://github.com/jianshuo/voicedrop （private）
+仓库：https://github.com/jianshuo/voicedrop
