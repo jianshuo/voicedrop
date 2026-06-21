@@ -36,3 +36,4 @@ build/
 # Python bytecode
 __pycache__/
 *.pyc
+.gstack/

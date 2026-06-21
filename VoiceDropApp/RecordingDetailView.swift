@@ -14,7 +14,7 @@ struct RecordingDetailView: View {
     @State private var loadingAudio = false
     @State private var articleIndex = 0
     @State private var sharing = false
-    @State private var shareLink: IdentifiableURL?
+    @State private var sharePayload: SharePayload?
 
     private var articles: [MinedArticle] { doc?.resolvedArticles ?? [] }
 
@@ -46,7 +46,10 @@ struct RecordingDetailView: View {
                     Button {
                         Task {
                             sharing = true
-                            if let u = await store.shareURL(recording) { shareLink = IdentifiableURL(url: u) }
+                            if let u = await store.shareURL(recording) {
+                                let text = Self.composeShareText(articles[safe: articleIndex], url: u)
+                                sharePayload = SharePayload(text: text)
+                            }
                             sharing = false
                         }
                     } label: {
@@ -67,7 +70,7 @@ struct RecordingDetailView: View {
             loadingDoc = false
         }
         .onDisappear { player.stop() }
-        .sheet(item: $shareLink) { ShareSheet(items: [$0.url]) }
+        .sheet(item: $sharePayload) { ShareSheet(items: [$0.text]) }
     }
 
     // MARK: Article rendering
@@ -190,8 +193,63 @@ private extension Array {
     subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
 }
 
-/// Wraps a URL so it can drive `.sheet(item:)`.
-struct IdentifiableURL: Identifiable { let url: URL; var id: String { url.absoluteString } }
+/// A ready-to-share payload: ONE combined string (article excerpt + short link),
+/// sized to fit X's 280 weighted-char cap. We hand the share sheet a single
+/// String rather than String+URL because X's extension is unreliable when given
+/// both (it may drop one); inside one string the link is still tappable elsewhere.
+struct SharePayload: Identifiable { let text: String; var id: String { text } }
+
+extension RecordingDetailView {
+    /// X counts "weighted" characters: ASCII = 1, everything else (CJK) = 2.
+    private static func xWeight(_ s: String) -> Int {
+        s.reduce(0) { $0 + ($1.isASCII ? 1 : 2) }
+    }
+
+    /// Build the share string: title, a blank line, then as much of the body's
+    /// opening as fits — cut at a sentence boundary — then a blank line and the
+    /// short link. Budget = 280 − 23 (any URL is t.co-shortened to 23) − 4 (two
+    /// "\n\n" separators) for the title+excerpt text.
+    static func composeShareText(_ article: MinedArticle?, url: URL) -> String {
+        let link = url.absoluteString
+        guard let a = article else { return link }
+        let title = a.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let textBudget = 280 - 23 - 4
+        let excerpt = sentenceTruncated(
+            a.body.trimmingCharacters(in: .whitespacesAndNewlines),
+            toWeight: max(0, textBudget - xWeight(title))
+        )
+        var out = title
+        if !excerpt.isEmpty { out += "\n\n" + excerpt }
+        out += "\n\n" + link
+        return out
+    }
+
+    /// Longest prefix of `s` within `budget` weighted chars, ending at the last
+    /// sentence boundary (。！？!?.\n) seen. Appends "…" only on a mid-sentence cut.
+    private static func sentenceTruncated(_ s: String, toWeight budget: Int) -> String {
+        if budget <= 2 { return "" }
+        let boundaries: Set<Character> = ["。", "！", "？", "!", "?", ".", "\n"]
+        var weight = 0
+        var cut = s.startIndex            // hard-cut end (exclusive)
+        var lastBoundary = s.startIndex   // end after the most recent boundary char
+        var i = s.startIndex
+        while i < s.endIndex {
+            let c = s[i]
+            let w = c.isASCII ? 1 : 2
+            if weight + w > budget - 2 { break }   // reserve 2 for a possible "…"
+            weight += w
+            let next = s.index(after: i)
+            cut = next
+            if boundaries.contains(c) { lastBoundary = next }
+            i = next
+        }
+        let usedBoundary = lastBoundary > s.startIndex
+        let end = usedBoundary ? lastBoundary : cut
+        var out = String(s[s.startIndex..<end]).trimmingCharacters(in: .whitespacesAndNewlines)
+        if end < s.endIndex && !usedBoundary && !out.isEmpty { out += "…" }
+        return out
+    }
+}
 
 /// The system share sheet (UIActivityViewController) for SwiftUI.
 struct ShareSheet: UIViewControllerRepresentable {
