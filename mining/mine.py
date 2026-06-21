@@ -142,7 +142,7 @@ def probe_duration(path):
 
 def write_empty(audio, reason):
     """Mark a recording processed-but-empty so it's never re-mined and the app
-    can show a 无语音 badge. reason ∈ {corrupt, silent, no-speech}."""
+    can show a 无语音 badge. reason ∈ {corrupt, silent, no-speech, no-article}."""
     key = empty_key_for(audio)
     body = {"schema": 2, "status": "empty", "reason": reason,
             "id": os.path.basename(audio)[:-4],
@@ -214,18 +214,23 @@ def _parse_llm_json(text):
     return json.loads(t)
 
 
+class NoArticleError(RuntimeError):
+    """LLM returned valid JSON with an empty articles array — content not article-worthy."""
+
+
 def _articles_from(text):
-    """Parse + clean the articles array from a model reply, or None."""
+    """Parse + clean the articles array from a model reply.
+    Returns a list (possibly empty when parsed OK but no usable articles),
+    or None when the JSON itself couldn't be parsed."""
     try:
         obj = _parse_llm_json(text)
     except Exception:
-        return None
+        return None  # parse failure — caller should retry
     arts = obj.get("articles") if isinstance(obj, dict) else obj
-    cleaned = [
+    return [
         {"title": (a.get("title") or "(无题)").strip(), "body": (a.get("body") or "").strip()}
         for a in (arts or []) if isinstance(a, dict) and (a.get("body") or "").strip()
-    ]
-    return cleaned or None
+    ]  # empty list = parsed OK, LLM decided no article possible
 
 
 def generate_articles(transcript, claude_md=""):
@@ -249,10 +254,11 @@ def generate_articles(transcript, claude_md=""):
     text = "".join(b.get("text", "") for b in resp.get("content", [])
                    if b.get("type") == "text")
     arts = _articles_from(text)
-    if arts:
-        return arts
-    # Never store raw model text as an article body — retry next cycle instead.
-    raise RuntimeError("LLM did not return parseable article JSON")
+    if arts is None:
+        raise RuntimeError("LLM did not return parseable JSON")
+    if not arts:
+        raise NoArticleError("LLM returned empty articles array")
+    return arts
 
 
 def main():
@@ -318,7 +324,14 @@ def main():
                 if claude_md:
                     log(f"   + CLAUDE.md ({len(claude_md)} chars)")
                 t = time.time()
-                articles = generate_articles(transcript, claude_md)
+                try:
+                    articles = generate_articles(transcript, claude_md)
+                except NoArticleError:
+                    llm = time.time() - t; tot_llm += llm
+                    write_empty(audio, "no-article")
+                    empty += 1
+                    log(f"   ✗ no-article → marked 无语音 (total {time.time()-rec_t0:.1f}s)")
+                    continue
                 llm = time.time() - t; tot_llm += llm
                 log(f"   Claude mine → {len(articles)} article(s) ({llm:.1f}s)")
 
