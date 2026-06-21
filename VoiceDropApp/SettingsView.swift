@@ -74,6 +74,7 @@ struct SettingsView: View {
     var active: Bool = true
     @State private var store = SettingsStore()
     @State private var editingStyle = false
+    @State private var draftStyle = ""
     @State private var idCopied = false
     @State private var tokenCopied = false
 
@@ -97,7 +98,7 @@ struct SettingsView: View {
                         VStack(alignment: .leading, spacing: 6) {
                             // Tap to edit in a full-screen sheet — the keyboard can't
                             // cover the tab bar there, and 完成 sits above it.
-                            Button { editingStyle = true } label: {
+                            Button { draftStyle = store.style; store.error = nil; editingStyle = true } label: {
                                 HStack(alignment: .top) {
                                     Text(store.style.isEmpty ? "点这里编辑你的文风" : store.style)
                                         .foregroundStyle(store.style.isEmpty ? .white.opacity(0.35) : .white.opacity(0.85))
@@ -114,30 +115,10 @@ struct SettingsView: View {
                         }
                     }
 
-                    Button {
-                        Task { await store.save() }
-                    } label: {
-                        HStack {
-                            if store.saving { ProgressView().tint(.black) }
-                            Text(store.saved ? "已保存 ✓" : "保存").bold()
-                        }
-                        .frame(maxWidth: .infinity).padding(.vertical, 12)
-                        .background(.white, in: RoundedRectangle(cornerRadius: 12))
-                        .foregroundStyle(.black)
-                    }
-                    .disabled(store.saving)
-                    if let e = store.error {
-                        Text(e).font(.footnote).foregroundStyle(.orange)
-                    }
-
                     Divider().overlay(Color.white.opacity(0.08)).padding(.vertical, 6)
 
                     field(title: "账户") {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text(anonId)
-                                .font(.caption.monospaced()).foregroundStyle(.white.opacity(0.5))
-                                .lineLimit(1).truncationMode(.middle)
-                                .textSelection(.enabled)
                             HStack(spacing: 10) {
                                 copyButton(idCopied ? "已复制 ✓" : "复制 ID", "doc.on.doc") {
                                     UIPasteboard.general.string = anonId; idCopied = true; tokenCopied = false
@@ -169,27 +150,48 @@ struct SettingsView: View {
         .sheet(isPresented: $editingStyle) { styleEditor }
     }
 
-    // Full-screen 文风 editor. The keyboard appears here, but 完成 is in the nav bar
-    // (above the keyboard) and the sheet can be swiped down — so nothing is blocked.
+    // Full-screen 文风 editor. Edits a draft so 取消 truly reverts. 保存 commits
+    // the draft and writes CLAUDE.md (name + style). Both buttons sit in the nav
+    // bar above the keyboard, so nothing is ever covered.
     private var styleEditor: some View {
         NavigationStack {
-            TextEditor(text: $store.style)
-                .foregroundStyle(.white)
-                .scrollContentBackground(.hidden)
-                .padding(12)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .background(Color.black.ignoresSafeArea())
-                .navigationTitle("文风")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbarBackground(Color.black, for: .navigationBar)
-                .toolbarColorScheme(.dark, for: .navigationBar)
-                .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("完成") { editingStyle = false }.bold()
-                    }
+            VStack(spacing: 0) {
+                TextEditor(text: $draftStyle)
+                    .foregroundStyle(.white)
+                    .scrollContentBackground(.hidden)
+                    .padding(12)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                if let e = store.error {
+                    Text(e).font(.footnote).foregroundStyle(.orange)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 16).padding(.bottom, 8)
                 }
+            }
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle("文风")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color.black, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("取消") { editingStyle = false }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        Task {
+                            store.style = draftStyle
+                            await store.save()
+                            if store.error == nil { editingStyle = false }
+                        }
+                    } label: {
+                        if store.saving { ProgressView().tint(.white) } else { Text("保存").bold() }
+                    }
+                    .disabled(store.saving)
+                }
+            }
         }
         .preferredColorScheme(.dark)
+        .interactiveDismissDisabled(store.saving)
     }
 
     private func copyButton(_ title: String, _ icon: String, _ action: @escaping () -> Void) -> some View {
