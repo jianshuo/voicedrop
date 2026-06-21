@@ -25,18 +25,22 @@ final class SettingsStore {
     var saved = false
     var error: String?
 
-    // WeChat public account credentials — stored as users/<sub>/WECHAT.json
+    // WeChat — stored as users/<sub>/WECHAT.json
+    var wechatEnabled = false
     var wechatAppId = ""
     var wechatSecret = ""
+    var wechatConfigured: Bool { !wechatAppId.isEmpty && !wechatSecret.isEmpty }
     var savingWechat = false
     var savedWechat = false
     var wechatError: String?
+    // Opaque fields preserved across load→save so mine.py can keep using them.
+    private(set) var wechatThumbMediaId = ""
 
     private let base = URL(string: "https://jianshuo.dev/files/api")!
     private var token: String { AuthStore.shared.bearer }
 
-    /// CLAUDE.md format — 文风 is the last, greedy section so markdown headings
-    /// inside the style text can't break the round-trip.
+    // MARK: – CLAUDE.md
+
     func compose() -> String {
         "# 我的名字\n\(name.trimmingCharacters(in: .whitespacesAndNewlines))\n\n# 我的文风\n\(style.trimmingCharacters(in: .whitespacesAndNewlines))\n"
     }
@@ -63,7 +67,7 @@ final class SettingsStore {
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            if code == 404 { return }                  // no settings yet — empty fields
+            if code == 404 { return }
             guard (200..<300).contains(code) else { error = "加载失败"; return }
             let parsed = Self.parse(String(decoding: data, as: UTF8.self))
             name = parsed.name; style = parsed.style
@@ -82,9 +86,7 @@ final class SettingsStore {
         }
         struct Resp: Decodable { let url: String }
         guard let obj = try? JSONDecoder().decode(Resp.self, from: data),
-              let url = URL(string: obj.url) else {
-            throw ArticlesLinkError.badResponse
-        }
+              let url = URL(string: obj.url) else { throw ArticlesLinkError.badResponse }
         return url
     }
 
@@ -105,6 +107,15 @@ final class SettingsStore {
         } catch { self.error = error.localizedDescription }
     }
 
+    // MARK: – WECHAT.json
+
+    private struct WechatConfig: Codable {
+        var appid: String
+        var secret: String
+        var enabled: Bool?
+        var thumb_media_id: String?
+    }
+
     func loadWechat() async {
         guard !token.isEmpty else { return }
         var req = URLRequest(url: base.appending(path: "download").appending(path: "WECHAT.json"))
@@ -114,10 +125,11 @@ final class SettingsStore {
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             if code == 404 { return }
             guard (200..<300).contains(code) else { return }
-            if let obj = try? JSONDecoder().decode([String: String].self, from: data) {
-                wechatAppId = obj["appid"] ?? ""
-                wechatSecret = obj["secret"] ?? ""
-            }
+            guard let cfg = try? JSONDecoder().decode(WechatConfig.self, from: data) else { return }
+            wechatAppId = cfg.appid
+            wechatSecret = cfg.secret
+            wechatEnabled = cfg.enabled ?? true   // existing configs default to on
+            wechatThumbMediaId = cfg.thumb_media_id ?? ""
         } catch {}
     }
 
@@ -125,9 +137,13 @@ final class SettingsStore {
         guard !token.isEmpty else { wechatError = "请先登录"; return }
         savingWechat = true; savedWechat = false; wechatError = nil
         defer { savingWechat = false }
-        let payload = ["appid": wechatAppId.trimmingCharacters(in: .whitespacesAndNewlines),
-                       "secret": wechatSecret.trimmingCharacters(in: .whitespacesAndNewlines)]
-        guard let body = try? JSONEncoder().encode(payload) else { wechatError = "编码失败"; return }
+        let cfg = WechatConfig(
+            appid: wechatAppId.trimmingCharacters(in: .whitespacesAndNewlines),
+            secret: wechatSecret.trimmingCharacters(in: .whitespacesAndNewlines),
+            enabled: wechatEnabled,
+            thumb_media_id: wechatThumbMediaId.isEmpty ? nil : wechatThumbMediaId
+        )
+        guard let body = try? JSONEncoder().encode(cfg) else { wechatError = "编码失败"; return }
         var req = URLRequest(url: base.appending(path: "upload").appending(path: "WECHAT.json"))
         req.httpMethod = "PUT"
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -142,6 +158,138 @@ final class SettingsStore {
     }
 }
 
+// MARK: – WeChat settings sheet
+
+private struct WechatSettingsSheet: View {
+    @Bindable var store: SettingsStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var ipCopied = false
+
+    private let whitelistIP = "66.42.45.128"
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+
+                    // ── Toggle ──────────────────────────────────────────────
+                    Toggle(isOn: $store.wechatEnabled) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("自动推草稿").font(.callout).foregroundStyle(.white.opacity(0.85))
+                            Text("挖出新文章后自动发到公众号草稿箱")
+                                .font(.caption).foregroundStyle(.white.opacity(0.4))
+                        }
+                    }
+                    .tint(.green)
+                    .padding(14)
+                    .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+
+                    // ── Credentials ──────────────────────────────────────────
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("凭据").font(.headline).foregroundStyle(.white.opacity(0.85))
+
+                        TextField("AppID（wx...）", text: $store.wechatAppId)
+                            .textFieldStyle(.plain)
+                            .submitLabel(.next)
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .foregroundStyle(.white)
+                            .padding(12)
+                            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+
+                        SecureField("AppSecret", text: $store.wechatSecret)
+                            .textFieldStyle(.plain)
+                            .submitLabel(.done)
+                            .foregroundStyle(.white)
+                            .padding(12)
+                            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+
+                        Button {
+                            Task { await store.saveWechat() }
+                        } label: {
+                            HStack(spacing: 6) {
+                                if store.savingWechat {
+                                    ProgressView().tint(.white).scaleEffect(0.8)
+                                } else if store.savedWechat {
+                                    Image(systemName: "checkmark").font(.caption)
+                                }
+                                Text(store.savedWechat ? "已保存" : "保存")
+                            }
+                            .font(.callout).foregroundStyle(.white.opacity(0.85))
+                            .padding(12)
+                            .frame(maxWidth: .infinity)
+                            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        .disabled(store.savingWechat || store.wechatAppId.isEmpty || store.wechatSecret.isEmpty)
+
+                        if let e = store.wechatError {
+                            Text(e).font(.caption).foregroundStyle(.orange)
+                        }
+                    }
+
+                    Divider().overlay(Color.white.opacity(0.08))
+
+                    // ── IP 白名单 ─────────────────────────────────────────────
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("IP 白名单").font(.headline).foregroundStyle(.white.opacity(0.85))
+
+                        Text("在公众号后台 → 开发 → 基本配置 → IP 白名单中加入以下地址，服务器才能正常调用接口推草稿。")
+                            .font(.caption).foregroundStyle(.white.opacity(0.4))
+                            .fixedSize(horizontal: false, vertical: true)
+
+                        Button {
+                            UIPasteboard.general.string = whitelistIP
+                            ipCopied = true
+                        } label: {
+                            HStack(spacing: 8) {
+                                Text(whitelistIP)
+                                    .font(.system(.callout, design: .monospaced))
+                                    .foregroundStyle(.white.opacity(0.85))
+                                Spacer()
+                                Image(systemName: ipCopied ? "checkmark" : "doc.on.doc")
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.4))
+                            }
+                            .padding(12)
+                            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                        }
+                        .onChange(of: ipCopied) { _, copied in
+                            if copied { Task { try? await Task.sleep(nanoseconds: 2_000_000_000); ipCopied = false } }
+                        }
+
+                        Link(destination: URL(string: "https://developers.weixin.qq.com/doc/offiaccount/Basic_Information/Get_access_token.html")!) {
+                            HStack {
+                                Image(systemName: "safari")
+                                Text("微信公众平台开发者文档")
+                                Spacer()
+                                Image(systemName: "arrow.up.right").font(.caption2)
+                            }
+                            .font(.callout).foregroundStyle(.white.opacity(0.6))
+                            .padding(12)
+                            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                }
+                .padding(20)
+            }
+            .scrollDismissesKeyboard(.interactively)
+            .background(Color.black.ignoresSafeArea())
+            .navigationTitle("微信公众号")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Color.black, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { dismiss() }.bold()
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+}
+
+// MARK: – Main settings view
+
 struct SettingsView: View {
     var active: Bool = true
     @State private var store = SettingsStore()
@@ -151,6 +299,7 @@ struct SettingsView: View {
     @State private var tokenCopied = false
     @State private var fetchingArticlesLink = false
     @State private var articlesLinkError: String? = nil
+    @State private var showingWechat = false
 
     private var anonId: String { AuthStore.shared.anonId }
     private var anonToken: String { AuthStore.shared.anonToken }
@@ -170,8 +319,6 @@ struct SettingsView: View {
 
                     field(title: "文风") {
                         VStack(alignment: .leading, spacing: 6) {
-                            // Tap to edit in a full-screen sheet — the keyboard can't
-                            // cover the tab bar there, and 完成 sits above it.
                             Button { draftStyle = store.style; store.error = nil; editingStyle = true } label: {
                                 HStack(alignment: .top) {
                                     Text(store.style.isEmpty ? "点这里编辑你的文风" : store.style)
@@ -191,45 +338,18 @@ struct SettingsView: View {
 
                     Divider().overlay(Color.white.opacity(0.08)).padding(.vertical, 6)
 
-                    field(title: "微信公众号") {
-                        VStack(alignment: .leading, spacing: 10) {
-                            TextField("AppID（wx...）", text: $store.wechatAppId)
-                                .textFieldStyle(.plain)
-                                .submitLabel(.next)
-                                .autocorrectionDisabled()
-                                .textInputAutocapitalization(.never)
-                                .foregroundStyle(.white)
-                                .padding(12)
-                                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-                            SecureField("AppSecret", text: $store.wechatSecret)
-                                .textFieldStyle(.plain)
-                                .submitLabel(.done)
-                                .foregroundStyle(.white)
-                                .padding(12)
-                                .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
-                            Button {
-                                Task { await store.saveWechat() }
-                            } label: {
-                                HStack {
-                                    if store.savingWechat {
-                                        ProgressView().tint(.white).scaleEffect(0.8)
-                                    } else if store.savedWechat {
-                                        Image(systemName: "checkmark").font(.caption)
-                                    }
-                                    Text(store.savedWechat ? "已保存" : "保存公众号凭据")
-                                }
-                                .font(.callout).foregroundStyle(.white.opacity(0.85))
-                                .padding(12)
-                                .frame(maxWidth: .infinity)
-                                .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    field(title: "发布渠道") {
+                        Button { showingWechat = true } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "paperplane").foregroundStyle(.white.opacity(0.6))
+                                Text("微信公众号").font(.callout).foregroundStyle(.white.opacity(0.85))
+                                Spacer()
+                                wechatStatusBadge
+                                Image(systemName: "chevron.right")
+                                    .font(.caption).foregroundStyle(.white.opacity(0.25))
                             }
-                            .disabled(store.savingWechat || store.wechatAppId.isEmpty || store.wechatSecret.isEmpty)
-                            if let e = store.wechatError {
-                                Text(e).font(.caption).foregroundStyle(.orange)
-                            } else {
-                                Text("设置后，每次挖出新文章都会自动推送微信公众号草稿。")
-                                    .font(.caption).foregroundStyle(.white.opacity(0.4))
-                            }
+                            .padding(12)
+                            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                         }
                     }
 
@@ -262,7 +382,6 @@ struct SettingsView: View {
                                     defer { fetchingArticlesLink = false }
                                     do {
                                         let url = try await store.articlesPageURL()
-                                        articlesLinkError = nil
                                         await UIApplication.shared.open(url)
                                     } catch {
                                         articlesLinkError = error.localizedDescription
@@ -284,8 +403,7 @@ struct SettingsView: View {
                                 .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                             }
                             if let errMsg = articlesLinkError {
-                                Text(errMsg)
-                                    .font(.caption).foregroundStyle(.orange)
+                                Text(errMsg).font(.caption).foregroundStyle(.orange)
                             } else {
                                 Text("生成一个 24 小时有效的临时链接，在浏览器里浏览你所有成文的录音。")
                                     .font(.caption).foregroundStyle(.white.opacity(0.4))
@@ -329,11 +447,31 @@ struct SettingsView: View {
         .task { await store.load(); await store.loadWechat() }
         .onChange(of: active) { _, now in if now { Task { await store.load(); await store.loadWechat() } } }
         .sheet(isPresented: $editingStyle) { styleEditor }
+        .sheet(isPresented: $showingWechat) { WechatSettingsSheet(store: store) }
     }
 
-    // Full-screen 文风 editor. Edits a draft so 取消 truly reverts. 保存 commits
-    // the draft and writes CLAUDE.md (name + style). Both buttons sit in the nav
-    // bar above the keyboard, so nothing is ever covered.
+    @ViewBuilder
+    private var wechatStatusBadge: some View {
+        if store.wechatConfigured {
+            Text(store.wechatEnabled ? "已开启" : "已关闭")
+                .font(.caption2).fontWeight(.semibold)
+                .foregroundStyle(store.wechatEnabled ? .green : .white.opacity(0.3))
+                .padding(.horizontal, 7).padding(.vertical, 3)
+                .background(
+                    store.wechatEnabled
+                        ? Color.green.opacity(0.15)
+                        : Color.white.opacity(0.06),
+                    in: Capsule()
+                )
+        } else {
+            Text("未配置")
+                .font(.caption2).fontWeight(.semibold)
+                .foregroundStyle(.white.opacity(0.3))
+                .padding(.horizontal, 7).padding(.vertical, 3)
+                .background(Color.white.opacity(0.06), in: Capsule())
+        }
+    }
+
     private var styleEditor: some View {
         NavigationStack {
             VStack(spacing: 0) {
@@ -391,4 +529,3 @@ struct SettingsView: View {
         }
     }
 }
-

@@ -142,15 +142,19 @@ def empty_key_for(audio_key):
 
 
 def fetch_wechat_config(audio_key):
-    """Returns {'appid': ..., 'secret': ...} from the user's WECHAT.json, or None."""
+    """Returns the user's WECHAT.json dict, or None if absent / disabled / incomplete."""
     parts = audio_key.rsplit("/", 1)
     prefix = parts[0] + "/" if len(parts) == 2 else ""
     try:
         raw = _req("GET", f"{BASE}/download/{quote(prefix + 'WECHAT.json')}",
                    headers={"Authorization": f"Bearer {TOKEN}"})
         cfg = json.loads(raw)
-        if cfg.get("appid") and cfg.get("secret"):
-            return cfg
+        if not cfg.get("appid") or not cfg.get("secret"):
+            return None
+        # enabled defaults to True for backwards compat (old JSON had no field)
+        if cfg.get("enabled") is False:
+            return None
+        return cfg
     except Exception:
         pass
     return None
