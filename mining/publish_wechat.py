@@ -40,7 +40,9 @@ def main():
 
     wx_token = mine.wechat_access_token(cfg["appid"], cfg["secret"])
     thumb_id = mine.ensure_wechat_thumb(wx_token, cfg, article_key)
-    created, updated = mine.sync_wechat_drafts(wx_token, art, thumb_id)
+    created, updated = mine.sync_wechat_drafts(
+        wx_token, art, thumb_id,
+        make_thumb=lambda: mine._store_thumb(wx_token, cfg, article_key))
 
     # Persist the (possibly new) wechatMediaIds so a re-tap updates, not dupes.
     mine.api_put(article_key, json.dumps(art, ensure_ascii=False).encode(),

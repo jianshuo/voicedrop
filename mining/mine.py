@@ -269,18 +269,25 @@ def _upload_wechat_cover(access_token):
     return result["media_id"]
 
 
+class InvalidMediaIdError(RuntimeError):
+    """WeChat errcode 40007 — a media_id (draft or cover) no longer exists, e.g.
+    the user deleted the draft / wiped materials. Recoverable: recreate it."""
+
+
+def _store_thumb(access_token, wechat_cfg, key):
+    """Upload a fresh placeholder cover, persist its id into WECHAT.json, and
+    return the new thumb_media_id."""
+    thumb_id = _upload_wechat_cover(access_token)
+    wechat_cfg["thumb_media_id"] = thumb_id
+    api_put(_user_prefix(key) + "WECHAT.json",
+            json.dumps(wechat_cfg, ensure_ascii=False).encode(), "application/json")
+    return thumb_id
+
+
 def ensure_wechat_thumb(access_token, wechat_cfg, audio_key):
     """Return a permanent thumb_media_id, uploading a cover once if needed.
     Updates WECHAT.json in R2 so the ID is reused on every subsequent draft."""
-    thumb_id = wechat_cfg.get("thumb_media_id", "")
-    if thumb_id:
-        return thumb_id
-    thumb_id = _upload_wechat_cover(access_token)
-    wechat_cfg["thumb_media_id"] = thumb_id
-    prefix = _user_prefix(audio_key)
-    api_put(prefix + "WECHAT.json",
-            json.dumps(wechat_cfg, ensure_ascii=False).encode(), "application/json")
-    return thumb_id
+    return wechat_cfg.get("thumb_media_id") or _store_thumb(access_token, wechat_cfg, audio_key)
 
 
 def create_wechat_draft(access_token, title, body_md, thumb_media_id):
@@ -301,6 +308,8 @@ def create_wechat_draft(access_token, title, body_md, thumb_media_id):
                       headers={"Content-Type": "application/json; charset=utf-8"})
     data = json.loads(raw)
     if data.get("errcode") and data["errcode"] != 0:
+        if data["errcode"] == 40007:        # stale thumb_media_id
+            raise InvalidMediaIdError(f"WeChat draft create: {data}")
         raise RuntimeError(f"WeChat draft error: {data}")
     return data.get("media_id", "")
 
@@ -326,27 +335,42 @@ def update_wechat_draft(access_token, media_id, index, title, body_md, thumb_med
                       headers={"Content-Type": "application/json; charset=utf-8"})
     data = json.loads(raw)
     if data.get("errcode"):
+        if data["errcode"] == 40007:        # stale draft media_id (deleted draft)
+            raise InvalidMediaIdError(f"WeChat draft update: {data}")
         raise RuntimeError(f"WeChat draft update error: {data}")
 
 
-def sync_wechat_drafts(access_token, art, thumb_media_id):
-    """Push one WeChat draft per article in `art`, mutating each in place:
-    an article that already carries a wechatMediaId is updated where it sits
-    (no duplicate); a new one is created and its media_id stored back. Lets the
-    miner's first pass and the app's on-demand 发布 share one path. Returns
-    (created, updated)."""
+def sync_wechat_drafts(access_token, art, thumb_media_id, make_thumb=None):
+    """Push one WeChat draft per article in `art`, mutating each in place.
+    An article with a still-valid wechatMediaId is updated where it sits (no
+    duplicate); a missing OR stale one (the saved draft was deleted → 40007) is
+    created fresh and its id stored back. If creating also 40007s — the cover
+    material was wiped — and make_thumb is given, a new cover is uploaded and the
+    create retried once. Shared by the miner's first pass and the app's on-demand
+    发布. Returns (created, updated)."""
     created = updated = 0
     for a in art.get("articles", []):
         mid = a.get("wechatMediaId")
         if mid:
-            update_wechat_draft(access_token, mid, 0, a["title"], a["body"], thumb_media_id)
-            updated += 1
-            log(f"   ♻ WeChat draft updated: {a['title']} → {mid}")
-        else:
+            try:
+                update_wechat_draft(access_token, mid, 0, a["title"], a["body"], thumb_media_id)
+                updated += 1
+                log(f"   ♻ WeChat draft updated: {a['title']} → {mid}")
+                continue
+            except InvalidMediaIdError:
+                log(f"   ⚠ stale draft media_id {mid} → creating a fresh draft")
+                a.pop("wechatMediaId", None)
+        try:
             new_mid = create_wechat_draft(access_token, a["title"], a["body"], thumb_media_id)
-            a["wechatMediaId"] = new_mid
-            created += 1
-            log(f"   📩 WeChat draft: {a['title']} → {new_mid}")
+        except InvalidMediaIdError:
+            if not make_thumb:
+                raise
+            log("   ⚠ cover material invalid → re-uploading cover")
+            thumb_media_id = make_thumb()
+            new_mid = create_wechat_draft(access_token, a["title"], a["body"], thumb_media_id)
+        a["wechatMediaId"] = new_mid
+        created += 1
+        log(f"   📩 WeChat draft: {a['title']} → {new_mid}")
     return created, updated
 
 
@@ -613,7 +637,8 @@ def main():
                     try:
                         wx_token = wechat_access_token(wechat_cfg["appid"], wechat_cfg["secret"])
                         thumb_id = ensure_wechat_thumb(wx_token, wechat_cfg, audio)
-                        sync_wechat_drafts(wx_token, art, thumb_id)
+                        sync_wechat_drafts(wx_token, art, thumb_id,
+                                           make_thumb=lambda: _store_thumb(wx_token, wechat_cfg, audio))
                         api_put(json_key, json.dumps(art, ensure_ascii=False).encode(),
                                 "application/json")
                     except Exception as wx_err:
