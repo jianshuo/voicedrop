@@ -9,6 +9,7 @@ import Observation
 final class Uploader {
 
     private(set) var pendingCount: Int = 0
+    private(set) var pending: [URL] = []      // local takes still queued (observable)
     private(set) var lastError: String?
 
     /// Base URL is public (not a secret), so it's hardcoded.
@@ -46,7 +47,7 @@ final class Uploader {
         return data.range(of: Data("moov".utf8)) != nil
     }
 
-    func refreshPending() { pendingCount = pendingFiles().count }
+    func refreshPending() { pending = pendingFiles(); pendingCount = pending.count }
 
     /// Move an uploaded take out of the pending scan but keep it on disk
     /// (Documents/uploaded/) — used when "上传后删除本地" is off.

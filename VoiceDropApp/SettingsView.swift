@@ -241,7 +241,7 @@ struct SettingsView: View {
                     SettingsCard {
                         NavigationLink { AccountView() } label: {
                             SettingsRow(tileBG: Theme.inkTile, symbol: "checkmark.shield.fill", tileFG: .white,
-                                        title: "匿名账户", subtitle: "无需登录 · ID 已随 iCloud 钥匙串备份") {
+                                        title: "账户", subtitle: "无需登录 · ID 已随 iCloud 钥匙串备份") {
                                 HStack(spacing: 8) {
                                     Text(shortTag).font(.system(size: 13, design: .monospaced)).foregroundStyle(Theme.faint)
                                     settingsChevron
@@ -260,11 +260,6 @@ struct SettingsView: View {
                                 }
                             }.buttonStyle(.plain)
                             settingsRowDivider
-                            SettingsRow(tileBG: Theme.tileNeutral, symbol: "mic", tileFG: Theme.secondary,
-                                        title: "语音修改文章", subtitle: "用说话改文章，实时生效") {
-                                Text("开").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.greenDone)
-                            }
-                            settingsRowDivider
                             Button { showStyle = true } label: {
                                 SettingsRow(tileBG: Theme.tileNeutral, symbol: "pencil", tileFG: Theme.secondary,
                                             title: "写作风格", subtitle: "名字与文风，决定挖文章的语气") { settingsChevron }
@@ -279,30 +274,11 @@ struct SettingsView: View {
                                 Toggle("", isOn: Binding(get: { prefs.iCloudBackup }, set: { prefs.iCloudBackup = $0 }))
                                     .labelsHidden().tint(Theme.accent)
                             }
-                            settingsRowDivider
-                            SettingsRow(tileBG: Theme.tileNeutral, symbol: "trash", tileFG: Theme.secondary,
-                                        title: "上传后删除本地", subtitle: "省空间，云端已留底") {
-                                Toggle("", isOn: Binding(get: { prefs.deleteLocalAfterUpload }, set: { prefs.deleteLocalAfterUpload = $0 }))
-                                    .labelsHidden().tint(Theme.accent)
-                            }
                         }
                     }
 
-                    group("录音与其他") {
+                    group("其他") {
                         SettingsCard {
-                            Menu {
-                                Button("标准 · AAC") { prefs.highQuality = false }
-                                Button("高 · AAC") { prefs.highQuality = true }
-                            } label: {
-                                SettingsRow(tileBG: Theme.tileNeutral, symbol: "waveform.circle", tileFG: Theme.secondary,
-                                            title: "录音质量") {
-                                    HStack(spacing: 8) {
-                                        Text(prefs.qualityLabel).font(.system(size: 14)).foregroundStyle(Theme.secondary)
-                                        settingsChevron
-                                    }
-                                }
-                            }
-                            settingsRowDivider
                             Button { showPrivacy = true } label: {
                                 SettingsRow(tileBG: Theme.tileNeutral, symbol: "hand.raised", tileFG: Theme.secondary,
                                             title: "隐私说明") { settingsChevron }
@@ -310,7 +286,7 @@ struct SettingsView: View {
                             settingsRowDivider
                             SettingsRow(tileBG: Theme.tileNeutral, symbol: "info.circle", tileFG: Theme.secondary,
                                         title: "版本") {
-                                Text(Prefs.appVersion).font(.system(size: 14)).foregroundStyle(Theme.faint)
+                                Text(Prefs.versionBuild).font(.system(size: 14)).foregroundStyle(Theme.faint)
                             }
                         }
                     }

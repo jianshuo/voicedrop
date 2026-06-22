@@ -2,20 +2,18 @@ import SwiftUI
 
 /// Full-screen recording takeover (方案二): launched from the red record key on
 /// the 我的录音 list. Starts recording on appear → big stopwatch + live waveform
-/// → stop → upload ring → returns to the list. The Phase machine + recorder /
-/// uploader / location logic is unchanged from the old root screen.
+/// → stop. On stop it promotes the take into the upload queue and closes
+/// immediately — the *list* shows it as 正在上传 and does the upload. No separate
+/// uploading screen.
 struct RecordSession: View {
-    /// Called to dismiss back to the list (after upload, on 在后台上传, or cancel).
+    /// Dismiss back to the list (after stop, or cancel).
     var onFinish: () -> Void
 
-    enum Phase: Equatable { case starting, denied, recording, uploading, done, failed(String) }
+    enum Phase: Equatable { case starting, denied, recording, failed(String) }
 
     @State private var recorder = AudioRecorder()
-    @State private var uploader = Uploader()
     @State private var location = LocationTagger()
     @State private var phase: Phase = .starting
-    @State private var recordedLabel = "00:00"
-    @State private var spin = false
 
     var body: some View {
         ZStack {
@@ -27,16 +25,12 @@ struct RecordSession: View {
                 messageScreen(title: "需要麦克风权限", subtitle: "VoiceDrop 要用麦克风录音。", primary: "去设置") { openSettings() }
             case .recording:
                 recordingScreen
-            case .uploading:
-                uploadingScreen
-            case .done:
-                ProgressView().tint(Theme.recordRed)
             case .failed(let msg):
-                messageScreen(title: "上传未完成", subtitle: msg + "\n录音已存好，会自动重传。", primary: "好") { onFinish() }
+                messageScreen(title: "录音出错", subtitle: msg, primary: "好") { onFinish() }
             }
         }
         .task {
-            recorder.onInterrupted = { take in Task { await finalize(take) } }
+            recorder.onInterrupted = { take in Task { await promote(take); onFinish() } }
             let granted = await AudioRecorder.ensurePermission()
             guard granted else { phase = .denied; return }
             location.start()
@@ -67,7 +61,7 @@ struct RecordSession: View {
             Spacer()
 
             VStack(spacing: 7) {
-                Button { Task { await stopAndUpload() } } label: {
+                Button { Task { await stop() } } label: {
                     Circle().fill(Theme.card).frame(width: 66, height: 66)
                         .overlay(Circle().stroke(Color(hex: "E8DECF"), lineWidth: 1))
                         .overlay(RoundedRectangle(cornerRadius: 6).fill(Theme.recordRed).frame(width: 26, height: 26))
@@ -80,7 +74,6 @@ struct RecordSession: View {
         }
     }
 
-    /// 13 bars, heights driven by the live input level (text-free, no fake data).
     private var waveform: some View {
         let pattern: [Double] = [0.30, 0.56, 0.82, 0.48, 0.95, 0.65, 0.38, 0.74, 0.52, 0.86, 0.34, 0.62, 0.44]
         return HStack(alignment: .bottom, spacing: 3) {
@@ -101,45 +94,6 @@ struct RecordSession: View {
         return Color(hex: "E5C8C3")
     }
 
-    // MARK: Uploading (frame ③)
-
-    private var uploadingScreen: some View {
-        VStack(spacing: 0) {
-            Text("已录制 \(recordedLabel)").font(.system(size: 14)).tracking(2).foregroundStyle(Theme.secondary)
-                .padding(.top, 64)
-            Spacer()
-            VStack(spacing: 26) {
-                ZStack {
-                    Circle().fill(Theme.card)
-                        .overlay(Circle().stroke(Theme.borderChrome, lineWidth: 1))
-                        .shadow(color: Color(.sRGB, red: 180/255, green: 140/255, blue: 100/255, opacity: 0.12), radius: 9, x: 0, y: 6)
-                    Circle().stroke(Color(hex: "F0E8DA"), lineWidth: 3).padding(4)
-                    Circle().trim(from: 0, to: 0.7)
-                        .stroke(Theme.recordRed, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                        .padding(4)
-                        .rotationEffect(.degrees(spin ? 360 : 0))
-                    Image(systemName: "arrow.up").font(.system(size: 20, weight: .semibold)).foregroundStyle(Theme.recordRed)
-                }
-                .frame(width: 88, height: 88)
-                .onAppear { withAnimation(.linear(duration: 1).repeatForever(autoreverses: false)) { spin = true } }
-
-                VStack(spacing: 5) {
-                    Text("正在上传…").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.ink)
-                    Text("上传后将自动转写、成文").font(.system(size: 13)).foregroundStyle(Theme.metaChrome)
-                }
-            }
-            Spacer()
-            Button { onFinish() } label: {
-                Text("在后台上传").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.secondary)
-                    .frame(maxWidth: .infinity).padding(.vertical, 14)
-                    .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.R.primary))
-                    .overlay(RoundedRectangle(cornerRadius: Theme.R.primary).stroke(Theme.borderChrome, lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-            .padding(.horizontal, 24).padding(.bottom, 30)
-        }
-    }
-
     private func messageScreen(title: String, subtitle: String, primary: String, action: @escaping () -> Void) -> some View {
         VStack(spacing: 16) {
             Text(title).font(.system(size: 22, weight: .semibold)).foregroundStyle(Theme.ink)
@@ -155,40 +109,38 @@ struct RecordSession: View {
         }
     }
 
-    // MARK: Flow (unchanged logic)
+    // MARK: Flow
 
-    private func stopAndUpload() async {
+    private func stop() async {
         guard let take = recorder.stop() else { onFinish(); return }
-        recordedLabel = timeString(take.duration)
-        phase = .uploading
-        await finalize(take)
+        await promote(take)
+        onFinish()                    // close — the list shows 正在上传 and uploads
     }
 
-    private func finalize(_ take: AudioRecorder.Recording) async {
-        phase = .uploading
+    /// Promote the staging take into the upload queue (enriched name + iCloud
+    /// mirror). No upload here — the list drains the queue. Place geocoding is
+    /// best-effort and usually instant (location already resolved during the take).
+    private func promote(_ take: AudioRecorder.Recording) async {
         let place = await location.placeTag()
         let finalName = RecordingName.make(start: take.start, duration: take.duration, place: place)
-        var toUpload = take.url
+        var url = take.url
         let finalURL = AudioRecorder.documentsDir.appending(path: finalName)
         do {
             try FileManager.default.moveItem(at: take.url, to: finalURL)
-            toUpload = finalURL
+            url = finalURL
         } catch {
             let basicURL = AudioRecorder.documentsDir
                 .appending(path: "VoiceDrop-\(RecordingName.timestamp(take.start)).m4a")
-            if (try? FileManager.default.moveItem(at: take.url, to: basicURL)) != nil { toUpload = basicURL }
+            if (try? FileManager.default.moveItem(at: take.url, to: basicURL)) != nil { url = basicURL }
         }
         if Prefs.shared.iCloudBackup {
-            let toArchive = toUpload
+            let toArchive = url
             await Task.detached { ICloudArchive.save(toArchive) }.value
         }
-        let ok = await uploader.upload(toUpload)
-        if ok { phase = .done; onFinish() }          // back to the list (it refreshes)
-        else { phase = .failed(uploader.lastError ?? "上传失败") }
     }
 
     private func openSettings() {
-        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+        if let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) }
     }
 
     private func timeString(_ t: TimeInterval) -> String {

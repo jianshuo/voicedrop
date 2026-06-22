@@ -59,7 +59,7 @@ struct AccountView: View {
                 RoundedRectangle(cornerRadius: Theme.R.tile).fill(Theme.inkTile).frame(width: 46, height: 46)
                     .overlay(Image(systemName: "checkmark.shield.fill").font(.system(size: 20)).foregroundStyle(.white))
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("匿名账户").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.ink)
+                    Text("账户").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.ink)
                     Text("在这台设备上自动生成，不需要用户名或密码。")
                         .font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
                         .fixedSize(horizontal: false, vertical: true)

@@ -13,13 +13,22 @@ struct LibraryView: View {
     @State private var showSettings = false
     @Environment(\.scenePhase) private var scenePhase
 
+    /// Local takes still uploading (shown at the top) + server recordings.
+    private var rows: [Recording] {
+        let serverNames = Set(store.recordings.map(\.audioName))
+        let pending = uploader.pending
+            .map { Recording(audioName: $0.lastPathComponent, uploaded: "", hasArticles: false, isEmpty: false, uploading: true) }
+            .filter { !serverNames.contains($0.audioName) }
+        return (pending + store.recordings).sorted { $0.audioName > $1.audioName }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             topBar
             content
-            recordDock
         }
         .background(Theme.appBG.ignoresSafeArea())
+        .safeAreaInset(edge: .bottom, spacing: 0) { recordDock }
         .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(isPresented: $showSettings) { SettingsView() }
         .fullScreenCover(isPresented: $showRecord) {
@@ -42,8 +51,8 @@ struct LibraryView: View {
     }
 
     private func refresh() async {
+        uploader.refreshPending()                 // surface 正在上传 rows immediately
         await store.load()
-        uploader.refreshPending()
         if uploader.pendingCount > 0 { _ = await uploader.drainPending(); await store.load() }
     }
 
@@ -61,32 +70,37 @@ struct LibraryView: View {
             Spacer()
             NavSquare(systemName: "gearshape") { showSettings = true }.accessibilityLabel("设置")
         }
-        .padding(.top, 62).padding(.horizontal, 22).padding(.bottom, 12)
+        .padding(.top, 6).padding(.horizontal, 22).padding(.bottom, 12)
     }
 
     // MARK: List
 
     @ViewBuilder private var content: some View {
-        if store.loading && store.recordings.isEmpty {
+        if store.loading && rows.isEmpty {
             Spacer(); ProgressView().tint(Theme.recordRed); Spacer()
-        } else if let err = store.error, store.recordings.isEmpty {
+        } else if let err = store.error, rows.isEmpty {
             Spacer(); message("加载失败", err); Spacer()
-        } else if store.recordings.isEmpty {
+        } else if rows.isEmpty {
             Spacer(); message("还没有录音", "点下面的红键录一条，过会儿服务器会自动转写并挖成文章。"); Spacer()
         } else {
             List {
-                ForEach(store.recordings) { rec in
-                    NavigationLink {
-                        RecordingDetailView(store: store, recording: rec)
-                    } label: {
+                ForEach(rows) { rec in
+                    if rec.uploading {
                         rowCard(rec)
-                    }
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-                    .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 6, trailing: 16))
-                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                        Button(role: .destructive) { confirmDelete = rec } label: { Label("删除", systemImage: "trash") }
-                            .tint(.red)
+                            .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 6, trailing: 16))
+                    } else {
+                        NavigationLink {
+                            RecordingDetailView(store: store, recording: rec)
+                        } label: {
+                            rowCard(rec)
+                        }
+                        .listRowBackground(Color.clear).listRowSeparator(.hidden)
+                        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 6, trailing: 16))
+                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                            Button(role: .destructive) { confirmDelete = rec } label: { Label("删除", systemImage: "trash") }
+                                .tint(.red)
+                        }
                     }
                 }
             }
@@ -126,7 +140,12 @@ struct LibraryView: View {
     }
 
     @ViewBuilder private func statusBadge(_ rec: Recording) -> some View {
-        if rec.hasArticles {
+        if rec.uploading {
+            HStack(spacing: 5) {
+                ProgressView().controlSize(.mini).tint(Theme.recordRed)
+                Text("正在上传").font(.system(size: 12.5)).foregroundStyle(Theme.recordRed)
+            }
+        } else if rec.hasArticles {
             badge(Theme.greenDone, "已成文")
                 .contentShape(Rectangle())
                 .onLongPressGesture { confirmReprocess = rec }
@@ -170,7 +189,7 @@ struct LibraryView: View {
             Text("轻点录音").font(.system(size: 12)).tracking(1).foregroundStyle(Theme.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, 14).padding(.bottom, 26)
+        .padding(.top, 14).padding(.bottom, 10)
         .background(Theme.appBG)
         .overlay(alignment: .top) { Rectangle().fill(Theme.borderChrome).frame(height: 1) }
     }

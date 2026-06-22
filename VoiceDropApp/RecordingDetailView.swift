@@ -47,7 +47,7 @@ struct RecordingDetailView: View {
         }
         .background(Theme.readBG.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .overlay(alignment: .bottom) { if !articles.isEmpty { voiceBar } }
+        .safeAreaInset(edge: .bottom, spacing: 0) { if !articles.isEmpty { voiceBar } }
         .overlay(alignment: .bottom) { toastView }
         .task {
             if recording.isEmpty {
@@ -146,7 +146,7 @@ struct RecordingDetailView: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.bottom, 120)   // clear the persistent bar
+            .padding(.bottom, 24)   // safeAreaInset reserves the bar height
         }
     }
 

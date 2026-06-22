@@ -169,8 +169,10 @@ final class Prefs {
 
     var qualityLabel: String { highQuality ? "高 · AAC" : "标准 · AAC" }
 
-    /// The app version string for the Settings "版本" row.
-    static var appVersion: String {
-        (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "1.0"
+    /// "1.0 (42)" — marketing version + build number for the Settings 版本 row.
+    static var versionBuild: String {
+        let v = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "1.0"
+        let b = (Bundle.main.infoDictionary?["CFBundleVersion"] as? String) ?? "1"
+        return "\(v) (\(b))"
     }
 }

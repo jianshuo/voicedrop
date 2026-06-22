@@ -39,6 +39,7 @@ struct Recording: Identifiable {
     let hasArticles: Bool
     let isEmpty: Bool            // a `articles/<stem>.empty` marker exists (no usable speech)
     var articleTitle: String?    // first mined article's title; fills the place slot once 已成文
+    var uploading: Bool = false  // a local take still in the upload queue (not yet on the server)
 
     var id: String { audioName }
     var stem: String { String(audioName.dropLast(4)) }          // strip .m4a
