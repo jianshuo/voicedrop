@@ -29,7 +29,7 @@ struct LibraryView: View {
             content
         }
         .background(Theme.appBG.ignoresSafeArea())
-        .safeAreaInset(edge: .bottom, spacing: 0) { recordDock }
+        .overlay(alignment: .bottom) { recordButton }
         .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(item: $selectedRec) { rec in RecordingDetailView(store: store, recording: rec) }
         .navigationDestination(isPresented: $showSettings) { SettingsView() }
@@ -109,6 +109,7 @@ struct LibraryView: View {
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            .contentMargins(.bottom, 104, for: .scrollContent)   // clear the floating button
             .refreshable { await refresh() }
         }
     }
@@ -175,9 +176,9 @@ struct LibraryView: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: Record dock
+    // MARK: Record button (floats over the list — no pane)
 
-    private var recordDock: some View {
+    private var recordButton: some View {
         VStack(spacing: 7) {
             Button { showRecord = true } label: {
                 Circle().fill(Theme.card).frame(width: 66, height: 66)
@@ -186,14 +187,11 @@ struct LibraryView: View {
                         Circle().fill(Theme.recordRed).frame(width: 54, height: 54)
                             .shadow(color: Color(.sRGB, red: 229/255, green: 57/255, blue: 46/255, opacity: 0.40), radius: 4, x: 0, y: 2)
                     )
-                    .shadow(color: .black.opacity(0.06), radius: 7, x: 0, y: 4)
+                    .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 5)   // lift off the list
             }
             .buttonStyle(.plain).accessibilityLabel("录音")
             Text("轻点录音").font(.system(size: 12)).tracking(1).foregroundStyle(Theme.secondary)
         }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 14).padding(.bottom, 10)
-        .background(Theme.appBG)
-        .overlay(alignment: .top) { Rectangle().fill(Theme.borderChrome).frame(height: 1) }
+        .padding(.bottom, 8)
     }
 }

@@ -47,7 +47,7 @@ struct RecordingDetailView: View {
         }
         .background(Theme.readBG.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .safeAreaInset(edge: .bottom, spacing: 0) { if !articles.isEmpty { voiceBar } }
+        .overlay(alignment: .bottom) { if !articles.isEmpty { voiceBar } }
         .overlay(alignment: .bottom) { toastView }
         .task {
             if recording.isEmpty {
@@ -146,8 +146,9 @@ struct RecordingDetailView: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.bottom, 24)   // safeAreaInset reserves the bar height
+            .padding(.bottom, 8)
         }
+        .contentMargins(.bottom, 96, for: .scrollContent)   // clear the floating pill
     }
 
     private var chipRow: some View {
@@ -265,11 +266,11 @@ struct RecordingDetailView: View {
                 sentBubble(instr)
             }
             pill(recording: recording, working: working)
+                .shadow(color: .black.opacity(0.10), radius: 12, x: 0, y: 5)   // float over the body
         }
-        .padding(.top, 12).padding(.horizontal, 16).padding(.bottom, 30)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 10)
         .frame(maxWidth: .infinity)
-        .background(Color(hex: "F4F1EB"))
-        .overlay(alignment: .top) { Rectangle().fill(Theme.borderRead).frame(height: 1) }
     }
 
     private func pill(recording: Bool, working: Bool) -> some View {
