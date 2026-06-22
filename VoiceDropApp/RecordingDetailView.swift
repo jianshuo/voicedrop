@@ -396,14 +396,15 @@ struct RecordingDetailView: View {
         let result = await store.publishWechat(recording)
         publishing = false
         switch result {
-        case .ok:
-            showToast(published ? "已更新，约 1 分钟后到草稿箱" : "已推送，约 1 分钟后到草稿箱")
+        case .ok(let created, let updated):
+            // Real, synchronous result now — no more "约 1 分钟后".
+            showToast(created == 0 && updated > 0 ? "已更新草稿" : "已到草稿箱")
             published = true
         case .notConfigured:
             publishAfterSetup = true
             showingWechatSettings = true
-        case .failed:
-            showToast("推送失败，请稍后再试")
+        case .failed(let msg):
+            showToast(msg ?? "推送失败，请稍后再试")
         }
     }
 

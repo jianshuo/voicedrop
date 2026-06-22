@@ -256,26 +256,49 @@ final class LibraryStore {
         } catch { return nil }
     }
 
-    enum PublishResult { case ok, notConfigured, failed }
+    enum PublishResult {
+        case ok(created: Int, updated: Int)
+        case notConfigured
+        case failed(String?)            // human message (from the real WeChat error when present)
+    }
 
-    /// Ask the server to push this recording's article(s) to the WeChat 公众号
-    /// draft box. WeChat's API only works from the whitelisted proxy in GitHub
-    /// Actions, so this just dispatches that workflow — the draft appears ~1 min
-    /// later. If the article was published before, its draft is updated in place
-    /// (no duplicate). The server pre-checks WECHAT.json: a 409 means WeChat isn't
-    /// configured (→ `.notConfigured`, so the UI can open the config sheet).
+    /// Push this recording's article(s) to the WeChat 公众号 draft box and wait for
+    /// the REAL result. The server reads the article + creds, calls the Tokyo VPS
+    /// relay (the whitelisted IP) synchronously, writes the wechatMediaId(s) back,
+    /// and returns {created, updated} — or the actual WeChat errcode/errmsg. A 409
+    /// means WeChat isn't configured (→ `.notConfigured`, so the UI opens config).
+    /// Existing drafts are updated in place (no duplicate).
     func publishWechat(_ rec: Recording) async -> PublishResult {
-        guard !token.isEmpty, rec.hasArticles else { return .failed }
+        guard !token.isEmpty, rec.hasArticles else { return .failed(nil) }
         var req = URLRequest(url: base.appending(path: "wechat").appending(path: rec.articleKey))
         req.httpMethod = "POST"
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         do {
-            let (_, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await URLSession.shared.data(for: req)
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            if (200..<300).contains(code) { return .ok }
             if code == 409 { return .notConfigured }
-            return .failed
-        } catch { return .failed }
+            if (200..<300).contains(code) {
+                struct R: Decodable { let created: Int?; let updated: Int? }
+                let r = try? JSONDecoder().decode(R.self, from: data)
+                return .ok(created: r?.created ?? 0, updated: r?.updated ?? 0)
+            }
+            struct E: Decodable { let errcode: Int?; let errmsg: String? }
+            let e = try? JSONDecoder().decode(E.self, from: data)
+            return .failed(Self.wechatMessage(e?.errcode, e?.errmsg))
+        } catch { return .failed(nil) }
+    }
+
+    /// Map a WeChat errcode/errmsg to a friendly Chinese line. nil → use a generic toast.
+    static func wechatMessage(_ errcode: Int?, _ errmsg: String?) -> String? {
+        switch errcode {
+        case 45004?:                     return "摘要太短，正文写长一点再发"
+        case 40007?:                     return "草稿已失效，已重建一份"
+        case 45009?, 45011?, 45110?:     return "今天发布次数到上限了，明天再试"
+        case 40164?, 40125?, 40013?:     return "公众号配置有误，检查 AppID/Secret 或 IP 白名单"
+        default:
+            if errcode == nil && errmsg == nil { return nil }
+            return errmsg.map { "发布失败：\($0)" } ?? "发布失败"
+        }
     }
 
     /// Download the audio to a temp file for local playback.

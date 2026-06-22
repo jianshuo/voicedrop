@@ -1,0 +1,24 @@
+[Unit]
+Description=VoiceDrop WeChat publish relay (synchronous draft push from the whitelisted Tokyo IP)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/wechat-relay
+# WECHAT_RELAY_SECRET lives here (chmod 600, not in git). Must match the
+# Cloudflare Pages secret of the same name.
+EnvironmentFile=/opt/wechat-relay/relay.env
+# mine.py hard-reads FILES_TOKEN at import; the relay never uses it.
+Environment=FILES_TOKEN=unused-by-relay
+Environment=PORT=8848
+ExecStart=/usr/bin/python3 /opt/wechat-relay/relay_server.py
+Restart=always
+RestartSec=2
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/wechat-relay
+
+[Install]
+WantedBy=multi-user.target
