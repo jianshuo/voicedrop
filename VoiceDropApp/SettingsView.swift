@@ -528,7 +528,19 @@ struct WechatSettingsSheet: View {
             .navigationTitle("微信公众号")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() }.bold() }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") {
+                        Task {
+                            // Persist before dismissing — typing the credentials and
+                            // tapping 完成 must save them (no silent loss).
+                            if store.wechatConfigured {
+                                await store.saveWechat()
+                                if store.wechatError != nil { return }   // keep sheet open on error
+                            }
+                            dismiss()
+                        }
+                    }.bold()
+                }
             }
         }
     }

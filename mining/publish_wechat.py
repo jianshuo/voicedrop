@@ -26,7 +26,11 @@ def main():
     # Manual publish ignores the 自动推草稿 toggle — the user asked for it explicitly.
     cfg = mine.fetch_wechat_config(article_key, require_enabled=False)
     if not cfg:
-        sys.exit("WeChat not configured (missing appid/secret) for this user")
+        # Not a failure: the user simply hasn't configured (or disconnected)
+        # WeChat. Nothing to publish — skip cleanly so CI isn't red for an
+        # expected user state.
+        mine.log("WeChat not configured (no appid/secret) — skipping, nothing to publish")
+        return
 
     raw = mine._req("GET", f"{mine.BASE}/download/{urllib.parse.quote(article_key)}",
                     headers={"Authorization": f"Bearer {mine.TOKEN}"})
