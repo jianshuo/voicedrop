@@ -187,17 +187,25 @@ final class LibraryStore {
     }
 
     /// Delete a whole recording from R2: the audio plus every sidecar marker
-    /// (article JSON, SRT, empty marker). The audio delete must succeed; the
-    /// sidecars are best-effort (a missing one is fine). Removes the row on
-    /// success. Returns false (and sets `error`) if the audio couldn't be deleted.
+    /// (article JSON, SRT, empty marker). The row is removed from the list
+    /// **immediately** (optimistic), then the server deletes run. If the audio
+    /// delete fails it's rolled back (it would reappear on the next load anyway);
+    /// the sidecars are best-effort.
     @discardableResult
     func delete(_ rec: Recording) async -> Bool {
         guard !token.isEmpty else { error = "请先登录"; return false }
-        guard await del(rec.audioName) else { error = "删除失败"; return false }
+        let idx = recordings.firstIndex { $0.id == rec.id }
+        recordings.removeAll { $0.id == rec.id }   // disappear now
+        guard await del(rec.audioName) else {
+            error = "删除失败"
+            if let idx, !recordings.contains(where: { $0.id == rec.id }) {
+                recordings.insert(rec, at: min(idx, recordings.count))   // rollback
+            }
+            return false
+        }
         _ = await del(rec.articleKey)
         _ = await del(rec.srtKey)
         _ = await del(rec.emptyKey)
-        recordings.removeAll { $0.id == rec.id }
         return true
     }
 
