@@ -96,7 +96,7 @@ def submit(audio_url):
               file=sys.stderr)
         sys.exit(1)
     logid = r.headers.get("X-Tt-Logid", "")
-    print(f"[asr] submitted task_id={task_id[:8]}… logid={logid[:20]}", file=sys.stderr)
+    print(f"[asr] submitted task={task_id[:8]}…", file=sys.stderr)
     return task_id, logid
 
 
