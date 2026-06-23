@@ -103,6 +103,7 @@ final class AuthStore {
     /// Present the system Sign-in-with-Apple sheet, then exchange the identity
     /// token for a session JWT bound to this user's existing anon box.
     func signInWithApple() async {
+        defer { appleCoordinator = nil }
         let req = ASAuthorizationAppleIDProvider().createRequest()
         req.requestedScopes = [.fullName]
         do {
@@ -110,6 +111,7 @@ final class AuthStore {
                 let c = AppleSignInCoordinator(cont)
                 appleCoordinator = c
                 let ctrl = ASAuthorizationController(authorizationRequests: [req])
+                c.controller = ctrl
                 ctrl.delegate = c
                 ctrl.presentationContextProvider = c
                 ctrl.performRequests()
@@ -123,7 +125,6 @@ final class AuthStore {
         } catch {
             lastError = error.localizedDescription
         }
-        appleCoordinator = nil
     }
 
     /// Reset the anonymous identity: mint a brand-new token. The old
@@ -175,6 +176,7 @@ final class AuthStore {
 
 private final class AppleSignInCoordinator: NSObject, ASAuthorizationControllerDelegate, ASAuthorizationControllerPresentationContextProviding, @unchecked Sendable {
     let cont: CheckedContinuation<ASAuthorization, Error>
+    var controller: ASAuthorizationController?
     init(_ cont: CheckedContinuation<ASAuthorization, Error>) { self.cont = cont }
     func authorizationController(controller: ASAuthorizationController, didCompleteWithAuthorization authorization: ASAuthorization) { cont.resume(returning: authorization) }
     func authorizationController(controller: ASAuthorizationController, didCompleteWithError error: Error) { cont.resume(throwing: error) }
