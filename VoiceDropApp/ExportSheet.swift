@@ -13,12 +13,23 @@ struct ExportSheet: View {
             Capsule().fill(Theme.faint).frame(width: 36, height: 4)
                 .padding(.top, 12).padding(.bottom, 4)
             contentView
-                .padding(.horizontal, 24).padding(.bottom, 40)
+                .padding(.horizontal, 24).padding(.bottom, 32)
         }
         .frame(maxWidth: .infinity)
         .background(Theme.appBG)
+        .presentationDetents([.height(sheetHeight)])
+        .presentationDragIndicator(.hidden)
         .task { if case .idle = manager.phase { await manager.export(recordings: recordings, store: store) } }
         .sheet(item: $shareItem) { item in ShareSheet(items: [item.url]) }
+    }
+
+    private var sheetHeight: CGFloat {
+        switch manager.phase {
+        case .idle, .zipping: return 160
+        case .running:        return 200
+        case .done:           return 300
+        case .failed:         return 300
+        }
     }
 
     @ViewBuilder private var contentView: some View {
