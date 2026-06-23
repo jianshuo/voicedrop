@@ -51,6 +51,8 @@ Relevant files:
 | `list_articles` | — | Worker (R2) | list the user's articles `[{stem, title, createdAt}]`; skip `.empty` markers |
 | `read_article` | `{stem}` | Worker (R2) | return `{transcript, articles:[{title,body}]}` for any of the user's stems |
 | `write_article` | `{articles:[{title,body}]}` | Worker (R2) | **write the CURRENT article only** (the DO's own stem); no `stem` arg |
+| `read_style` | — | Worker (R2) | return the user's writing style — the text of `users/<sub>/CLAUDE.md` |
+| `write_style` | `{content}` | Worker (R2) | overwrite `users/<sub>/CLAUDE.md` with `content` (full replace) |
 | `publish_wechat` | — | Worker → existing URL | `fetch POST /files/api/wechat/<currentKey>`; return `{errcode/created/updated}` |
 | `share_to_community` | — | Worker → existing URL | `fetch POST /files/api/community/share/<currentKey>`; return `{shareId, url}` |
 
@@ -59,6 +61,11 @@ Notes:
   **write-current-only** — it takes no `stem` and always targets the DO's article. Cross-stem
   writes are impossible by construction, so the blast radius of a mistake is the current
   article (which the user is editing anyway).
+- `read_style` / `write_style` operate on `users/<sub>/CLAUDE.md` (the Settings-tab style the
+  miner + editor already append to their prompt). "以后写口语一点" → the agent reads the
+  current style, edits it, writes it back; the change then affects all future mining and edits.
+  `write_style` is a full-content replace (the agent composes read→edit→write), in-scope and
+  fires directly like the others.
 - `publish_wechat` / `share_to_community` are atomic capabilities, not composites — a publish
   cannot be decomposed into read/write. They wrap the existing client-button URLs directly,
   server-side. They fire immediately (no app-side confirm — "说了直接发").
@@ -80,7 +87,8 @@ loop:
 
 - Each tool executes server-side in the Worker; results are fed back as `tool_result` so Claude
   can chain steps (read two articles, then write the merge).
-- `write_article` / `read_article` use the DO's R2 binding scoped to `users/<sub>/`.
+- `read_article` / `write_article` / `read_style` / `write_style` use the DO's R2 binding
+  scoped to `users/<sub>/` (style key = `scope + "CLAUDE.md"`, which the Worker already reads).
 - `publish_wechat` / `share_to_community` call the existing Pages endpoints with the user's
   bearer token (see §3).
 - The history table still records the original instruction per turn.
@@ -117,11 +125,12 @@ optional, can be a follow-up.
 
 - `onConnect`: also persist the verified bearer token to `config`.
 - `onMessage`: replace the single `output_config` rewrite call with the tool-use loop (§2).
-- Implement the 5 tool handlers; `write_article` ignores/forbids any stem other than the DO's
-  own; distribution tools `fetch` the existing URLs with the stored token.
+- Implement the 7 tool handlers; `write_article` ignores/forbids any stem other than the DO's
+  own; `read_style`/`write_style` target `scope + "CLAUDE.md"`; distribution tools `fetch` the
+  existing URLs with the stored token.
 - Keep `REVISE_SYSTEM` (the owner-voice DNA) as the system prompt; reframe it to "you can edit,
-  combine, publish, or share — use the tools to do what the instruction asks, default to
-  editing the current article in the owner's voice."
+  combine, publish, share, or adjust the writing style — use the tools to do what the
+  instruction asks, default to editing the current article in the owner's voice."
 - Keep recording each instruction in `history`.
 
 ## Out of scope (YAGNI)
@@ -139,6 +148,9 @@ optional, can be a follow-up.
 - Worker: `publish_wechat` / `share_to_community` call the right URL with the stored bearer
   token; their results are fed back as `tool_result`.
 - Worker: `list_articles` skips `.empty`; `read_article` returns transcript + articles.
+- Worker: `read_style` returns `CLAUDE.md`; `write_style` overwrites it (and a subsequent
+  edit picks up the new style).
+- Manual: "以后写口语一点" updates `CLAUDE.md` and the next rewrite reflects it.
 - App: `ArticleAgentSession` still routes `updated` and drains the queue across a
   multi-tool turn (which may take longer than a single rewrite).
 - Manual: speak rewrite / merge / 发公众号 / 分享社区 end-to-end against a test user.
