@@ -61,19 +61,20 @@ def _publish(payload):
         raise ValueError("missing appid/secret/article.articles")
 
     token = mine.wechat_access_token(appid, secret)
-    # Reuse the cached thumb if given, else upload a placeholder cover. Box it so a
-    # mid-run cover re-upload (stale material) is captured to return to the caller.
-    thumb = [payload.get("thumb_media_id") or mine._upload_wechat_cover(token)]
-
-    def make_thumb():
-        thumb[0] = mine._upload_wechat_cover(token)
-        return thumb[0]
-
-    created, updated = mine.sync_wechat_drafts(token, article, thumb[0], make_thumb=make_thumb)
+    # Per-article cover from assets/wechat-covers/, chosen by hash(doc id). The
+    # cover->media_id cache lives in WECHAT.json; the Function passes it in and
+    # persists whatever we return. No R2 access here — covers are fetched from the
+    # public asset route by mine.resolve_cover_thumb.
+    cfg = {"coverMediaIds": dict(payload.get("cover_media_ids") or {})}
+    doc_id = article.get("id") or ""
+    thumb = mine.resolve_cover_thumb(token, doc_id, cfg)
+    created, updated = mine.sync_wechat_drafts(
+        token, article, thumb,
+        make_thumb=lambda: mine.resolve_cover_thumb(token, doc_id, cfg, force=True))
     return {
         "ok": True,
         "article": article,          # mutated in place: each item now has wechatMediaId
-        "thumb_media_id": thumb[0],
+        "cover_media_ids": cfg["coverMediaIds"],
         "created": created,
         "updated": updated,
     }

@@ -21,7 +21,7 @@ Env:
   MINE_MODEL             optional, default claude-sonnet-4-6
   MINE_DRY               if set, list what WOULD be mined and exit (no ASR/LLM)
 """
-import os, re, sys, json, time, struct, zlib, subprocess, tempfile, urllib.request
+import os, re, sys, json, time, struct, zlib, subprocess, tempfile, urllib.request, hashlib
 from urllib.parse import quote
 
 
@@ -68,6 +68,19 @@ SYSTEM = """你是这段录音的录制者，在写自己的公众号文章。�
 - 只用转写里出现的事实，绝不编造。不提任何公司具体名字，需要时用「我们公司」。
 
 只输出一个 JSON 对象：{"articles": [{"title": "标题", "body": "正文 markdown"}, ...]}，不要输出任何其它文字。只要转写里有哪怕一两句有意义的话，就要成文（可以很短）；只有完全没有可写内容时（纯噪音、半句没说完、纯口误）才输出 {"articles": []}。"""
+
+# Appended AFTER user's CLAUDE.md so that an elaborate style card cannot raise the
+# "should I write at all?" bar — style is HOW, not WHETHER.
+_FORCE_SUFFIX = """
+
+---
+
+【成文底线 — 优先级高于以上所有风格要求】
+以上是「怎么写」的风格指南。不管内容是否完全符合上述风格，只要转写里有人在说话，就必须产出至少一篇文章。「内容不够精彩」「风格要求难以达到」均不是返回空数组的理由。短则短写，口语则口语，两三句也能成篇。"""
+
+# Stripped-down system used only as a last-resort retry when the style-laden first
+# pass returns no articles — removes all style constraints so output is guaranteed.
+SYSTEM_FORCE = """把下面的口述转写整理成一篇短文，保留说话人的意思和语气。直接输出 JSON：{"articles": [{"title": "标题", "body": "正文"}]}。只要有人在说话就必须成文，不能返回空数组。"""
 
 
 # Structured-outputs schema: makes the API *constrain* the reply to valid JSON,
@@ -268,14 +281,12 @@ def _make_placeholder_png(width=500, height=280):
     return b'\x89PNG\r\n\x1a\n' + ihdr + idat + iend
 
 
-def _upload_wechat_cover(access_token):
-    """Upload a placeholder PNG as a WeChat permanent image material.
-    Returns the permanent media_id."""
-    png = _make_placeholder_png()
+def _upload_cover_material(access_token, png, filename="cover.png", content_type="image/png"):
+    """Upload image bytes as a WeChat permanent image material; return the media_id."""
     boundary = b'VoiceDropBoundary42'
     part = (b'--' + boundary + b'\r\n'
-            b'Content-Disposition: form-data; name="media"; filename="cover.png"\r\n'
-            b'Content-Type: image/png\r\n\r\n' + png + b'\r\n')
+            b'Content-Disposition: form-data; name="media"; filename="' + filename.encode("utf-8") + b'"\r\n'
+            b'Content-Type: ' + content_type.encode() + b'\r\n\r\n' + png + b'\r\n')
     body = part + b'--' + boundary + b'--\r\n'
     raw = _wechat_req(
         "POST",
@@ -288,6 +299,53 @@ def _upload_wechat_cover(access_token):
     if "media_id" not in result:
         raise RuntimeError(f"WeChat cover upload error: {result}")
     return result["media_id"]
+
+
+def _upload_wechat_cover(access_token):
+    """Fallback cover: upload the generated gray placeholder (used only when the
+    assets/wechat-covers/ set is empty or unreachable). Returns the media_id."""
+    return _upload_cover_material(access_token, _make_placeholder_png())
+
+
+# Per-article covers: images in R2 assets/wechat-covers/, served publicly at
+# BASE/asset/wechat-covers. Each doc gets one, fixed by a stable hash of its id,
+# uploaded to WeChat once and cached per image name so docs sharing a cover reuse
+# the material. Used by BOTH the on-demand relay (no R2) and the CI miner.
+COVER_PREFIX = "wechat-covers"
+
+
+def _cover_names():
+    """Public list of cover image names in assets/wechat-covers/ (no auth needed)."""
+    try:
+        raw = _req("GET", f"{BASE}/asset/{COVER_PREFIX}")
+        names = (json.loads(raw) or {}).get("covers", [])
+        return sorted(n for n in names if n.lower().endswith((".png", ".jpg", ".jpeg")))
+    except Exception:
+        return []
+
+
+def _pick_cover(doc_id, names):
+    """Deterministically map a doc id to one cover name (stable across runs)."""
+    h = int(hashlib.sha256((doc_id or "").encode("utf-8")).hexdigest(), 16)
+    return names[h % len(names)]
+
+
+def resolve_cover_thumb(access_token, doc_id, wechat_cfg, force=False):
+    """Return a WeChat thumb_media_id for this doc: pick a cover from
+    assets/wechat-covers/ by hash(doc_id), upload it once, and cache the media_id
+    under wechat_cfg['coverMediaIds'][name]. Falls back to the gray placeholder if
+    the cover set is empty/unreachable. Mutates wechat_cfg; the caller persists it
+    (CI: api_put WECHAT.json; relay: the Function persists what we return)."""
+    names = _cover_names()
+    if not names:
+        return _upload_wechat_cover(access_token)
+    name = _pick_cover(doc_id, names)
+    cache = wechat_cfg.setdefault("coverMediaIds", {})
+    if not force and cache.get(name):
+        return cache[name]
+    png = _req("GET", f"{BASE}/asset/{COVER_PREFIX}/{quote(name)}")
+    cache[name] = _upload_cover_material(access_token, png, filename=name)
+    return cache[name]
 
 
 class InvalidMediaIdError(RuntimeError):
@@ -514,17 +572,25 @@ def _articles_from(text):
     ]  # empty list = parsed OK, LLM decided no article possible
 
 
-def generate_articles(transcript, claude_md=""):
+def generate_articles(transcript, claude_md="", force=False):
     """Return a list of {title, body}. Balanced split: usually 1, more only on
     clearly distinct topics. Falls back to a single article on parse failure.
     The owner's CLAUDE.md (name + style), if any, is appended after the system
-    prompt so the articles come out in their own voice."""
+    prompt so the articles come out in their own voice.
+    force=True uses a minimal system prompt (no style rules) as a last resort."""
     # Structured outputs (output_config.format) constrain the reply to schema-valid
     # JSON, so a big prose-heavy CLAUDE.md can't drift the model off clean JSON.
     # _parse_llm_json stays as a belt-and-suspenders fallback.
-    system = SYSTEM if not claude_md else f"{SYSTEM}\n\n---\n\n{claude_md}"
+    if force:
+        system = SYSTEM_FORCE
+    elif claude_md:
+        # _FORCE_SUFFIX ensures the style card doesn't veto article creation.
+        system = f"{SYSTEM}\n\n---\n\n{claude_md}{_FORCE_SUFFIX}"
+    else:
+        system = SYSTEM
+    max_tokens = 2000 if force else 8000
     payload = {
-        "model": MODEL, "max_tokens": 8000, "system": system,
+        "model": MODEL, "max_tokens": max_tokens, "system": system,
         "messages": [{"role": "user", "content": f"口述转写：\n\n{transcript}"}],
         "output_config": {"format": {"type": "json_schema", "schema": ARTICLES_SCHEMA}},
     }
@@ -621,13 +687,26 @@ def main():
                 try:
                     articles = generate_articles(transcript, claude_md)
                 except NoArticleError:
-                    llm = time.time() - t; tot_llm += llm
-                    write_empty(audio, "no-article")
-                    empty += 1
-                    log(f"   ✗ no-article → marked 无语音 (total {time.time()-rec_t0:.1f}s)")
-                    continue
-                llm = time.time() - t; tot_llm += llm
-                log(f"   Claude mine → {len(articles)} article(s) ({llm:.1f}s)")
+                    tot_llm += time.time() - t
+                    # Style-laden pass returned empty — retry with force mode
+                    # (no style constraints) before giving up.
+                    log(f"   ⚠ no-article on first pass, retrying (force mode)…")
+                    t2 = time.time()
+                    try:
+                        articles = generate_articles(transcript, force=True)
+                        llm2 = time.time() - t2
+                        tot_llm += llm2
+                        log(f"   Claude mine (force) → {len(articles)} article(s) ({llm2:.1f}s)")
+                    except (NoArticleError, Exception) as e2:
+                        tot_llm += time.time() - t2
+                        write_empty(audio, "no-article")
+                        empty += 1
+                        log(f"   ✗ no-article (both passes) → marked 无语音 (total {time.time()-rec_t0:.1f}s)")
+                        continue
+                else:
+                    llm = time.time() - t
+                    tot_llm += llm
+                    log(f"   Claude mine → {len(articles)} article(s) ({llm:.1f}s)")
 
                 json_key, srt_key = _stem_keys(audio)
                 art = {
@@ -658,9 +737,13 @@ def main():
                 if wechat_cfg:
                     try:
                         wx_token = wechat_access_token(wechat_cfg["appid"], wechat_cfg["secret"])
-                        thumb_id = ensure_wechat_thumb(wx_token, wechat_cfg, audio)
+                        doc_id = art.get("id") or leaf[:-4]
+                        thumb_id = resolve_cover_thumb(wx_token, doc_id, wechat_cfg)
                         sync_wechat_drafts(wx_token, art, thumb_id,
-                                           make_thumb=lambda: _store_thumb(wx_token, wechat_cfg, audio))
+                                           make_thumb=lambda: resolve_cover_thumb(wx_token, doc_id, wechat_cfg, force=True))
+                        # Persist the cover->media_id cache, then the wechatMediaIds.
+                        api_put(_user_prefix(audio) + "WECHAT.json",
+                                json.dumps(wechat_cfg, ensure_ascii=False).encode(), "application/json")
                         api_put(json_key, json.dumps(art, ensure_ascii=False).encode(),
                                 "application/json")
                     except Exception as wx_err:

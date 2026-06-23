@@ -12,7 +12,9 @@ EnvironmentFile=/opt/wechat-relay/relay.env
 # mine.py hard-reads FILES_TOKEN at import; the relay never uses it.
 Environment=FILES_TOKEN=unused-by-relay
 Environment=PORT=8848
-ExecStart=/usr/bin/python3 /opt/wechat-relay/relay_server.py
+# python3.12 required: mine.py uses backslashes inside f-strings (3.12+ syntax;
+# CI pins 3.12). On a stock Ubuntu 22.04 box install via deadsnakes.
+ExecStart=/usr/bin/python3.12 /opt/wechat-relay/relay_server.py
 Restart=always
 RestartSec=2
 NoNewPrivileges=true
