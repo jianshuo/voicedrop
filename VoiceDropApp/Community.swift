@@ -191,6 +191,8 @@ struct CommunityPostView: View {
     @State private var articleIndex = 0
     @State private var replies: [CommunityPost] = []
     @State private var selectedReply: CommunityPost?
+    @State private var replyToFull: CommunityFullPost?   // the post this article responds to
+    @State private var selectedOriginal: CommunityPost?  // navigate to original post
     @State private var sharePayload: SharePayload?
     @State private var toast: String?
 
@@ -226,6 +228,7 @@ struct CommunityPostView: View {
                                 Text(communityDate(full?.firstSharedAt)).font(.system(size: 13)).foregroundStyle(Theme.metaRead)
                             }
                             .padding(.top, 8)
+                            if let orig = replyToFull { replyToChip(orig).padding(.top, 10) }
                             if articles.count > 1 { chipRow.padding(.top, 16) }
                             Text((try? AttributedString(markdown: a.body, options: .init(
                                 interpretedSyntax: .inlineOnlyPreservingWhitespace,
@@ -250,11 +253,18 @@ struct CommunityPostView: View {
         .navigationDestination(item: $selectedReply) { reply in
             CommunityPostView(store: store, post: reply, onRecordFinished: onRecordFinished)
         }
+        .navigationDestination(item: $selectedOriginal) { orig in
+            CommunityPostView(store: store, post: orig, onRecordFinished: onRecordFinished)
+        }
         .sheet(item: $sharePayload) { ShareSheet(items: [$0.text]) }
         .task {
             full = await store.fetchPost(post.shareId)
             loading = false
-            replies = await store.loadReplies(post.shareId)
+            async let repliesTask = store.loadReplies(post.shareId)
+            if let replyToId = full?.replyTo ?? post.replyTo {
+                replyToFull = await store.fetchPost(replyToId)
+            }
+            replies = await repliesTask
         }
         .onDisappear { _ = recorder.stop() }
     }
@@ -314,39 +324,51 @@ struct CommunityPostView: View {
 
     // MARK: Replies section
 
-    private var repliesSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Rectangle().fill(Theme.borderRead).frame(height: 1).padding(.top, 32)
-            HStack(spacing: 6) {
-                Text("回应").font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.secondary)
-                if !replies.isEmpty {
-                    Text("\(replies.count)").font(.system(size: 13)).foregroundStyle(Theme.faint)
-                }
+    private func replyToChip(_ orig: CommunityFullPost) -> some View {
+        Button {
+            let origPost = CommunityPost(shareId: orig.shareId, author: orig.author,
+                                         title: orig.articles?.first?.title ?? orig.title,
+                                         firstSharedAt: orig.firstSharedAt, updatedAt: nil,
+                                         count: orig.articles?.count, mine: nil, replyTo: orig.replyTo)
+            selectedOriginal = origPost
+        } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "arrow.turn.up.left").font(.system(size: 11, weight: .medium))
+                Text("回应").font(.system(size: 12, weight: .medium))
+                Text((orig.articles?.first?.title ?? orig.title ?? orig.author) ?? "原文")
+                    .font(.system(size: 12)).lineLimit(1).truncationMode(.tail)
+                Image(systemName: "chevron.right").font(.system(size: 10))
             }
-            .padding(.top, 16).padding(.bottom, 12)
-            if replies.isEmpty {
-                Text("还没有回应，点右上角 ⋯ 写第一篇").font(.system(size: 14))
-                    .foregroundStyle(Theme.faint).padding(.bottom, 20)
-            } else {
+            .foregroundStyle(Theme.accent)
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(Theme.accentSoft, in: Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder private var repliesSection: some View {
+        if !replies.isEmpty {
+            VStack(alignment: .leading, spacing: 0) {
+                Rectangle().fill(Theme.borderRead).frame(height: 1).padding(.top, 32)
                 ForEach(replies) { reply in
                     Button { selectedReply = reply } label: {
-                        VStack(alignment: .leading, spacing: 5) {
-                            HStack(spacing: 6) {
-                                Text(reply.author ?? "匿名")
-                                    .font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.accent)
-                                Text(communityDate(reply.firstSharedAt))
-                                    .font(.system(size: 12)).foregroundStyle(Theme.metaRead)
-                                Spacer()
-                                Image(systemName: "chevron.right")
-                                    .font(.system(size: 11)).foregroundStyle(Theme.faint)
-                            }
+                        HStack(spacing: 6) {
+                            Text(reply.author ?? "匿名")
+                                .font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.accent)
+                                .layoutPriority(1)
+                            Text(communityDate(reply.firstSharedAt))
+                                .font(.system(size: 12)).foregroundStyle(Theme.metaRead)
+                                .layoutPriority(1)
                             if let title = reply.title {
-                                Text(title).font(.system(size: 15)).foregroundStyle(Theme.bodyRead)
-                                    .lineLimit(2).multilineTextAlignment(.leading)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                Text("· \(title)")
+                                    .font(.system(size: 13)).foregroundStyle(Theme.bodyRead)
+                                    .lineLimit(1).truncationMode(.tail)
                             }
+                            Spacer(minLength: 4)
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11)).foregroundStyle(Theme.faint)
                         }
-                        .padding(.vertical, 12)
+                        .padding(.vertical, 11)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .overlay(Rectangle().fill(Theme.borderRead).frame(height: 0.5), alignment: .bottom)
                     }
