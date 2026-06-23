@@ -82,8 +82,9 @@ def submit(audio_url):
         },
     }
     r = requests.post(SUBMIT_URL, json=body, headers=asr_headers(), timeout=30)
+    print(f"[submit] HTTP {r.status_code}: {r.text[:500]}", file=sys.stderr)
     r.raise_for_status()
-    return r.json()
+    return r.json() if r.text.strip() else {}
 
 
 def poll(task_id, logid, deadline):
