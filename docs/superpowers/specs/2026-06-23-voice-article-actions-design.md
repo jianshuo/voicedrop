@@ -6,14 +6,22 @@ Status: approved design, ready for implementation plan
 ## Problem
 
 When the user edits a mined article by voice, every spoken instruction is currently
-interpreted as "rewrite the prose." We want some spoken instructions to instead
-trigger **actions** the user already wants to do hands-free:
+interpreted as "rewrite the prose." We want spoken instructions to be able to do *anything*
+the user could do by hand — not just rewrite, but combine articles, publish to WeChat, share
+to the community — without enumerating a task-specific tool for each.
 
-- 发公众号 — publish the article as a WeChat 公众号草稿
-- 分享到社区 — share the article to the VoiceDrop community
-- 合并最近三篇 — weave the N most-recent articles into the one being edited
+Examples the user should be able to just *say*:
+- "把开头改紧凑点" — rewrite
+- "把最近两篇合并到这篇里" — read others, weave into current
+- "发公众号" — publish a WeChat 公众号草稿
+- "分享到社区" — share to the VoiceDrop community
 
-The user should just *say* it — no buttons, no menu. New actions should be cheap to add.
+## Approach: general primitives + an agentic loop
+
+Instead of task-level composite tools (`merge_recent_articles`, etc.), the agent gets a small
+set of **general primitive tools** and *composes* them itself in a multi-step tool-use loop.
+"合并最近两篇" is not a tool — it emerges as `list_articles → read_article → read_article →
+write_article`. New behaviors need no new tools.
 
 ## Current flow (baseline)
 
@@ -21,128 +29,116 @@ The user should just *say* it — no buttons, no menu. New actions should be che
 mic → SpeechDictation (zh-CN ASR) → transcript
     → ArticleAgentSession.enqueue(text)  [serial queue, one in flight]
     → wss://jianshuo.dev/agent/edit?stem=<stem>   {type:"instruct", text}
-    → ArticleEditor (Durable Object): load article + style from R2,
-      ask Claude to rewrite the WHOLE doc, write back to R2,
-      push {type:"updated", article}
+    → ArticleEditor (Durable Object): load article + style, ONE Claude call (rewrite
+      whole doc via json_schema), write back, push {type:"updated", article}
     → app reloads the doc in place
 ```
 
 Relevant files:
-- `VoiceDropApp/VoiceEdit.swift` — `SpeechDictation` (ASR, unchanged).
+- `VoiceDropApp/VoiceEdit.swift` — `SpeechDictation` (ASR; unchanged).
 - `VoiceDropApp/AgentSession.swift` — `ArticleAgentSession` (WebSocket client; handles `status` / `updated` / `error`).
-- `VoiceDropApp/Community.swift` — `CommunityStore.share(_:)` → `POST /files/api/community/share/<articleKey>` (handles Apple sign-in, returns `shareId`).
-- `~/code/jianshuo.dev/agent/src/index.js` — `ArticleEditor` Durable Object (`onMessage` → `_rewrite` → `_callClaude`, structured-output json_schema).
-- WeChat publish: `POST /files/api/wechat/<articleKey>` (existing, used by RecordingDetailView ⋯ → 发布公众号草稿).
+- `~/code/jianshuo.dev/agent/src/index.js` — `ArticleEditor` Durable Object.
+- Existing distribution endpoints (Pages Functions, bearer-auth):
+  - `POST /files/api/wechat/<articleKey>` — publish/update a WeChat draft (sync, via VPS relay).
+  - `POST /files/api/community/share/<articleKey>` — share to community, returns `{shareId}`.
 
 ## Design
 
-### 1. Routing — one Claude call, tool-use decides
+### 1. Tool set — all atomic primitives
 
-`ArticleEditor` stops being rewrite-only. Each `instruct` message goes to Claude with a
-tool set and `tool_choice: {type:"any"}` (Claude must pick exactly one tool):
+| Tool | Input | Executor | Effect |
+|---|---|---|---|
+| `list_articles` | — | Worker (R2) | list the user's articles `[{stem, title, createdAt}]`; skip `.empty` markers |
+| `read_article` | `{stem}` | Worker (R2) | return `{transcript, articles:[{title,body}]}` for any of the user's stems |
+| `write_article` | `{articles:[{title,body}]}` | Worker (R2) | **write the CURRENT article only** (the DO's own stem); no `stem` arg |
+| `publish_wechat` | — | Worker → existing URL | `fetch POST /files/api/wechat/<currentKey>`; return `{errcode/created/updated}` |
+| `share_to_community` | — | Worker → existing URL | `fetch POST /files/api/community/share/<currentKey>`; return `{shareId, url}` |
 
-| Tool | Input schema | Handler |
-|---|---|---|
-| `rewrite_articles` | `{articles:[{title,body}]}` (today's json_schema, now the tool input) | agent writes back, pushes `updated` |
-| `merge_recent_articles` | `{count:int}` (default 3) | agent merges, writes current doc, pushes `updated` |
-| `publish_wechat` | `{}` | agent emits `action` directive (app executes) |
-| `share_to_community` | `{}` | agent emits `action` directive (app executes) |
+Notes:
+- `read_article` is read-any (needed to pull source articles for a merge); `write_article` is
+  **write-current-only** — it takes no `stem` and always targets the DO's article. Cross-stem
+  writes are impossible by construction, so the blast radius of a mistake is the current
+  article (which the user is editing anyway).
+- `publish_wechat` / `share_to_community` are atomic capabilities, not composites — a publish
+  cannot be decomposed into read/write. They wrap the existing client-button URLs directly,
+  server-side. They fire immediately (no app-side confirm — "说了直接发").
 
-Mapping examples: "把开头改紧凑点" → `rewrite_articles`; "发公众号" / "帮我发出去吧" →
-`publish_wechat`; "推送到社区" → `share_to_community`; "合并最近三篇" →
-`merge_recent_articles{count:3}`.
+### 2. Agentic loop in the Durable Object
 
-The system prompt tells Claude: the user is editing an article by voice; classify the
-instruction and call exactly one tool; default to `rewrite_articles` when it is a content
-edit. `rewrite_articles` carries the full owner-voice DNA (today's `REVISE_SYSTEM`), so the
-common edit path stays a single round-trip — no separate classify call.
+`ArticleEditor.onMessage` changes from a single Claude call to a **tool-use loop**:
 
-### 2. Two classes of action — who executes
+```
+messages = [user: instruction + current article context]
+loop:
+  resp = Claude(messages, tools=[the 5 tools above])
+  if resp has tool_use:
+    for each tool_use: execute via the Worker, append tool_result to messages
+    continue
+  else:
+    break   // Claude produced a final (non-tool) response → done
+```
 
-**Content actions (`rewrite_articles`, `merge_recent_articles`) — the agent executes.**
-It has the article, the voice DNA, and R2. It runs the Claude work, writes the doc to R2,
-and pushes `{type:"updated", article}`. The app reloads in place exactly as today. Both
-fire immediately.
+- Each tool executes server-side in the Worker; results are fed back as `tool_result` so Claude
+  can chain steps (read two articles, then write the merge).
+- `write_article` / `read_article` use the DO's R2 binding scoped to `users/<sub>/`.
+- `publish_wechat` / `share_to_community` call the existing Pages endpoints with the user's
+  bearer token (see §3).
+- The history table still records the original instruction per turn.
 
-**Distribution actions (`publish_wechat`, `share_to_community`) — the app executes.** The
-agent does NOT perform the outward side-effect; it emits a directive over the socket and the
-app runs its existing, tested endpoint. This keeps irreversible/outward calls on the
-well-trodden path (`CommunityStore.share`, the WeChat endpoint) and reuses their
-Apple-sign-in / error handling.
+### 3. Auth for the distribution tools
 
-Per-action confirmation policy (a table in the Worker; one-line to change):
+The distribution endpoints need the user's identity. The Worker already authenticates the WS
+upgrade in `onConnect` and injects `x-vd-article-key` / `x-vd-scope`. Extend that to also
+persist the verified **bearer token** into the DO `config` table (same mechanism as
+`articleKey`/`scope`). `publish_wechat` / `share_to_community` read it back and send
+`Authorization: Bearer <token>` to the existing endpoints. The token is the user's own and
+never leaves their scope.
 
-| Action | Policy |
-|---|---|
-| `share_to_community` | immediate |
-| `publish_wechat` | confirm first |
+### 4. Reporting back to the app
 
-### 3. WebSocket protocol additions
+Unchanged protocol. After the loop ends:
+- If the current article was written (`write_article` ran), the Worker pushes
+  `{type:"updated", article}` with the final doc — the app reloads in place exactly as today.
+  (Merge writes into the current doc, so this fires; the other source articles stay untouched.)
+- Distribution results (draft id / share URL / WeChat errcode) are summarized in Claude's final
+  text and surfaced to the app as `{type:"status"}` / existing channels; no new message type.
+- `{type:"status",state:"working"}` and `{type:"error",message}` are unchanged. The loop
+  resolves the in-flight queue item once (on the terminal `updated`/final), so
+  `ArticleAgentSession`'s serial queue keeps draining as today.
 
-Agent → app (new):
-- `{type:"action", action:"share_to_community", confirm:false}` — app runs immediately, then shows the result (share URL / toast).
-- `{type:"action", action:"publish_wechat", confirm:true, prompt:"要把《<title>》发布为公众号草稿吗？"}` — app shows 确认 / 取消; only 确认 calls the endpoint.
+## App-side changes
 
-Existing messages unchanged: `{type:"status",state:"working"}`, `{type:"updated",article}`, `{type:"error",message}`.
-
-The `action` message resolves the in-flight queue item the same way `updated` does (dequeue
-head, `processing=false`, pump next) — so an action ends the turn cleanly and the queue keeps
-draining. Confirmation is handled entirely app-side (a SwiftUI confirm dialog → call the
-endpoint); the agent does not wait for a confirm reply, so no new app→agent message type is
-needed.
-
-### 4. Merge specifics
-
-`merge_recent_articles({count})` — Claude extracts the count from speech ("最近三篇"→3,
-default 3 when unspecified). The agent:
-
-1. Lists `users/<sub>/articles/` (its existing R2 scope).
-2. Sorts entries by the `<ts>` embedded in each stem (`VoiceDrop-<ts>-...`), newest first.
-3. Takes the current article (the DO's own `stem`) plus the next `count-1` most-recent
-   `.json` articles. Skips `.empty` markers.
-4. Asks Claude to weave their `articles[]` (and transcripts, for fact discipline) into one
-   combined set in the owner's voice.
-5. Writes the result **into the current doc** and pushes `{type:"updated", article}`.
-
-The other source articles are left untouched (choice C — non-destructive; may leave
-redundant originals, which the user can delete in-app).
-
-## App-side changes (`AgentSession.swift` + detail view)
-
-- `ArticleAgentSession.handle` gains a `case "action"`: dequeue/pump like `updated`, and
-  surface the directive via a new callback, e.g. `var onAction: ((AgentAction) -> Void)?`
-  where `AgentAction` carries `action`, `confirm`, `prompt`.
-- The detail view (owner of the session) implements `onAction`:
-  - `share_to_community` → `await CommunityStore.share(rec)`, toast the result.
-  - `publish_wechat` → if `confirm`, present a confirm dialog; on 确认, call the existing
-    WeChat publish path (same code as ⋯ → 发布公众号草稿).
-- No change to `SpeechDictation`.
+Minimal. `SpeechDictation` and the WebSocket protocol are unchanged. `ArticleAgentSession`
+already handles `status` / `updated` / `error`; no new message types. The only possible tweak
+is surfacing the agent's final summary text (e.g. "已发草稿 / 已分享：<url>") as a toast —
+optional, can be a follow-up.
 
 ## Worker-side changes (`~/code/jianshuo.dev/agent/src/index.js`)
 
-- Replace the single `output_config` rewrite call with a tools array + `tool_choice:any`.
-- Dispatch on the returned tool name:
-  - `rewrite_articles` → existing merge-back + R2 write + return doc (push `updated`).
-  - `merge_recent_articles` → list/sort/load recent, merge via Claude, write current doc,
-    push `updated`.
-  - `publish_wechat` / `share_to_community` → look up the title, send the `action` message
-    (with `confirm`/`prompt` from the policy table). No R2 write, no outward call.
-- Keep the history table; record the instruction for every turn (including actions).
+- `onConnect`: also persist the verified bearer token to `config`.
+- `onMessage`: replace the single `output_config` rewrite call with the tool-use loop (§2).
+- Implement the 5 tool handlers; `write_article` ignores/forbids any stem other than the DO's
+  own; distribution tools `fetch` the existing URLs with the stored token.
+- Keep `REVISE_SYSTEM` (the owner-voice DNA) as the system prompt; reframe it to "you can edit,
+  combine, publish, or share — use the tools to do what the instruction asks, default to
+  editing the current article in the owner's voice."
+- Keep recording each instruction in `history`.
 
 ## Out of scope (YAGNI)
 
+- No task-level composite tools (merge/split/etc. are composed from primitives).
 - No visible command list / chips (discoverability is natural-language-only).
-- No new app→agent confirm message — confirmation is app-local.
-- No new distribution endpoints — reuse existing WeChat + community share.
-- No merge variants beyond "into current, originals kept."
+- No app-side confirmation, no `action` message type (公众号 fires directly).
+- No cross-stem writes.
 
 ## Testing
 
-- Worker: unit-test the tool-dispatch (mock Claude returning each tool) — correct branch,
-  correct R2 writes for content actions, correct `action` message for distribution actions,
-  confirm policy applied.
-- Worker: `merge_recent_articles` selects current + N-1 newest, skips `.empty`, writes only
-  the current doc.
-- App: `ArticleAgentSession` routes `action` to `onAction`, dequeues, pumps next; confirm
-  dialog gates `publish_wechat`.
-- Manual: speak each of the four intents end-to-end against a test user.
+- Worker: tool-use loop terminates; mock Claude driving `list → read → read → write` produces
+  the merged current doc and leaves sources untouched.
+- Worker: `write_article` only ever writes the DO's own stem (reject/ignore otherwise).
+- Worker: `publish_wechat` / `share_to_community` call the right URL with the stored bearer
+  token; their results are fed back as `tool_result`.
+- Worker: `list_articles` skips `.empty`; `read_article` returns transcript + articles.
+- App: `ArticleAgentSession` still routes `updated` and drains the queue across a
+  multi-tool turn (which may take longer than a single rewrite).
+- Manual: speak rewrite / merge / 发公众号 / 分享社区 end-to-end against a test user.
