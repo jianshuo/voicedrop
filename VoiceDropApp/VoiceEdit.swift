@@ -46,6 +46,7 @@ final class SpeechDictation {
 
             let req = SFSpeechAudioBufferRecognitionRequest()
             req.shouldReportPartialResults = true
+            req.requiresOnDeviceRecognition = false   // allow Apple cloud ASR (better zh-CN accuracy)
             request = req
 
             let input = engine.inputNode
