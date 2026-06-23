@@ -49,22 +49,37 @@ final class CommunityStore {
         } catch { self.error = error.localizedDescription }
     }
 
-    /// Share (or re-share) one of the user's articles. `replyTo` links this post to another.
-    func share(_ rec: Recording, replyTo: String? = nil) async -> Bool {
+    /// Share (or re-share) one of the user's articles. Returns shareId on success, nil on failure.
+    /// `replyTo` links this post to another post's shareId.
+    func share(_ rec: Recording, replyTo: String? = nil) async -> String? {
         needsAppleSignIn = false
-        guard !token.isEmpty, rec.hasArticles else { return false }
-        if await postShare(rec, replyTo: replyTo) { return true }
+        guard !token.isEmpty, rec.hasArticles else { return nil }
+        if let id = await postShare(rec, replyTo: replyTo) { return id }
         if needsAppleSignIn {
             await AuthStore.shared.signInWithApple()
-            guard AuthStore.shared.isAuthenticated else { return false }
+            guard AuthStore.shared.isAuthenticated else { return nil }
             return await postShare(rec, replyTo: replyTo)
         }
-        return false
+        return nil
+    }
+
+    /// Returns shareId if this recording is currently shared to the community, nil otherwise.
+    func sharedShareId(_ rec: Recording) async -> String? {
+        guard !token.isEmpty, rec.hasArticles else { return nil }
+        var req = URLRequest(url: base.appending(path: "community").appending(path: "shared").appending(path: rec.articleKey))
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            guard (resp as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) == true else { return nil }
+            struct R: Decodable { let shared: Bool; let shareId: String? }
+            let r = try? JSONDecoder().decode(R.self, from: data)
+            return r?.shared == true ? r?.shareId : nil
+        } catch { return nil }
     }
 
     private var needsAppleSignIn = false
 
-    private func postShare(_ rec: Recording, replyTo: String?) async -> Bool {
+    private func postShare(_ rec: Recording, replyTo: String?) async -> String? {
         var req = URLRequest(url: base.appending(path: "community").appending(path: "share").appending(path: rec.articleKey))
         req.httpMethod = "POST"
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -75,11 +90,15 @@ final class CommunityStore {
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
-            if (200..<300).contains(code) { needsAppleSignIn = false; return true }
+            if (200..<300).contains(code) {
+                needsAppleSignIn = false
+                struct R: Decodable { let shareId: String? }
+                return (try? JSONDecoder().decode(R.self, from: data))?.shareId
+            }
             needsAppleSignIn = (code == 403) &&
                 ((try? JSONDecoder().decode([String: String].self, from: data))?["error"] == "needs_apple_signin")
-            return false
-        } catch { return false }
+            return nil
+        } catch { return nil }
     }
 
     @discardableResult

@@ -48,7 +48,7 @@ struct LibraryView: View {
         .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(item: $selectedRec) { rec in RecordingDetailView(store: store, recording: rec) }
         .navigationDestination(item: $selectedPost) { post in
-            CommunityPostView(store: community, post: post, onRecordFinished: { Task { await refresh() } })
+            CommunityPostView(store: community, post: post, onRecordFinished: responseRecorded)
         }
         .navigationDestination(isPresented: $showSettings) { SettingsView() }
         .fullScreenCover(isPresented: $showRecord) {
@@ -92,6 +92,8 @@ struct LibraryView: View {
             Button("取消", role: .cancel) {}
         } message: { _ in Text("社区里将看不到这篇；你的原文章不受影响，以后还能再分享。") }
     }
+
+    private func responseRecorded() { Task { await refresh() } }
 
     private func refresh() async {
         uploader.refreshPending()                 // surface 正在上传 rows immediately
