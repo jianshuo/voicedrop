@@ -14,13 +14,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: mining/requirements.txt
+
+      - uses: FedericoCarboni/setup-ffmpeg@v3
+        with:
+          github-token: ${{ github.token }}
+
       - name: Install deps
-        run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg
-          pip install websocket-client
+        run: pip install -r mining/requirements.txt
+
       - name: Mine
         run: python mining/mine.py
         env:
