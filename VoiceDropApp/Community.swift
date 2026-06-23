@@ -380,12 +380,13 @@ struct CommunityPostView: View {
             }
             .onEnded { v in
                 guard dictation.isRecording else { willCancel = false; return }
-                dictation.stop()
                 let cancel = v.translation.height < -60
                 willCancel = false
-                if cancel { return }
-                let text = dictation.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-                if !text.isEmpty { Task { await submitComment(text) } }
+                if cancel { dictation.stop(); return }
+                Task {
+                    let text = (await dictation.stopAndGetFinal()).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !text.isEmpty { await submitComment(text) }
+                }
             }
     }
 

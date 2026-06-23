@@ -90,4 +90,27 @@ final class SpeechDictation {
         isRecording = false
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
+
+    /// Stop recording and wait for ASR to deliver the final transcript (up to 1 s).
+    /// Unlike stop(), this does NOT immediately cancel the recognition task — it lets
+    /// the engine drain its audio buffer so the last ~1 s of speech isn't clipped.
+    func stopAndGetFinal() async -> String {
+        guard isRecording else { return transcript }
+        if engine.isRunning {
+            engine.stop()
+            engine.inputNode.removeTap(onBus: 0)
+        }
+        request?.endAudio()
+        isRecording = false
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // Poll until resultHandler marks task done (task = nil) or 1 s elapses.
+        for _ in 0..<20 {
+            try? await Task.sleep(nanoseconds: 50_000_000)  // 50 ms steps
+            if task == nil { break }
+        }
+        task?.cancel()
+        task = nil
+        request = nil
+        return transcript
+    }
 }
