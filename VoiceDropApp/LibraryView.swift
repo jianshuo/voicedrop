@@ -44,7 +44,7 @@ struct LibraryView: View {
             if tab == .recordings { recordingsContent } else { communityContent }
         }
         .background(Theme.appBG.ignoresSafeArea())
-        .overlay(alignment: .bottom) { if tab == .recordings { recordButton } }
+        .overlay(alignment: .bottom) { if tab == .recordings { recordButton } else { EmptyView() } }
         .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(item: $selectedRec) { rec in RecordingDetailView(store: store, recording: rec) }
         .navigationDestination(item: $selectedPost) { post in
