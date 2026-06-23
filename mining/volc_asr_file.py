@@ -4,6 +4,13 @@
 Takes an R2 object key, generates a presigned URL, submits to the async file
 recognition API, polls until done, and writes the result JSON to an output file.
 
+Protocol notes (different from what the docs describe):
+- submit body: audio URL + format; success = HTTP 200 with X-Api-Status-Code:
+  20000000 in HEADERS and {} in body (no task_id in body!)
+- task_id is the X-Api-Request-Id UUID WE sent; use it for all subsequent polls
+- poll body: {"task_id": <our-uuid>}; result comes back in body JSON once done
+- {} in poll response means still queued/processing
+
 Same exit-code contract as the old volc_asr_stream.py:
   0  → success, result written to <out.json>
   3  → empty / silent audio (EMPTY_ASR_EXIT)
@@ -29,8 +36,8 @@ import requests
 
 APPID  = os.environ.get("VOLC_ASR_APPID") or os.environ["VOLC_APPID"]
 TOKEN  = os.environ.get("VOLC_ASR_ACCESS_TOKEN") or os.environ["VOLC_TOKEN"]
-R2_ACCOUNT_ID       = os.environ["R2_ACCOUNT_ID"]
-R2_ACCESS_KEY_ID    = os.environ["R2_ACCESS_KEY_ID"]
+R2_ACCOUNT_ID        = os.environ["R2_ACCOUNT_ID"]
+R2_ACCESS_KEY_ID     = os.environ["R2_ACCESS_KEY_ID"]
 R2_SECRET_ACCESS_KEY = os.environ["R2_SECRET_ACCESS_KEY"]
 R2_BUCKET = os.environ.get("R2_BUCKET", "jianshuo-dev-files")
 
@@ -59,42 +66,61 @@ def presign(key, expires=3600):
     )
 
 
-def asr_headers():
-    return {
+def submit(audio_url):
+    """Submit an audio URL for recognition.
+    Returns (task_id, logid): task_id is the request UUID we sent."""
+    task_id = str(uuid.uuid4())
+    hdrs = {
         "X-Api-App-Key":     APPID,
         "X-Api-Access-Key":  TOKEN,
         "X-Api-Resource-Id": "volc.bigasr.auc",
-        "X-Api-Request-Id":  str(uuid.uuid4()),
+        "X-Api-Request-Id":  task_id,
         "X-Api-Sequence":    "-1",
         "Content-Type":      "application/json",
     }
-
-
-def submit(audio_url):
     body = {
         "user":    {"uid": "wjs-asr"},
         "audio":   {"format": "m4a", "url": audio_url, "codec": "raw"},
         "request": {
-            "model_name":    "bigmodel",
-            "enable_itn":    True,
-            "enable_punc":   True,
+            "model_name":      "bigmodel",
+            "enable_itn":      True,
+            "enable_punc":     True,
             "show_utterances": True,
         },
     }
-    r = requests.post(SUBMIT_URL, json=body, headers=asr_headers(), timeout=30)
-    print(f"[submit] HTTP {r.status_code}: {r.text[:500]}", file=sys.stderr)
+    r = requests.post(SUBMIT_URL, json=body, headers=hdrs, timeout=30)
     r.raise_for_status()
-    return r.json() if r.text.strip() else {}
+    status_code = r.headers.get("X-Api-Status-Code", "")
+    if status_code != str(STATUS_DONE):
+        print(f"Submit: HTTP {r.status_code} status={status_code} body={r.text[:200]}",
+              file=sys.stderr)
+        sys.exit(1)
+    logid = r.headers.get("X-Tt-Logid", "")
+    print(f"[asr] submitted task_id={task_id[:8]}… logid={logid[:20]}", file=sys.stderr)
+    return task_id, logid
 
 
 def poll(task_id, logid, deadline):
-    hdrs = asr_headers()
-    hdrs["X-Tt-Logid"] = logid
+    """Poll until the task finishes; returns the full response dict."""
+    hdrs = {
+        "X-Api-App-Key":     APPID,
+        "X-Api-Access-Key":  TOKEN,
+        "X-Api-Resource-Id": "volc.bigasr.auc",
+        "X-Api-Request-Id":  task_id,
+        "X-Tt-Logid":        logid,
+        "X-Api-Sequence":    "-1",
+        "Content-Type":      "application/json",
+    }
     while time.time() < deadline:
         r = requests.post(QUERY_URL, json={"task_id": task_id},
                           headers=hdrs, timeout=30)
         r.raise_for_status()
-        res = r.json()
+        body_text = r.text.strip()
+        if not body_text or body_text == "{}":
+            # Still queued / processing — {} means "not done yet"
+            time.sleep(2)
+            continue
+        res = json.loads(body_text)
         code = res.get("code", 0)
         if code == STATUS_DONE:
             return res
@@ -115,12 +141,9 @@ def main():
     key, out_path = sys.argv[1], sys.argv[2]
 
     url = presign(key)
-    sub = submit(url)
-    if "task_id" not in sub:
-        print(f"Submit failed: {sub}", file=sys.stderr)
-        sys.exit(1)
+    task_id, logid = submit(url)
+    res = poll(task_id, logid, time.time() + 600)
 
-    res = poll(sub["task_id"], sub.get("x_tt_logid", ""), time.time() + 600)
     result = res.get("result", {})
     utts = result.get("utterances", [])
     text = result.get("text", "") or "".join(u.get("text", "") for u in utts)
