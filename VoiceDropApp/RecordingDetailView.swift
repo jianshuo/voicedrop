@@ -25,6 +25,7 @@ struct RecordingDetailView: View {
     @State private var community = CommunityStore()
     @State private var published = false            // already has a WeChat draft
     @State private var sharedToCommunity = false     // already shared to the community
+    @State private var showingDeleteConfirm = false
 
     // Live voice editing — persistent push-to-talk bar.
     @State private var agent = ArticleAgentSession()
@@ -71,6 +72,12 @@ struct RecordingDetailView: View {
             }
         }) { WechatSettingsSheet(store: settings) }
         .sheet(item: $sharePayload) { ShareSheet(items: [$0.text]) }
+        .alert("删除录音", isPresented: $showingDeleteConfirm) {
+            Button("删除", role: .destructive) { Task { await deleteRecording() } }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("确定要删除这段录音及其文章吗？此操作无法撤销。")
+        }
     }
 
     /// Open the editing socket + ask for mic/speech once the article is loaded.
@@ -104,6 +111,10 @@ struct RecordingDetailView: View {
                     Button { Task { await share() } } label: {
                         Label("分享", systemImage: "square.and.arrow.up")
                     }
+                    Divider()
+                    Button(role: .destructive) { showingDeleteConfirm = true } label: {
+                        Label("删除", systemImage: "trash")
+                    }
                 } label: {
                     RoundedRectangle(cornerRadius: Theme.R.nav)
                         .fill(Theme.ink)
@@ -123,6 +134,12 @@ struct RecordingDetailView: View {
     private func share() async {
         if let u = await store.shareURL(recording) { sharePayload = SharePayload(text: u.absoluteString) }
         else { showToast("生成分享链接失败") }
+    }
+
+    private func deleteRecording() async {
+        let ok = await store.delete(recording)
+        if ok { dismiss() }
+        else { showToast("删除失败，请稍后再试") }
     }
 
     private func shareToCommunity() async {
