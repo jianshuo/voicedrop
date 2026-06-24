@@ -187,7 +187,14 @@ gear → **设置** (redesign "方案二"; the old `ContentView` 3-tab `TabView`
 - **文章详情** `RecordingDetailView.swift` — player (shown even in 待处理 / 无语音 states) + the article
   rendered **with photos混排 inline** (`ArticleBody.segments` splits the body at `[[photo:N]]` markers;
   `PhotoTile` downloads each via the auth'd Files API and shows a full-width square; unreferenced photos
-  append at the end). Per-article chip switcher only when >1. ⋯ menu: **发布/更新公众号草稿** ·
+  append at the end). Per-article chip switcher only when >1. **Voice-edit locators** (design "Voice Edit
+  Locators"): while the user holds-to-talk, **line numbers** (第N行, one per real-line-break paragraph) fade
+  in floating in the **left margin** — absolutely positioned via `.overlay(alignment:.topLeading)` + `offset`
+  so the text never reflows — and **图N badges** fade in on each image's top-left corner. `bodyRows()` flattens
+  the body into numbered paragraph/image rows. The live transcript bubble tints spoken 第N行/图N references
+  accent (`highlightedTranscript`). These are visual locators only — to make "第3行改简洁点/删掉图2"
+  actionable end-to-end the agent worker prompt would need the same numbering convention (not yet wired).
+  ⋯ menu: **发布/更新公众号草稿** ·
   **分享/更新 VD社区** · 系统分享 (labels flip once published/shared) · **编辑 = hold-to-talk voice editing**
   (serial queue, mic-as-indicator — see the agent Worker section). Share text = `composeShareText()`: ONE
   string (标题 + 正文开头 cut at a sentence boundary, sized to X's 280 weighted cap minus the 23-weight URL)

@@ -201,32 +201,97 @@ struct RecordingDetailView: View {
         .contentMargins(.bottom, 96, for: .scrollContent)   // clear the floating pill
     }
 
-    /// Render the body with photos混排 inline at their `[[photo:N]]` markers.
-    /// Any photos the model didn't place are appended at the end so nothing is lost.
-    @ViewBuilder
-    private func articleBody(_ a: MinedArticle) -> some View {
+    /// One rendered row of the body: a numbered text paragraph, or a numbered image.
+    private enum BodyRow: Identifiable {
+        case paragraph(Int, String)   // 第N行
+        case image(Int, String)       // 图N (relative photo key)
+        var id: String {
+            switch self {
+            case .paragraph(let n, _): return "p\(n)"
+            case .image(let n, _):     return "i\(n)"
+            }
+        }
+    }
+
+    /// Flatten the body (text + `[[photo:N]]` markers + trailing photos) into a
+    /// numbered row list: paragraphs counted 第1/2/3…行 by real line breaks, images
+    /// counted 图1/2/3… by appearance. These are the locators the user speaks to.
+    private func bodyRows(_ a: MinedArticle) -> [BodyRow] {
         let photos = doc?.photos ?? []
         let segments = ArticleBody.segments(a.body)
+        var rows: [BodyRow] = []
+        var lineNo = 0, imgNo = 0
+        for seg in segments {
+            switch seg {
+            case .text(let t):
+                for raw in t.components(separatedBy: "\n") {
+                    let para = raw.trimmingCharacters(in: .whitespaces)
+                    if para.isEmpty { continue }
+                    lineNo += 1
+                    rows.append(.paragraph(lineNo, para))
+                }
+            case .photo(let n):
+                if let key = photos[safe: n - 1] { imgNo += 1; rows.append(.image(imgNo, key)) }
+            }
+        }
         let placed = Set(segments.compactMap { if case .photo(let n) = $0 { return n } else { return nil } })
-        let trailing = photos.indices.filter { !placed.contains($0 + 1) }
-        VStack(alignment: .leading, spacing: 14) {
-            ForEach(segments) { seg in
-                switch seg {
-                case .text(let t):
-                    Text(textAttributed(t))
+        for i in photos.indices where !placed.contains(i + 1) {
+            imgNo += 1; rows.append(.image(imgNo, photos[i]))
+        }
+        return rows
+    }
+
+    /// Body rows with locators (line numbers + 图N badges) that float in the left
+    /// margin / image corner. They're absolutely positioned (overlay) so the text
+    /// never reflows — they only fade in while the user holds to talk.
+    @ViewBuilder
+    private func articleBody(_ a: MinedArticle) -> some View {
+        let editing = dictation.isRecording
+        // ~22pt between rows restores the blank-line gap paragraphs had before they
+        // were split into numbered rows (previously a `\n\n` break inside one Text).
+        VStack(alignment: .leading, spacing: 22) {
+            ForEach(bodyRows(a)) { row in
+                switch row {
+                case .paragraph(let n, let text):
+                    Text(textAttributed(text))
                         .font(.system(size: 16)).foregroundStyle(Theme.bodyRead)
                         .lineSpacing(9).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                case .photo(let n):
-                    if let key = photos[safe: n - 1] {
-                        PhotoTile(store: store, relKey: key)
-                    }
+                        .overlay(alignment: .topLeading) { lineNumber(n, visible: editing) }
+                case .image(let n, let key):
+                    PhotoTile(store: store, relKey: key)
+                        .overlay(alignment: .topLeading) { imageBadge(n, visible: editing) }
                 }
             }
-            ForEach(trailing, id: \.self) { i in
-                PhotoTile(store: store, relKey: photos[i])
-            }
         }
+        .animation(.easeInOut(duration: 0.2), value: editing)
+    }
+
+    /// Line number floating in the left margin, vertically centered on the first
+    /// text line. Anchored to the paragraph's topLeading and offset left, so it
+    /// occupies zero layout width (no reflow). Right-aligned in its gutter box,
+    /// 7px clear of the text.
+    private func lineNumber(_ n: Int, visible: Bool) -> some View {
+        Text("\(n)")
+            .font(.system(size: 11).monospacedDigit())
+            .foregroundStyle(Theme.accent.opacity(0.55))
+            .frame(width: 18, height: 20, alignment: .trailing)
+            .offset(x: -25)                       // 18 (box) + 7 (gap) → right edge 7px left of text
+            .opacity(visible ? 1 : 0)
+            .allowsHitTesting(false)
+    }
+
+    /// "图N" badge in the image's top-left corner, fading in during editing.
+    private func imageBadge(_ n: Int, visible: Bool) -> some View {
+        Text("图\(n)")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.white.opacity(0.92))
+            .padding(.horizontal, 9).padding(.vertical, 3)
+            .background(Color(red: 20/255, green: 18/255, blue: 16/255).opacity(0.34),
+                        in: RoundedRectangle(cornerRadius: 6))
+            .padding(8)
+            .opacity(visible ? 1 : 0)
+            .allowsHitTesting(false)
     }
 
     private func textAttributed(_ s: String) -> AttributedString {
@@ -453,18 +518,39 @@ struct RecordingDetailView: View {
         )
     }
 
-    /// Dark bubble above the bar showing the live transcript (text only).
+    /// Dark bubble above the bar showing the live transcript. Locator references
+    /// the user speaks — 第N行 / 图N — are highlighted in accent so it's clear the
+    /// app understood which line/image is meant.
     private func darkBubble(_ text: String) -> some View {
         VStack(spacing: 0) {
-            Text(text.isEmpty ? "在听…" : text)
-                .font(.system(size: 16))
-                .foregroundStyle(text.isEmpty ? Color(hex: "B6AD9E") : Color(hex: "FBF6EE"))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(14)
-                .background(Color(hex: "2E2823"), in: RoundedRectangle(cornerRadius: 16))
+            Group {
+                if text.isEmpty { Text("在听…").foregroundStyle(Color(hex: "B6AD9E")) }
+                else { highlightedTranscript(text) }
+            }
+            .font(.system(size: 16))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .background(Color(hex: "2E2823"), in: RoundedRectangle(cornerRadius: 16))
             DownTriangle().fill(Color(hex: "2E2823")).frame(width: 18, height: 9)
                 .padding(.leading, 24).frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    /// Transcript text with every 第N行 / 图N locator tinted accent (#F0B59B).
+    private func highlightedTranscript(_ s: String) -> Text {
+        var att = AttributedString(s)
+        att.foregroundColor = Color(hex: "FBF6EE")
+        if let re = try? NSRegularExpression(pattern: "第[0-9]+行|图[0-9]+") {
+            let ns = s as NSString
+            for m in re.matches(in: s, range: NSRange(location: 0, length: ns.length)) {
+                guard let sr = Range(m.range, in: s),
+                      let lo = AttributedString.Index(sr.lowerBound, within: att),
+                      let hi = AttributedString.Index(sr.upperBound, within: att) else { continue }
+                att[lo..<hi].foregroundColor = Color(hex: "F0B59B")
+                att[lo..<hi].font = .system(size: 16, weight: .semibold)
+            }
+        }
+        return Text(att)
     }
 
     /// Press-and-hold drives dictation; release sends (unless slid up to cancel).
