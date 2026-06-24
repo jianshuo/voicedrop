@@ -154,6 +154,43 @@ def api_put(key, body_bytes, content_type):
          headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": content_type})
 
 
+def api_exists(key):
+    # R2 list is eventually consistent — a just-written object may not yet appear
+    # in list results. Single-key HEAD is always strongly consistent.
+    try:
+        _req("HEAD", f"{BASE}/download/{quote(key)}",
+             headers={"Authorization": f"Bearer {TOKEN}"})
+        return True
+    except Exception:
+        return False
+
+
+def llmlog(request, *, response=None, error=None, ok, status, latency, step, turn_id, meta=None):
+    """Record one Anthropic call to R2 under llmlogs/ so the admin console
+    (voicedrop/admin/llm.html) can replay exactly what was sent & received.
+    Admin-only (outside users/). Best-effort: never let logging break mining."""
+    try:
+        meta = meta or {}
+        ts = int(time.time() * 1000)
+        rid = f"{ts}-{os.urandom(3).hex()}"
+        date = time.strftime("%Y-%m-%d", time.gmtime(ts / 1000))  # UTC, matches worker
+        rec = {
+            "id": rid, "ts": ts, "source": "mine",
+            "user_scope": meta.get("user_scope", ""), "model": MODEL,
+            "latency_ms": int(latency * 1000), "http_status": status, "ok": ok,
+            "turn_id": turn_id, "step": step, "request": request,
+        }
+        if response is not None:
+            rec["response"] = response
+        if error is not None:
+            rec["error"] = error
+        rec["meta"] = {"stem": meta.get("stem", "")}
+        api_put(f"llmlogs/{date}/{rid}.json",
+                json.dumps(rec, ensure_ascii=False).encode(), "application/json")
+    except Exception:
+        pass  # logging must never interrupt the actual work
+
+
 def _stem_keys(audio_key):
     # users/anon-x/VoiceDrop-Y.m4a -> (users/anon-x/articles/VoiceDrop-Y.json,
     #                                  users/anon-x/articles/VoiceDrop-Y.srt)
@@ -582,7 +619,7 @@ def _articles_from(text):
     ]  # empty list = parsed OK, LLM decided no article possible
 
 
-def generate_articles(transcript, claude_md="", force=False):
+def generate_articles(transcript, claude_md="", force=False, meta=None):
     """Return a list of {title, body}. Balanced split: usually 1, more only on
     clearly distinct topics. Falls back to a single article on parse failure.
     The owner's CLAUDE.md (name + style), if any, is appended after the system
@@ -605,12 +642,26 @@ def generate_articles(transcript, claude_md="", force=False):
         "output_config": {"format": {"type": "json_schema", "schema": ARTICLES_SCHEMA}},
     }
     arts = None
+    turn_id = f"{int(time.time() * 1000)}-{os.urandom(3).hex()}"
     for attempt in range(2):  # one retry: a single malformed reply self-heals
-        raw = _req("POST", "https://api.anthropic.com/v1/messages",
-                   data=json.dumps(payload).encode(),
-                   headers={"x-api-key": CLAUDE_KEY, "anthropic-version": "2023-06-01",
-                            "content-type": "application/json"})
-        resp = json.loads(raw)
+        t0 = time.time()
+        try:
+            raw = _req("POST", "https://api.anthropic.com/v1/messages",
+                       data=json.dumps(payload).encode(),
+                       headers={"x-api-key": CLAUDE_KEY, "anthropic-version": "2023-06-01",
+                                "content-type": "application/json"})
+            resp = json.loads(raw)
+            llmlog(payload, response=resp, ok=True, status=200, latency=time.time() - t0,
+                   step=attempt, turn_id=turn_id, meta=meta)
+        except Exception as e:
+            errtext = str(e)
+            try:  # urllib HTTPError carries the response body + status code
+                errtext = e.read().decode("utf-8", "replace")[:2000]
+            except Exception:
+                pass
+            llmlog(payload, error=errtext, ok=False, status=getattr(e, "code", 0),
+                   latency=time.time() - t0, step=attempt, turn_id=turn_id, meta=meta)
+            raise
         text = "".join(b.get("text", "") for b in resp.get("content", [])
                        if b.get("type") == "text")
         arts = _articles_from(text)
@@ -650,6 +701,11 @@ def main():
         leaf = os.path.basename(audio)
         rec_t0 = time.time()
         log(f"── {leaf}  ({i}/{len(todo)})")
+        # Guard against R2 list lag: a concurrent run may have written the article
+        # JSON just before our list call. Verify with a direct HEAD (strongly consistent).
+        if api_exists(article_key_for(audio)) or api_exists(empty_key_for(audio)):
+            log(f"   skip (processed by concurrent run, list lagged)")
+            continue
         notify(audio, "processing")   # app: 待处理 → 处理中
         try:
             t = time.time()
@@ -676,9 +732,10 @@ def main():
             claude_md = fetch_claude_md(audio)
             if claude_md:
                 log(f"   + CLAUDE.md ({len(claude_md)} chars)")
+            meta = {"user_scope": _user_prefix(audio), "stem": leaf[:-4]}
             t = time.time()
             try:
-                articles = generate_articles(transcript, claude_md)
+                articles = generate_articles(transcript, claude_md, meta=meta)
             except NoArticleError:
                 tot_llm += time.time() - t
                 # Style-laden pass returned empty — retry with force mode
@@ -686,7 +743,7 @@ def main():
                 log(f"   ⚠ no-article on first pass, retrying (force mode)…")
                 t2 = time.time()
                 try:
-                    articles = generate_articles(transcript, force=True)
+                    articles = generate_articles(transcript, force=True, meta=meta)
                     llm2 = time.time() - t2
                     tot_llm += llm2
                     log(f"   Claude mine (force) → {len(articles)} article(s) ({llm2:.1f}s)")
