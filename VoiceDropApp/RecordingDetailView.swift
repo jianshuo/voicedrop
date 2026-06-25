@@ -44,6 +44,18 @@ struct RecordingDetailView: View {
     @State private var connected = false
     @State private var confirmDeleteFromDetail = false
     @State private var showingInsertPhoto = false
+    @State private var hasSpokenOnce = false   // once set, editing toolbar stays visible until dismiss
+
+    // Undo/redo: a snapshot of version history loaded when the article is first
+    // opened (and refreshed after each agent edit). historyPosition moves through
+    // it: 0 = current, 1 = one-back, etc. Undo/redo call /revert and move the
+    // position; a new agent edit resets to 0 and refreshes the list.
+    @State private var versionHistory: [ArticleVersionEntry] = []
+    @State private var historyPosition: Int = 0
+    private var canUndo: Bool { historyPosition < versionHistory.count - 1 }
+    private var canRedo: Bool { historyPosition > 0 }
+    // Editing toolbar shows once the user has ever spoken, and stays until the view is dismissed.
+    private var isEditing: Bool { hasSpokenOnce || dictation.isRecording || agent.state == .working }
 
     private var articles: [MinedArticle] { doc?.resolvedArticles ?? [] }
 
@@ -87,7 +99,10 @@ struct RecordingDetailView: View {
             }
         }) { WechatSettingsSheet(store: settings) }
         .sheet(item: $sharePayload) { ShareSheet(items: [$0.text]) }
-        .sheet(isPresented: $showingInsertPhoto) { SinglePhotoPicker(onPick: insertPhoto) }
+        .fullScreenCover(isPresented: $showingInsertPhoto) {
+            PhotoCaptureView(recordingStart: nil) { photos in insertPhotos(photos) }
+                .ignoresSafeArea()
+        }
         .alert("删除这条录音？", isPresented: $confirmDeleteFromDetail) {
             Button("删除", role: .destructive) {
                 Task { await store.delete(recording); dismiss() }
@@ -102,9 +117,12 @@ struct RecordingDetailView: View {
     private func connectIfNeeded() async {
         guard !connected, !articles.isEmpty else { return }
         connected = true
-        agent.onUpdate = { newDoc in
+        agent.onUpdate = { [self] newDoc in
             doc = newDoc
             articleIndex = min(articleIndex, max(0, newDoc.resolvedArticles.count - 1))
+            // A new agent edit invalidates any undo position — reset and refresh.
+            historyPosition = 0
+            Task { await loadVersionHistory() }
         }
         agent.onReply = { text, ok in
             let reply = AgentReply(text: text, ok: ok)
@@ -113,109 +131,65 @@ struct RecordingDetailView: View {
         }
         agent.connect(recording)
         await dictation.requestAuth()
+        await loadVersionHistory()
     }
 
-    // MARK: Player / Edit header (固定在 ScrollView 外，切换时高度不变)
+    private func loadVersionHistory() async {
+        versionHistory = await store.fetchVersionHistory(recording)
+        // historyPosition stays put — only reset it when a new edit lands.
+    }
 
-    @ViewBuilder private var playerEditHeader: some View {
-        let isEditing = dictation.isRecording || agent.state == .working
-        let r: CGFloat = 10
-        let btnShadow = Color.black.opacity(0.06)
-        if isEditing {
-            HStack(spacing: 10) {
-                // 紧凑播放键 + 当前时间
-                Button {
-                    if player.duration == 0 { Task { await loadAndPlay() } } else { player.toggle() }
-                } label: {
-                    HStack(spacing: 10) {
-                        RoundedRectangle(cornerRadius: 9)
-                            .fill(Theme.accent)
-                            .frame(width: 34, height: 34)
-                            .overlay(
-                                Image(systemName: loadingAudio ? "arrow.down" : (player.isPlaying ? "pause.fill" : "play.fill"))
-                                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
-                                    .symbolEffect(.pulse, isActive: loadingAudio)
-                            )
-                        Text(currentTime)
-                            .font(.system(size: 12.5).monospacedDigit())
-                            .foregroundStyle(Theme.metaRead)
-                            .fixedSize()
-                    }
-                    .padding(.vertical, 7).padding(.leading, 8).padding(.trailing, 12)
-                    .background(Theme.card, in: RoundedRectangle(cornerRadius: r))
-                    .overlay(RoundedRectangle(cornerRadius: r).stroke(Theme.borderRead, lineWidth: 1))
-                    .shadow(color: btnShadow, radius: 8, x: 0, y: 2)
-                }
-                .buttonStyle(.plain).disabled(loadingAudio)
-
-                Spacer()
-
-                // 插入照片
-                Button { showingInsertPhoto = true } label: {
-                    RoundedRectangle(cornerRadius: r)
-                        .fill(Theme.card)
-                        .frame(width: 42, height: 42)
-                        .overlay(
-                            Image(systemName: "photo")
-                                .font(.system(size: 17, weight: .regular))
-                                .foregroundStyle(Color(hex: "5A5249"))
-                        )
-                        .overlay(RoundedRectangle(cornerRadius: r).stroke(Theme.borderRead, lineWidth: 1))
-                        .shadow(color: btnShadow, radius: 8, x: 0, y: 2)
-                }
-                .buttonStyle(.plain)
-
-                // 撤销 | 重做
-                HStack(spacing: 0) {
-                    Button { showToast("暂未支持") } label: {
-                        Image(systemName: "arrow.uturn.backward")
-                            .font(.system(size: 17, weight: .medium))
-                            .foregroundStyle(Color(hex: "3A352E"))
-                            .frame(width: 42, height: 42)
-                    }
-                    .buttonStyle(.plain)
-                    Rectangle().fill(Theme.borderRead).frame(width: 1, height: 24)
-                    Button { showToast("暂未支持") } label: {
-                        Image(systemName: "arrow.uturn.forward")
-                            .font(.system(size: 17, weight: .medium))
-                            .foregroundStyle(Color(hex: "C9BFB0"))
-                            .frame(width: 42, height: 42)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .background(Theme.card, in: RoundedRectangle(cornerRadius: r))
-                .overlay(RoundedRectangle(cornerRadius: r).stroke(Theme.borderRead, lineWidth: 1))
-                .shadow(color: btnShadow, radius: 8, x: 0, y: 2)
-            }
-            .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 14)
-            .transition(.opacity)
+    private func performUndo() async {
+        guard canUndo else { return }
+        historyPosition += 1
+        let entry = versionHistory[historyPosition]
+        if let newDoc = await store.revertToVersion(recording, v: entry.v) {
+            doc = newDoc
+            articleIndex = min(articleIndex, max(0, newDoc.resolvedArticles.count - 1))
         } else {
-            playerCard
-                .padding(.horizontal, 20).padding(.top, 6)
-                .transition(.opacity)
+            historyPosition -= 1
+            showToast("撤销失败")
         }
     }
 
-    private func insertPhoto(_ image: UIImage) {
+    private func performRedo() async {
+        guard canRedo else { return }
+        historyPosition -= 1
+        let entry = versionHistory[historyPosition]
+        if let newDoc = await store.revertToVersion(recording, v: entry.v) {
+            doc = newDoc
+            articleIndex = min(articleIndex, max(0, newDoc.resolvedArticles.count - 1))
+        } else {
+            historyPosition += 1
+            showToast("重做失败")
+        }
+    }
+
+
+    private func insertPhotos(_ captured: [CapturedPhoto]) {
         showingInsertPhoto = false
+        guard !captured.isEmpty else { return }
         showToast("正在上传图片…")
         Task {
-            // Extract sessionTs from recording stem: "VoiceDrop-2026-06-24-131500-..." → "2026-06-24-131500"
             let parts = recording.stem.components(separatedBy: "-")
-            // parts[0]="VoiceDrop", parts[1]="2026", parts[2]="06", parts[3]="24", parts[4]="131500"
             guard parts.count >= 5, parts[0] == "VoiceDrop" else { showToast("无法插入图片"); return }
             let sessionTs = "\(parts[1])-\(parts[2])-\(parts[3])-\(parts[4])"
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd-HHmmss"
-            let captureTs = formatter.string(from: Date())
 
-            guard let jpegData = SquareImage.jpeg(image, maxSide: 1080) else { showToast("图片处理失败"); return }
-            let relKey = await store.uploadPhoto(data: jpegData, sessionTs: sessionTs, captureTs: captureTs)
-            guard let relKey else { showToast("图片上传失败"); return }
+            var relKeys: [String] = []
+            for photo in captured {
+                let captureTs = formatter.string(from: photo.date)
+                guard let key = await store.uploadPhoto(data: photo.data, sessionTs: sessionTs, captureTs: captureTs)
+                else { showToast("图片上传失败"); return }
+                relKeys.append(key)
+            }
 
-            // Send to the editing agent so it places the photo at the right position
-            let photoCount = doc?.photos?.count ?? 0
-            agent.enqueue("请将刚上传的照片 \(relKey) 加入文章，在最合适的位置插入[[photo:\(photoCount + 1)]]标记，并确保photos数组包含该key。如无法判断位置，放在结尾。")
+            let startCount = doc?.photos?.count ?? 0
+            let keysDesc = relKeys.enumerated()
+                .map { "\($0.element)(第\(startCount + $0.offset + 1)张)" }
+                .joined(separator: "、")
+            agent.enqueue("请将刚上传的\(relKeys.count == 1 ? "照片" : "\(relKeys.count)张照片") \(keysDesc) 加入文章，在最合适的位置依次插入[[photo:N]]标记，并确保photos数组包含这些key。如无法判断位置，放在结尾。")
             showToast("图片已上传，AI正在插入…")
         }
     }
@@ -228,17 +202,45 @@ struct RecordingDetailView: View {
                 .accessibilityLabel("返回")
             Spacer()
             if !articles.isEmpty {
-                let isEditing = dictation.isRecording || agent.state == .working
                 if isEditing {
-                    // 编辑中胶囊标签替换 ⋯ 菜单
-                    HStack(spacing: 6) {
-                        Circle().fill(Color(hex: "D8593B")).frame(width: 7, height: 7)
-                        Text("编辑中")
-                            .font(.system(size: 12.5, weight: .semibold))
-                            .foregroundStyle(Color(hex: "C24A2E"))
+                    // 编辑工具替换 ⋯ 菜单：插入照片 + 撤销/重做
+                    HStack(spacing: 8) {
+                        Button { showingInsertPhoto = true } label: {
+                            RoundedRectangle(cornerRadius: Theme.R.nav)
+                                .fill(Theme.card)
+                                .frame(width: 38, height: 38)
+                                .overlay(
+                                    Image(systemName: "photo")
+                                        .font(.system(size: 16, weight: .regular))
+                                        .foregroundStyle(Color(hex: "5A5249"))
+                                )
+                                .overlay(RoundedRectangle(cornerRadius: Theme.R.nav).stroke(Theme.borderRead, lineWidth: 1))
+                                .navButtonShadow()
+                        }
+                        .buttonStyle(.plain)
+
+                        HStack(spacing: 0) {
+                            Button { Task { await performUndo() } } label: {
+                                Image(systemName: "arrow.uturn.backward")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundStyle(canUndo ? Color(hex: "3A352E") : Color(hex: "C9BFB0"))
+                                    .frame(width: 38, height: 38)
+                            }
+                            .buttonStyle(.plain).disabled(!canUndo)
+                            Rectangle().fill(Theme.borderRead).frame(width: 1, height: 20)
+                            Button { Task { await performRedo() } } label: {
+                                Image(systemName: "arrow.uturn.forward")
+                                    .font(.system(size: 15, weight: .medium))
+                                    .foregroundStyle(canRedo ? Color(hex: "3A352E") : Color(hex: "C9BFB0"))
+                                    .frame(width: 38, height: 38)
+                            }
+                            .buttonStyle(.plain).disabled(!canRedo)
+                        }
+                        .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.R.nav))
+                        .overlay(RoundedRectangle(cornerRadius: Theme.R.nav).stroke(Theme.borderRead, lineWidth: 1))
+                        .navButtonShadow()
                     }
-                    .padding(.horizontal, 12).padding(.vertical, 5)
-                    .background(Color(hex: "F6E4DC"), in: Capsule())
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 } else {
                     Menu {
                         Button { Task { await publishWechatTapped() } } label: {
@@ -255,7 +257,7 @@ struct RecordingDetailView: View {
                         }
                         Divider()
                         Button(role: .destructive) { confirmDeleteFromDetail = true } label: {
-                            Label("删除录音", systemImage: "trash")
+                            Label("删除", systemImage: "trash")
                         }
                     } label: {
                         RoundedRectangle(cornerRadius: Theme.R.nav)
@@ -272,6 +274,7 @@ struct RecordingDetailView: View {
             }
         }
         .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 8)
+        .animation(.easeInOut(duration: 0.2), value: isEditing)
     }
 
     private func share() async {
@@ -319,9 +322,8 @@ struct RecordingDetailView: View {
 
     private var articlePane: some View {
         VStack(spacing: 0) {
-            // 播放条 / 编辑工具行：固定在 ScrollView 外，切换时正文不跳动
-            playerEditHeader
-                .animation(.easeInOut(duration: 0.2), value: dictation.isRecording || agent.state == .working)
+            playerCard
+                .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 14)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -598,9 +600,8 @@ struct RecordingDetailView: View {
         HStack(spacing: 8) {
             if recording {
                 Text(willCancel ? "上滑取消 · 松开放弃" : "松开 发送 · 上滑取消")
-                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.accent)
             } else if working {
-                // The mic itself becomes the live "editing" indicator — no chip.
                 Image(systemName: "pencil.line").font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(Theme.accent)
                     .symbolEffect(.pulse, options: .repeating)
@@ -612,12 +613,9 @@ struct RecordingDetailView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 15)
-        .background(RoundedRectangle(cornerRadius: Theme.R.primary)
-            .fill((recording || working) ? Theme.accent : Theme.card))
-        .overlay(RoundedRectangle(cornerRadius: Theme.R.primary)
-            .stroke((recording || working) ? Color(hex: "C94A2E") : Theme.borderRead, lineWidth: 1))
-        .shadow(color: (recording || working) ? Color(.sRGB, red: 216/255, green: 89/255, blue: 59/255, opacity: 0.30) : .clear,
-                radius: 7, x: 0, y: 4)
+        .background(RoundedRectangle(cornerRadius: Theme.R.primary).fill(Theme.card))
+        .overlay(RoundedRectangle(cornerRadius: Theme.R.primary).stroke(Theme.borderRead, lineWidth: 1))
+        .shadow(color: .clear, radius: 7, x: 0, y: 4)
         .contentShape(RoundedRectangle(cornerRadius: Theme.R.primary))
         .gesture(holdGesture())
     }
@@ -704,7 +702,7 @@ struct RecordingDetailView: View {
             .onChanged { v in
                 // No working-state gate: speak the next sentence while the last rewrites.
                 guard dictation.authorized == true else { return }
-                if !dictation.isRecording { dictation.start() }
+                if !dictation.isRecording { dictation.start(); hasSpokenOnce = true }
                 willCancel = v.translation.height < -60
             }
             .onEnded { v in
@@ -816,32 +814,6 @@ struct PhotoTile: View {
                 guard let data = try? await store.downloadData(relKey) else { return }
                 image = UIImage(data: data)
             }
-    }
-}
-
-/// Minimal PHPicker wrapper that picks a single image for inline article insertion.
-struct SinglePhotoPicker: UIViewControllerRepresentable {
-    let onPick: (UIImage) -> Void
-    func makeUIViewController(context: Context) -> PHPickerViewController {
-        var config = PHPickerConfiguration()
-        config.selectionLimit = 1
-        config.filter = .images
-        let vc = PHPickerViewController(configuration: config)
-        vc.delegate = context.coordinator
-        return vc
-    }
-    func updateUIViewController(_ vc: PHPickerViewController, context: Context) {}
-    func makeCoordinator() -> Coordinator { Coordinator(onPick: onPick) }
-    class Coordinator: NSObject, PHPickerViewControllerDelegate {
-        let onPick: (UIImage) -> Void
-        init(onPick: @escaping (UIImage) -> Void) { self.onPick = onPick }
-        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-            picker.dismiss(animated: true)
-            guard let provider = results.first?.itemProvider, provider.canLoadObject(ofClass: UIImage.self) else { return }
-            provider.loadObject(ofClass: UIImage.self) { obj, _ in
-                if let img = obj as? UIImage { DispatchQueue.main.async { self.onPick(img) } }
-            }
-        }
     }
 }
 

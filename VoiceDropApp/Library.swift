@@ -12,6 +12,14 @@ struct MinedArticle: Decodable, Identifiable {
     var id: String { title + "\(body.count)" }
 }
 
+/// One entry in a version history list returned by GET /articles/<stem>/history.
+struct ArticleVersionEntry: Decodable {
+    let v: Int
+    let savedAt: Double?
+    let source: String?
+    let articles: [MinedArticle]
+}
+
 /// The `articles/<stem>.json` document the server miner writes. Handles both the
 /// v2 schema (`articles: [...]`) and the v1 schema (a single `title`/`body`).
 struct ArticleDoc: Decodable {
@@ -433,6 +441,37 @@ final class LibraryStore {
             let (_, resp) = try await URLSession.shared.data(for: req)
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
             return (200..<300).contains(code) ? relKey : nil
+        } catch { return nil }
+    }
+
+    /// Fetch the full version history for an article.
+    /// Returns newest-first: history[0] = current, history[1] = previous, etc.
+    func fetchVersionHistory(_ rec: Recording) async -> [ArticleVersionEntry] {
+        guard !token.isEmpty, rec.hasArticles else { return [] }
+        struct Resp: Decodable { let history: [ArticleVersionEntry] }
+        let enc = rec.stem.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? rec.stem
+        guard let url = URL(string: "\(base.absoluteString)/articles/\(enc)/history") else { return [] }
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            guard (resp as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) == true else { return [] }
+            return (try? JSONDecoder().decode(Resp.self, from: data))?.history ?? []
+        } catch { return [] }
+    }
+
+    /// Revert an article to a specific version number. Returns the new doc on success.
+    func revertToVersion(_ rec: Recording, v: Int) async -> ArticleDoc? {
+        guard !token.isEmpty, rec.hasArticles else { return nil }
+        let enc = rec.stem.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? rec.stem
+        guard let url = URL(string: "\(base.absoluteString)/articles/\(enc)/revert/\(v)") else { return nil }
+        var req = URLRequest(url: url)
+        req.httpMethod = "PUT"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        do {
+            let (_, resp) = try await URLSession.shared.data(for: req)
+            guard (resp as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) == true else { return nil }
+            return await fetchDoc(rec)
         } catch { return nil }
     }
 
