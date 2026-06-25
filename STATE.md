@@ -1,6 +1,6 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-06-24
+Last updated: 2026-06-25
 
 ## What it is
 
@@ -183,10 +183,17 @@ gear → **设置** (redesign "方案二"; the old `ContentView` 3-tab `TabView`
   (so delete is a pure local removal, no R2 orphan race). Every shot/import is center-cropped to a 1:1
   square (≤1080px JPEG, auto-quality to <900KB, WYSIWYG with the square preview; `SquareImage.jpeg` is a
   nonisolated top-level helper so off-main capture/PHPicker callbacks don't trip a main-actor assertion)
-  and uploaded to `photos/<sessionTs>/<captureTs>.jpg`. Flip re-applies portrait+mirroring on the photo
-  connection **at capture time** (`configurePhotoConnection()` in `takePhoto`) — the connection is recreated
-  when the input swaps, so a one-shot post-flip apply races it; front stills are mirrored to match the selfie
-  preview. **`sessionTs` = the recorder's own start instant** (`AudioRecorder.startDate`, same source as the
+  and uploaded to `photos/<sessionTs>/<captureTs>.jpg`. **Rotation follows the phone's PHYSICAL orientation,
+  NOT a hardcoded angle** (`AVCaptureDevice.RotationCoordinator`, iOS17+): preview angle =
+  `videoRotationAngleForHorizonLevelPreview` **observed via KVO** (the coordinator resolves orientation
+  asynchronously, so a single synchronous read returns a stale value — this was the bug behind the
+  front-camera-sideways saga); capture angle = `videoRotationAngleForHorizonLevelCapture` read at capture time
+  in `configurePhotoConnection()` (the photo connection is recreated when the input swaps on flip, so a
+  one-shot post-flip apply races it). The coordinator is rebuilt + re-observed for the new device on flip.
+  **Do NOT hardcode `videoRotationAngle = 90` and do NOT manually mirror the PREVIEW** — preview front-mirror
+  is left to the system (`automaticallyAdjustsVideoMirroring`); manual `isVideoMirrored` on the preview
+  reverses the rotation sense and scrambles the front camera. The photo connection IS manually mirrored for
+  front (selfie WYSIWYG). **`sessionTs` = the recorder's own start instant** (`AudioRecorder.startDate`, same source as the
   audio filename — NOT a separate `Date()`, which drifted across a second boundary and broke audio↔photo
   correlation). No visible affordance on the record screen yet — enable a real button once it proves useful.
 - **文章详情** `RecordingDetailView.swift` — player (shown even in 待处理 / 无语音 states) + the article
