@@ -114,6 +114,141 @@ ARTICLES_SCHEMA = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Multi-provider LLM layer
+# ---------------------------------------------------------------------------
+
+# OpenAI-compatible providers: name → (base_url, env-var-for-api-key)
+_OPENAI_COMPAT = {
+    "volc":     ("https://ark.cn-beijing.volces.com/api/v3", "VOLC_ARK_API_KEY"),
+    "kimi":     ("https://api.moonshot.cn/v1",               "MOONSHOT_API_KEY"),
+    "deepseek": ("https://api.deepseek.com/v1",              "DEEPSEEK_API_KEY"),
+    "zhipu":    ("https://open.bigmodel.cn/api/paas/v4",     "ZHIPU_API_KEY"),
+    "openai":   ("https://api.openai.com/v1",                "OPENAI_API_KEY"),
+}
+
+
+class AnthropicProvider:
+    name = "anthropic"
+
+    def __init__(self, api_key, model):
+        self.api_key = api_key
+        self.model = model
+
+    def user_content(self, transcript, photos):
+        if not photos:
+            return f"口述转写：\n\n{transcript}"
+        blocks = [{"type": "text", "text": f"口述转写：\n\n{transcript}"}]
+        for i, (b64, label) in enumerate(photos, 1):
+            blocks.append({"type": "text", "text": f"\n[照片 {i}，拍摄于 {label}]"})
+            blocks.append({"type": "image",
+                           "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}})
+        return blocks
+
+    def build_payload(self, system, content, max_tokens, schema):
+        payload = {
+            "model": self.model, "max_tokens": max_tokens, "system": system,
+            "messages": [{"role": "user", "content": content}],
+        }
+        if schema:
+            payload["output_config"] = {"format": {"type": "json_schema", "schema": schema}}
+        return payload
+
+    def call(self, payload):
+        raw = _req("POST", "https://api.anthropic.com/v1/messages",
+                   data=json.dumps(payload).encode(),
+                   headers={"x-api-key": self.api_key,
+                            "anthropic-version": "2023-06-01",
+                            "content-type": "application/json"})
+        resp = json.loads(raw)
+        text = "".join(b.get("text", "") for b in resp.get("content", []) if b.get("type") == "text")
+        return resp, text
+
+
+class OpenAICompatProvider:
+    def __init__(self, name, api_key, model, base_url):
+        self.name = name
+        self.api_key = api_key
+        self.model = model
+        self.base_url = base_url.rstrip("/")
+
+    def user_content(self, transcript, photos):
+        if not photos:
+            return f"口述转写：\n\n{transcript}"
+        blocks = [{"type": "text", "text": f"口述转写：\n\n{transcript}"}]
+        for i, (b64, label) in enumerate(photos, 1):
+            blocks.append({"type": "text", "text": f"\n[照片 {i}，拍摄于 {label}]"})
+            blocks.append({"type": "image_url",
+                           "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
+        return blocks
+
+    def build_payload(self, system, content, max_tokens, schema):
+        # schema ignored — non-Anthropic providers rely on the prompt's JSON instruction
+        return {
+            "model": self.model, "max_tokens": max_tokens,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": content},
+            ],
+        }
+
+    def call(self, payload):
+        raw = _req("POST", f"{self.base_url}/chat/completions",
+                   data=json.dumps(payload).encode(),
+                   headers={"Authorization": f"Bearer {self.api_key}",
+                            "content-type": "application/json"})
+        resp = json.loads(raw)
+        text = resp["choices"][0]["message"]["content"]
+        return resp, text
+
+
+def _make_provider():
+    name = os.environ.get("MINE_PROVIDER", "").lower()
+    if not name:
+        if MODEL.startswith("claude"):
+            name = "anthropic"
+        elif MODEL.startswith(("doubao", "ep-")):
+            name = "volc"
+        elif MODEL.startswith("moonshot"):
+            name = "kimi"
+        elif MODEL.startswith("deepseek"):
+            name = "deepseek"
+        elif MODEL.startswith("glm"):
+            name = "zhipu"
+        else:
+            name = "anthropic"
+    if name == "anthropic":
+        return AnthropicProvider(CLAUDE_KEY, MODEL)
+    if name not in _OPENAI_COMPAT:
+        raise SystemExit(f"Unknown MINE_PROVIDER: {name!r}. Known: {', '.join(_OPENAI_COMPAT)}")
+    base_url, key_env = _OPENAI_COMPAT[name]
+    return OpenAICompatProvider(name, os.environ.get(key_env, ""), MODEL, base_url)
+
+
+PROVIDER = _make_provider()
+
+
+def _provider_for_model(model):
+    """Create a provider for a specific model string (per-user model overrides).
+    Detection is always by model name prefix — no MINE_PROVIDER env override."""
+    if model.startswith("claude"):
+        name = "anthropic"
+    elif model.startswith(("doubao", "ep-")):
+        name = "volc"
+    elif model.startswith("moonshot"):
+        name = "kimi"
+    elif model.startswith("deepseek"):
+        name = "deepseek"
+    elif model.startswith("glm"):
+        name = "zhipu"
+    else:
+        name = "anthropic"
+    if name == "anthropic":
+        return AnthropicProvider(CLAUDE_KEY, model)
+    base_url, key_env = _OPENAI_COMPAT[name]
+    return OpenAICompatProvider(name, os.environ.get(key_env, ""), model, base_url)
+
+
 # Always go direct (no proxy) with a normal UA: Cloudflare 403s the default
 # python-urllib UA, and a local clash/VPN proxy breaks jianshuo.dev. CI has no
 # proxy, so this is correct everywhere.
@@ -207,8 +342,8 @@ def api_exists(key):
         return False
 
 
-def llmlog(request, *, response=None, error=None, ok, status, latency, step, turn_id, meta=None):
-    """Record one Anthropic call to R2 under llmlogs/ so the admin console
+def llmlog(request, *, response=None, error=None, ok, status, latency, step, turn_id, meta=None, model=None):
+    """Record one LLM call to R2 under llmlogs/ so the admin console
     (voicedrop/admin/llm.html) can replay exactly what was sent & received.
     Admin-only (outside users/). Best-effort: never let logging break mining."""
     try:
@@ -218,7 +353,7 @@ def llmlog(request, *, response=None, error=None, ok, status, latency, step, tur
         date = time.strftime("%Y-%m-%d", time.gmtime(ts / 1000))  # UTC, matches worker
         rec = {
             "id": rid, "ts": ts, "source": "mine",
-            "user_scope": meta.get("user_scope", ""), "model": MODEL,
+            "user_scope": meta.get("user_scope", ""), "model": model or MODEL,
             "latency_ms": int(latency * 1000), "http_status": status, "ok": ok,
             "turn_id": turn_id, "step": step, "request": request,
         }
@@ -619,6 +754,18 @@ def fetch_claude_md(audio_key):
         return ""
 
 
+def fetch_user_model(audio_key):
+    """The user's preferred mining model (users/<sub>/MINE_MODEL), set from the
+    app's Settings long-press UI. Returns '' if not set (use server default)."""
+    prefix = _user_prefix(audio_key)
+    try:
+        raw = _req("GET", f"{BASE}/download/{quote(prefix + 'MINE_MODEL')}",
+                   headers={"Authorization": f"Bearer {TOKEN}"})
+        return raw.decode("utf-8", "replace").strip()
+    except Exception:
+        return ""
+
+
 def notify(audio_key, status):
     """Fire-and-forget: push a status change to the user's StatusHub so the app
     can update in real-time without polling. status ∈ {asr, mining, ready, empty}
@@ -752,7 +899,8 @@ def _articles_from(text):
 
 def _sanitize_for_log(payload):
     """Copy of the API payload with base64 image bytes replaced by a short
-    placeholder, so llmlogs don't store hundreds of KB of image data per call."""
+    placeholder, so llmlogs don't store hundreds of KB of image data per call.
+    Handles both Anthropic (type=image, source.data) and OpenAI (type=image_url) formats."""
     msgs = payload.get("messages")
     if not msgs:
         return payload
@@ -763,12 +911,18 @@ def _sanitize_for_log(payload):
         if isinstance(content, list):
             blocks = []
             for b in content:
-                if isinstance(b, dict) and b.get("type") == "image":
+                if not isinstance(b, dict):
+                    blocks.append(b)
+                elif b.get("type") == "image":
                     src = b.get("source", {})
                     n = len(src.get("data", "")) if isinstance(src, dict) else 0
                     blocks.append({"type": "image", "source": {"type": "base64",
                                    "media_type": src.get("media_type", "image/jpeg"),
                                    "data": f"<{n} b64 chars omitted>"}})
+                elif b.get("type") == "image_url":
+                    url = (b.get("image_url") or {}).get("url", "")
+                    blocks.append({"type": "image_url",
+                                   "image_url": {"url": f"<{len(url)} chars omitted>"}})
                 else:
                     blocks.append(b)
             new_msgs.append({**m, "content": blocks})
@@ -778,57 +932,40 @@ def _sanitize_for_log(payload):
     return out
 
 
-def generate_articles(transcript, claude_md="", force=False, meta=None, photos=None):
+def generate_articles(transcript, claude_md="", force=False, meta=None, photos=None, provider=None):
     """Return a list of {title, body}. Balanced split: usually 1, more only on
     clearly distinct topics. Falls back to a single article on parse failure.
     The owner's CLAUDE.md (name + style), if any, is appended after the system
     prompt so the articles come out in their own voice.
     photos: optional list of (base64_str, time_label) tuples; if provided the
     API call becomes multimodal (vision) so Claude can describe the scenes.
-    force=True uses a minimal system prompt (no style rules) as a last resort."""
-    # Structured outputs (output_config.format) constrain the reply to schema-valid
-    # JSON, so a big prose-heavy CLAUDE.md can't drift the model off clean JSON.
-    # _parse_llm_json stays as a belt-and-suspenders fallback.
+    force=True uses a minimal system prompt (no style rules) as a last resort.
+    provider: optional LLMProvider override (per-user model selection); falls
+    back to the module-level PROVIDER (from MINE_MODEL env) if omitted."""
+    prov = provider or PROVIDER
     if force:
         system = SYSTEM_FORCE
     elif claude_md:
-        # _FORCE_SUFFIX ensures the style card doesn't veto article creation.
         system = f"{SYSTEM}{_PHOTO_INSTR if photos else ''}\n\n---\n\n{claude_md}{_FORCE_SUFFIX}"
     else:
         system = SYSTEM + (_PHOTO_INSTR if photos else "")
     max_tokens = 2000 if force else 8000
 
-    # Build user message: text transcript + optional image blocks
-    if photos and not force:
-        user_content = [{"type": "text", "text": f"口述转写：\n\n{transcript}"}]
-        for i, (b64, label) in enumerate(photos, 1):
-            user_content.append({"type": "text", "text": f"\n[照片 {i}，拍摄于 {label}]"})
-            user_content.append({
-                "type": "image",
-                "source": {"type": "base64", "media_type": "image/jpeg", "data": b64}
-            })
-        user_msg = user_content
-    else:
-        user_msg = f"口述转写：\n\n{transcript}"
+    content = prov.user_content(transcript, photos if not force else None)
+    # Structured outputs: Anthropic supports json_schema natively; other providers
+    # rely on the system prompt's "只输出 JSON" instruction + _parse_llm_json fallback.
+    schema = ARTICLES_SCHEMA if isinstance(prov, AnthropicProvider) and not force else None
+    payload = prov.build_payload(system, content, max_tokens, schema)
 
-    payload = {
-        "model": MODEL, "max_tokens": max_tokens, "system": system,
-        "messages": [{"role": "user", "content": user_msg}],
-        "output_config": {"format": {"type": "json_schema", "schema": ARTICLES_SCHEMA}},
-    }
-    log_payload = _sanitize_for_log(payload)   # drop base64 image bytes
+    log_payload = _sanitize_for_log(payload)
     arts = None
     turn_id = f"{int(time.time() * 1000)}-{os.urandom(3).hex()}"
     for attempt in range(2):  # one retry: a single malformed reply self-heals
         t0 = time.time()
         try:
-            raw = _req("POST", "https://api.anthropic.com/v1/messages",
-                       data=json.dumps(payload).encode(),
-                       headers={"x-api-key": CLAUDE_KEY, "anthropic-version": "2023-06-01",
-                                "content-type": "application/json"})
-            resp = json.loads(raw)
+            resp, text = prov.call(payload)
             llmlog(log_payload, response=resp, ok=True, status=200, latency=time.time() - t0,
-                   step=attempt, turn_id=turn_id, meta=meta)
+                   step=attempt, turn_id=turn_id, meta=meta, model=prov.model)
         except Exception as e:
             errtext = str(e)
             try:  # urllib HTTPError carries the response body + status code
@@ -836,10 +973,9 @@ def generate_articles(transcript, claude_md="", force=False, meta=None, photos=N
             except Exception:
                 pass
             llmlog(log_payload, error=errtext, ok=False, status=getattr(e, "code", 0),
-                   latency=time.time() - t0, step=attempt, turn_id=turn_id, meta=meta)
+                   latency=time.time() - t0, step=attempt, turn_id=turn_id, meta=meta,
+                   model=prov.model)
             raise
-        text = "".join(b.get("text", "") for b in resp.get("content", [])
-                       if b.get("type") == "text")
         arts = _articles_from(text)
         if arts is not None:
             break
@@ -866,8 +1002,8 @@ def main():
         for a in todo:
             log(f"  would mine: {a} -> {article_key_for(a)}")
         return
-    if not CLAUDE_KEY:
-        sys.exit("CLAUDE_API_KEY not set")
+    if not PROVIDER.api_key:
+        sys.exit(f"{PROVIDER.name} API key not set (check env vars)")
 
     run_t0 = time.time()
     mined = empty = 0
@@ -923,6 +1059,13 @@ def main():
             if claude_md:
                 log(f"   + CLAUDE.md ({len(claude_md)} chars)")
 
+            # Per-user model preference (set from the app's Settings long-press UI).
+            # Falls back to the server default (MINE_MODEL env) if not set.
+            user_model = fetch_user_model(audio)
+            user_prov = _provider_for_model(user_model) if user_model else PROVIDER
+            if user_model:
+                log(f"   + model: {user_prov.name}/{user_prov.model}")
+
             # Load photos (if any) for this session.
             photos = []
             if photo_keys:
@@ -938,7 +1081,7 @@ def main():
             t = time.time()
             try:
                 articles = generate_articles(transcript, claude_md, meta=meta,
-                                             photos=photos or None)
+                                             photos=photos or None, provider=user_prov)
             except NoArticleError:
                 tot_llm += time.time() - t
                 # Style-laden pass returned empty — retry with force mode
@@ -946,10 +1089,11 @@ def main():
                 log(f"   ⚠ no-article on first pass, retrying (force mode)…")
                 t2 = time.time()
                 try:
-                    articles = generate_articles(transcript, force=True, meta=meta)
+                    articles = generate_articles(transcript, force=True, meta=meta,
+                                                 provider=user_prov)
                     llm2 = time.time() - t2
                     tot_llm += llm2
-                    log(f"   Claude mine (force) → {len(articles)} article(s) ({llm2:.1f}s)")
+                    log(f"   {user_prov.name} mine (force) → {len(articles)} article(s) ({llm2:.1f}s)")
                 except (NoArticleError, Exception) as e2:
                     tot_llm += time.time() - t2
                     write_empty(audio, "no-article")
@@ -960,7 +1104,7 @@ def main():
             else:
                 llm = time.time() - t
                 tot_llm += llm
-                log(f"   Claude mine → {len(articles)} article(s) ({llm:.1f}s)")
+                log(f"   {user_prov.name} mine → {len(articles)} article(s) ({llm:.1f}s)")
 
             json_key, srt_key = _stem_keys(audio)
             # Store photos as relative keys (strip user scope prefix) so the iOS
@@ -976,7 +1120,7 @@ def main():
                 "srt": srt,
                 "articles": articles,
                 "status": "ready",
-                "model": MODEL,
+                "model": user_prov.model,
             }
             if relative_photos:
                 art["photos"] = relative_photos

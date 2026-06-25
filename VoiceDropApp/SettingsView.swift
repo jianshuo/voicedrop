@@ -35,6 +35,25 @@ final class SettingsStore {
     var wechatError: String?
     private(set) var wechatThumbMediaId = ""
 
+    struct ModelOption: Identifiable {
+        let id: String          // model string sent to server
+        let displayName: String // shown in picker
+        let providerName: String
+    }
+
+    static let availableModels: [ModelOption] = [
+        ModelOption(id: "claude-sonnet-4-6", displayName: "Claude Sonnet 4.6", providerName: "Anthropic"),
+        ModelOption(id: "doubao-seed-1-6",   displayName: "豆包 Seed 1.6",    providerName: "火山方舟"),
+        ModelOption(id: "moonshot-v1-8k",    displayName: "Kimi",              providerName: "月之暗面"),
+        ModelOption(id: "deepseek-chat",     displayName: "DeepSeek Chat",     providerName: "DeepSeek"),
+    ]
+
+    var mineModel: String = "claude-sonnet-4-6"
+
+    var modelDisplayName: String {
+        Self.availableModels.first(where: { $0.id == mineModel })?.displayName ?? mineModel
+    }
+
     private let base = URL(string: "https://jianshuo.dev/files/api")!
     private var token: String { AuthStore.shared.bearer }
 
@@ -102,6 +121,32 @@ final class SettingsStore {
             }
             saved = true
         } catch { self.error = error.localizedDescription }
+    }
+
+    func loadMineModel() async {
+        guard !token.isEmpty else { return }
+        var req = URLRequest(url: base.appending(path: "download").appending(path: "MINE_MODEL"))
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
+            guard (200..<300).contains(code) else { return }
+            let model = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !model.isEmpty { mineModel = model }
+        } catch {}
+    }
+
+    func saveMineModel(_ model: String) async {
+        guard !token.isEmpty else { return }
+        var req = URLRequest(url: base.appending(path: "upload").appending(path: "MINE_MODEL"))
+        req.httpMethod = "PUT"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("text/plain; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        do {
+            let (_, resp) = try await URLSession.shared.upload(for: req, from: Data(model.utf8))
+            guard (resp as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) == true else { return }
+            mineModel = model
+        } catch {}
     }
 
     private struct WechatConfig: Codable {
@@ -271,6 +316,7 @@ struct SettingsView: View {
     @State private var showStyle = false
     @State private var showPrivacy = false
     @State private var showingExport = false
+    @State private var showModelPicker = false
     @State private var exportManager = ExportManager()
 
     private var shortTag: String {
@@ -345,8 +391,12 @@ struct SettingsView: View {
                             settingsRowDivider
                             SettingsRow(tileBG: Theme.tileNeutral, symbol: "info.circle", tileFG: Theme.secondary,
                                         title: "版本") {
-                                Text(Prefs.versionBuild).font(.system(size: 14)).foregroundStyle(Theme.faint)
+                                VStack(alignment: .trailing, spacing: 2) {
+                                    Text(Prefs.versionBuild).font(.system(size: 14)).foregroundStyle(Theme.faint)
+                                    Text(store.modelDisplayName).font(.system(size: 11)).foregroundStyle(Theme.faint)
+                                }
                             }
+                            .onLongPressGesture { showModelPicker = true }
                         }
                     }
                 }
@@ -355,9 +405,10 @@ struct SettingsView: View {
         }
         .background(Theme.appBG.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .task { await store.load(); await store.loadWechat() }
+        .task { await store.load(); await store.loadWechat(); await store.loadMineModel() }
         .sheet(isPresented: $showWechat) { WechatSettingsSheet(store: store) }
         .sheet(isPresented: $showStyle) { WritingStyleSheet(store: store) }
+        .sheet(isPresented: $showModelPicker) { ModelPickerSheet(store: store) }
         .sheet(isPresented: $showingExport, onDismiss: { exportManager.reset() }) {
             ExportSheet(manager: exportManager, recordings: libraryStore.recordings, store: libraryStore)
                 .presentationDetents([.medium])
@@ -618,6 +669,61 @@ struct WechatSettingsSheet: View {
             .padding(.vertical, 13).padding(.horizontal, 15)
             .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.R.card))
             .overlay(RoundedRectangle(cornerRadius: Theme.R.card).stroke(Theme.borderChrome, lineWidth: 1))
+        }
+    }
+}
+
+// MARK: - Model picker (long-press on version row)
+
+struct ModelPickerSheet: View {
+    @Bindable var store: SettingsStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var saving = false
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(SettingsStore.availableModels) { m in
+                        Button {
+                            saving = true
+                            Task {
+                                await store.saveMineModel(m.id)
+                                saving = false
+                                dismiss()
+                            }
+                        } label: {
+                            HStack(spacing: 12) {
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(m.displayName)
+                                        .font(.system(size: 16)).foregroundStyle(Theme.ink)
+                                    Text(m.providerName)
+                                        .font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
+                                }
+                                Spacer()
+                                if store.mineModel == m.id {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(Theme.accent)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(saving)
+                    }
+                } footer: {
+                    Text("选择挖文章时使用的 AI 模型。所有模型的能力由服务端统一调用，无需配置 API Key。")
+                        .font(.system(size: 12.5))
+                }
+            }
+            .navigationTitle("AI 模型")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成") { dismiss() }.bold()
+                }
+            }
         }
     }
 }
