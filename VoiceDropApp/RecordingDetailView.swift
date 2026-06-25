@@ -59,9 +59,8 @@ struct RecordingDetailView: View {
         guard let last = versions.last else { return false }
         return head < last.v
     }
-    // Editing toolbar shows once the user has ever spoken (stays until dismiss),
-    // OR if the article already has version history from a prior session.
-    private var isEditing: Bool { hasSpokenOnce || dictation.isRecording || agent.state == .working || versions.count > 1 }
+    // Editing toolbar shows once the user has ever spoken, and stays until the view is dismissed.
+    private var isEditing: Bool { hasSpokenOnce || dictation.isRecording || agent.state == .working }
 
     private var articles: [MinedArticle] { doc?.resolvedArticles ?? [] }
 
