@@ -60,6 +60,8 @@ final class PhotoCaptureVC: UIViewController, PHPickerViewControllerDelegate {
     private var previewLayer: AVCaptureVideoPreviewLayer?
     private var currentInput: AVCaptureDeviceInput?
     private var cameraPosition: AVCaptureDevice.Position = .back
+    private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
+    private var previewRotationObservation: NSKeyValueObservation?
     private var currentDelegate: PhotoDelegate?
     private let sink = ShotSink()
 
@@ -147,28 +149,47 @@ final class PhotoCaptureVC: UIViewController, PHPickerViewControllerDelegate {
         sessionQueue.async { self.captureSession.startRunning() }
     }
 
-    /// Lock preview + photo output to portrait; mirror the front camera so the
-    /// saved still is WYSIWYG with the (mirrored) selfie preview.
+    /// Bind a `RotationCoordinator` to the current camera so the preview + captured
+    /// stills follow the device's PHYSICAL orientation (horizon-level), correct for
+    /// both front and back. Recreated whenever the input device changes (flip).
+    ///
+    /// We OBSERVE the preview angle via KVO instead of reading it once: the
+    /// coordinator resolves device orientation asynchronously (CoreMotion) and the
+    /// user can rotate the phone at any moment, so a single synchronous read would
+    /// be stale. Front-camera mirroring on the PREVIEW is left to the system
+    /// (`automaticallyAdjustsVideoMirroring`), which composes correctly with the
+    /// coordinator's angle — manually mirroring the preview reverses the rotation
+    /// sense and is what previously scrambled the front camera.
     private func applyConnectionGeometry() {
-        let angle: CGFloat = 90
-        if let pc = previewLayer?.connection {
-            if pc.isVideoRotationAngleSupported(angle) { pc.videoRotationAngle = angle }
-            if pc.isVideoMirroringSupported { pc.automaticallyAdjustsVideoMirroring = false; pc.isVideoMirrored = (cameraPosition == .front) }
+        guard let device = currentInput?.device else { return }
+        let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: previewLayer)
+        rotationCoordinator = coordinator
+        previewRotationObservation = coordinator.observe(\.videoRotationAngleForHorizonLevelPreview,
+                                                         options: [.initial, .new]) { [weak self] _, _ in
+            DispatchQueue.main.async { self?.updatePreviewRotation() }
         }
         configurePhotoConnection()
     }
 
-    /// Portrait + (front → mirrored) on the PHOTO-OUTPUT connection only.
+    /// Apply the coordinator's current horizon-level angle to the live preview.
+    private func updatePreviewRotation() {
+        guard let angle = rotationCoordinator?.videoRotationAngleForHorizonLevelPreview,
+              let pc = previewLayer?.connection else { return }
+        if pc.isVideoRotationAngleSupported(angle) { pc.videoRotationAngle = angle }
+    }
+
+    /// Horizon-level rotation + (front → mirrored) on the PHOTO-OUTPUT connection.
     /// Flipping the camera removes/re-adds the session input, which tears down and
-    /// recreates this connection with default geometry (rotation 0, auto-mirroring).
-    /// The post-flip main-thread `applyConnectionGeometry()` can race that
-    /// reconfiguration, so we also call this immediately before each capture —
-    /// guaranteeing every still is upright and mirrored to match the current camera,
-    /// no matter how many times the user has flipped.
+    /// recreates this connection with default geometry. We call this immediately
+    /// before each capture so every still uses the coordinator's CURRENT capture
+    /// angle (matching how the phone is physically held at that instant) and is
+    /// mirrored to match the (system-mirrored) front preview.
     private func configurePhotoConnection() {
         guard let oc = photoOutput.connection(with: .video) else { return }
-        let angle: CGFloat = 90
-        if oc.isVideoRotationAngleSupported(angle) { oc.videoRotationAngle = angle }
+        if let angle = rotationCoordinator?.videoRotationAngleForHorizonLevelCapture,
+           oc.isVideoRotationAngleSupported(angle) {
+            oc.videoRotationAngle = angle
+        }
         if oc.isVideoMirroringSupported {
             oc.automaticallyAdjustsVideoMirroring = false
             oc.isVideoMirrored = (cameraPosition == .front)
