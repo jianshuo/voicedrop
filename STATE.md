@@ -185,12 +185,9 @@ gear → **设置** (redesign "方案二"; the old `ContentView` 3-tab `TabView`
 - **VD社区** — see the Community section above.
 - **录音 (takeover)** `RecordSession.swift` — full-screen, opens **idle** (tap-to-record). Records to a
   **staging name** `recording-<ts>.m4a`, promoted to the enriched `VoiceDrop-*` name only after finalize
-  → fixes the moov-less/0-byte corrupt-upload race; uploads on finish. **拍照 button (design "Navigation.dc.html"
-  frame ②):** the recording-中 bottom bar is **3 equal columns** — an empty left column mirrors the right, the
-  停止 key stays centered on screen, and a **visible 50×50 拍照 button** (white→cream gradient circle, `camera`
-  SF Symbol, 「拍照」label) sits **centered in the right blank area** (`bottomBar` in `RecordSession.swift`;
-  replaced the old invisible 110×120 tap area). Tapping opens a full-screen camera (`PhotoCapture.swift`,
-  `AVCaptureSession` video-only so recording is NOT interrupted). Camera design = "Photo Capture.dc.html". **Square
+  → fixes the moov-less/0-byte corrupt-upload race; uploads on finish. **Hidden 拍照 (testing-only):** a
+  transparent 110×120 tap area right of the stop button opens a full-screen camera (`PhotoCapture.swift`,
+  `AVCaptureSession` video-only so recording is NOT interrupted). Design = "Photo Capture.dc.html". **Square
   viewfinder** (rule-of-thirds grid + border + empty-state hint), top bar = live "● 录音中 · MM:SS" (or
   "已拍 N 张" pill once shots exist) + a **完成** button (gray→orange) that closes and uploads. Bottom bar =
   photo-library import (left, `PHPickerViewController`, multi-select≤9, no permission prompt), shutter
@@ -211,7 +208,7 @@ gear → **设置** (redesign "方案二"; the old `ContentView` 3-tab `TabView`
   reverses the rotation sense and scrambles the front camera. The photo connection IS manually mirrored for
   front (selfie WYSIWYG). **`sessionTs` = the recorder's own start instant** (`AudioRecorder.startDate`, same source as the
   audio filename — NOT a separate `Date()`, which drifted across a second boundary and broke audio↔photo
-  correlation). The 拍照 affordance is now a **visible button** (see above) per design "Navigation.dc.html".
+  correlation). No visible affordance on the record screen yet — enable a real button once it proves useful.
 - **文章详情** `RecordingDetailView.swift` — **顶部播放键 + 进度圆环** (design "Player Edit Toolbar"): 成文页
   去掉整条 inline 播放条，播放键收进**顶部导航右上角、在 ⋯ 左边**（40pt，外圈 2.5pt 细圆环显示 `player.progress`，
   内圈赭红实心 play/pause），正文上移、阅读区更大。进入编辑态时播放键位置不动，在播放键与 ⋯ 之间插入
