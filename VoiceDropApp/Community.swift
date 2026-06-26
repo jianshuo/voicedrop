@@ -38,12 +38,11 @@ final class CommunityStore {
     private let recoBase = URL(string: "https://jianshuo.dev/reco")!
     private var token: String { AuthStore.shared.bearer }
 
-    /// reco identity = the iCloud-Keychain anon token, ALWAYS (even when signed in
-    /// with Apple). The core's Apple session scope is itself `users/anon-<hash>/`
-    /// (Apple sign-in only BINDS the Apple ID to the existing anon box — see core
-    /// auth/apple), so the anon token resolves to the SAME user_sub. Sending it to
-    /// reco is identity-equivalent and means reco needs no SESSION_SECRET at all.
-    private var recoToken: String { AuthStore.shared.anonToken }
+    /// Community WRITES (share / unshare) need an Apple-verified identity — the server
+    /// 403s a bare anon token. Send the session JWT when present; a missing one yields a
+    /// 403 the caller catches to trigger Sign in with Apple, then retries. Everything
+    /// else (incl. reco engage/rank, uploads, lists) uses `token` = the anon default.
+    private var shareToken: String { AuthStore.shared.session ?? token }
 
     /// shareIds the current user has liked — filled by `applyRanking()`, seeds the ❤️ state.
     var likedShareIds: Set<String> = []
@@ -67,7 +66,7 @@ final class CommunityStore {
     /// Ask reco how to order the feed; on success reorder `posts` and record what I liked.
     /// On failure/timeout keep the time-sort — the feed always shows.
     private func applyRanking() async {
-        guard !posts.isEmpty, !recoToken.isEmpty else { return }
+        guard !posts.isEmpty, !token.isEmpty else { return }
         let replyCounts = posts.reduce(into: [String: Int]()) { acc, p in
             if let to = p.replyTo { acc[to, default: 0] += 1 }
         }
@@ -80,7 +79,7 @@ final class CommunityStore {
         var req = URLRequest(url: recoBase.appending(path: "rank"))
         req.httpMethod = "POST"
         req.timeoutInterval = 2   // timeout → fall back to time-sort
-        req.setValue("Bearer \(recoToken)", forHTTPHeaderField: "Authorization")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: ["posts": payload])
         do {
@@ -128,7 +127,7 @@ final class CommunityStore {
     private func postShare(_ rec: Recording, replyTo: String?) async -> String? {
         var req = URLRequest(url: base.appending(path: "community").appending(path: "share").appending(path: rec.articleKey))
         req.httpMethod = "POST"
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("Bearer \(shareToken)", forHTTPHeaderField: "Authorization")
         if let replyTo {
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.httpBody = try? JSONEncoder().encode(["replyTo": replyTo])
@@ -164,7 +163,7 @@ final class CommunityStore {
     private func postUnshare(_ shareId: String) async -> Bool {
         var req = URLRequest(url: base.appending(path: "community").appending(path: "unshare").appending(path: shareId))
         req.httpMethod = "POST"
-        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("Bearer \(shareToken)", forHTTPHeaderField: "Authorization")
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
             let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
@@ -215,11 +214,11 @@ final class CommunityStore {
     /// Report one engagement. Failures are silently ignored — when reco is down the
     /// core experience is unaffected.
     func engage(_ shareId: String, action: String, on: Bool? = nil) async {
-        guard !recoToken.isEmpty else { return }
+        guard !token.isEmpty else { return }
         var req = URLRequest(url: recoBase.appending(path: "engage").appending(path: shareId))
         req.httpMethod = "POST"
         req.timeoutInterval = 3
-        req.setValue("Bearer \(recoToken)", forHTTPHeaderField: "Authorization")
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         var body: [String: Any] = ["action": action]
         if let on { body["on"] = on }

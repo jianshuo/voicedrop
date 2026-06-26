@@ -23,10 +23,13 @@ final class AuthStore {
     var lastError: String?
     var isAuthenticated: Bool { session != nil }
 
-    /// The bearer used for uploads: the signed-in session if present, else the
-    /// anonymous iCloud-Keychain token (zero-login; same Apple ID -> same token
-    /// across devices and reinstalls). Always non-empty.
-    var bearer: String { session ?? anonToken }
+    /// The default credential for ALL API calls: the anonymous iCloud-Keychain token
+    /// (zero-login; same Apple ID -> same token across devices and reinstalls; always
+    /// non-empty). Apple sign-in does NOT change the default — the session's scope is
+    /// itself `users/anon-<hash>/` (auth/apple binds the Apple ID to this anon box), so
+    /// anon and session resolve to the SAME user_sub. The session JWT (`session`) is sent
+    /// ONLY where the server demands an Apple-verified identity: community share/unshare.
+    var bearer: String { anonToken }
 
     /// The user-facing identity string — exactly the server's storage prefix
     /// (`users/<anonId>/`). Safe to show and share: it's a one-way hash of the
