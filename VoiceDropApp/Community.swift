@@ -35,7 +35,11 @@ final class CommunityStore {
     var error: String?
 
     private let base = URL(string: "https://jianshuo.dev/files/api")!
+    private let recoBase = URL(string: "https://jianshuo.dev/reco")!
     private var token: String { AuthStore.shared.bearer }
+
+    /// shareIds the current user has liked — filled by `applyRanking()`, seeds the ❤️ state.
+    var likedShareIds: Set<String> = []
 
     /// All shared posts, newest-first by first-share time.
     func load() async {
@@ -49,7 +53,39 @@ final class CommunityStore {
             guard (resp as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) == true else { error = "加载失败"; return }
             struct R: Decodable { let posts: [CommunityPost] }
             posts = try JSONDecoder().decode(R.self, from: data).posts
+            await applyRanking()
         } catch { self.error = error.localizedDescription }
+    }
+
+    /// Ask reco how to order the feed; on success reorder `posts` and record what I liked.
+    /// On failure/timeout keep the time-sort — the feed always shows.
+    private func applyRanking() async {
+        guard !posts.isEmpty, !token.isEmpty else { return }
+        let replyCounts = posts.reduce(into: [String: Int]()) { acc, p in
+            if let to = p.replyTo { acc[to, default: 0] += 1 }
+        }
+        let payload = posts.map { p -> [String: Any] in
+            ["shareId": p.shareId,
+             "firstSharedAt": p.firstSharedAt ?? 0,
+             "author": p.author ?? "",
+             "replyCount": replyCounts[p.shareId] ?? 0]
+        }
+        var req = URLRequest(url: recoBase.appending(path: "rank"))
+        req.httpMethod = "POST"
+        req.timeoutInterval = 2   // timeout → fall back to time-sort
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["posts": payload])
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            guard (resp as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) == true else { return }
+            struct R: Decodable { let order: [String]; let liked: [String] }
+            let r = try JSONDecoder().decode(R.self, from: data)
+            likedShareIds = Set(r.liked)
+            let byId = Dictionary(uniqueKeysWithValues: posts.map { ($0.shareId, $0) })
+            let reordered = r.order.compactMap { byId[$0] }
+            if reordered.count == posts.count { posts = reordered }  // replace only on full coverage
+        } catch { /* fall back: keep time-sort */ }
     }
 
     /// Share (or re-share) one of the user's articles. Returns shareId on success, nil on failure.
@@ -169,6 +205,21 @@ final class CommunityStore {
         } catch { return nil }
     }
 
+    /// Report one engagement. Failures are silently ignored — when reco is down the
+    /// core experience is unaffected.
+    func engage(_ shareId: String, action: String, on: Bool? = nil) async {
+        guard !token.isEmpty else { return }
+        var req = URLRequest(url: recoBase.appending(path: "engage").appending(path: shareId))
+        req.httpMethod = "POST"
+        req.timeoutInterval = 3
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        var body: [String: Any] = ["action": action]
+        if let on { body["on"] = on }
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        _ = try? await URLSession.shared.data(for: req)
+    }
+
     /// Posts that are responses to `shareId`, oldest-first.
     func loadReplies(_ shareId: String) async -> [CommunityPost] {
         guard !token.isEmpty else { return [] }
@@ -212,6 +263,8 @@ struct CommunityPostView: View {
     @State private var selectedOriginal: CommunityPost?  // navigate to original post
     @State private var sharePayload: SharePayload?
     @State private var toast: String?
+    @State private var liked = false
+    @State private var finishedReported = false
 
     // Recording a response
     @State private var recorder = AudioRecorder()
@@ -250,6 +303,12 @@ struct CommunityPostView: View {
                             communityBody(a).padding(.top, articles.count > 1 ? 16 : 20)
                         }
                         repliesSection
+                        Color.clear.frame(height: 1)
+                            .onAppear {
+                                guard !finishedReported else { return }
+                                finishedReported = true
+                                Task { await store.engage(post.shareId, action: "finish") }
+                            }
                     }
                     .padding(.horizontal, 20)
                 }
@@ -269,6 +328,8 @@ struct CommunityPostView: View {
         }
         .sheet(item: $sharePayload) { ShareSheet(items: [$0.text]) }
         .task {
+            liked = store.likedShareIds.contains(post.shareId)
+            await store.engage(post.shareId, action: "view")
             full = await store.fetchPost(post.shareId)
             loading = false
             async let repliesTask = store.loadReplies(post.shareId)
@@ -287,6 +348,16 @@ struct CommunityPostView: View {
             NavSquare(systemName: "chevron.left", stroke: Theme.inkRead, border: Theme.borderRead) { dismiss() }
                 .accessibilityLabel("返回")
             Spacer()
+            Button {
+                liked.toggle()
+                Task { await store.engage(post.shareId, action: "like", on: liked) }
+            } label: {
+                Image(systemName: liked ? "heart.fill" : "heart")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundStyle(liked ? Theme.accent : Theme.inkRead)
+                    .frame(width: 38, height: 38)
+            }
+            .accessibilityLabel(liked ? "取消赞" : "赞")
             Menu {
                 Button { Task { await startResponse() } } label: {
                     Label("写回应", systemImage: "mic")
