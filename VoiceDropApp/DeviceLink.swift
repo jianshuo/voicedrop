@@ -101,7 +101,8 @@ final class DeviceLinkResponder {
         req.setBearer(AuthStore.shared.bearer)
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
-        _ = try await URLSession.shared.data(for: req)
+        let (_, resp) = try await URLSession.shared.data(for: req)
+        guard resp.isOK else { throw URLError(.badServerResponse) }
     }
 }
 
