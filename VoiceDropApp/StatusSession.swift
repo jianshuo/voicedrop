@@ -10,6 +10,8 @@ import Observation
 final class StatusSession {
     var onPhase: ((String, String) -> Void)?   // (stem, phase) — phase ∈ {asr, mining}
     var onDone: ((String) -> Void)?            // stem that finished (ready or empty)
+    var onLinkRequest: ((String, String, String) -> Void)?  // (pairingId, code, pubkey)
+    var onLinkRelease: ((String) -> Void)?                  // pairingId
 
     private var task: URLSessionWebSocketTask?
     private var urlSession: URLSession?
@@ -58,7 +60,21 @@ final class StatusSession {
     private func handle(_ str: String) {
         guard let data = str.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              (obj["type"] as? String) == "status_update",
+              let type = obj["type"] as? String else { return }
+
+        if type == "link_request" {
+            guard let pid = obj["pairingId"] as? String,
+                  let code = obj["code"] as? String,
+                  let pubkey = obj["pubkey"] as? String else { return }
+            onLinkRequest?(pid, code, pubkey)
+            return
+        }
+        if type == "link_release" {
+            if let pid = obj["pairingId"] as? String { onLinkRelease?(pid) }
+            return
+        }
+
+        guard type == "status_update",
               let stem = obj["stem"] as? String,
               let status = obj["status"] as? String else { return }
         switch status {

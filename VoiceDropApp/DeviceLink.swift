@@ -55,3 +55,74 @@ enum DeviceLinkCrypto {
     }
     #endif
 }
+
+import SwiftUI
+
+// MARK: - Old-device side: show the 4-digit code, then release the token on link_release.
+@MainActor
+@Observable
+final class DeviceLinkResponder {
+    struct Pending: Identifiable { let id = UUID(); let pairingId: String; let code: String; let pubkey: String }
+    var pending: Pending?
+    var status: String = ""   // transient toast text after release/cancel
+
+    private let base = URL(string: "https://jianshuo.dev/agent/link")!
+
+    func present(pairingId: String, code: String, pubkey: String) {
+        pending = Pending(pairingId: pairingId, code: code, pubkey: pubkey)
+        status = ""
+    }
+
+    // Fired when the new device entered the correct code (server pushed link_release).
+    func release(pairingId: String) {
+        guard let p = pending, p.pairingId == pairingId else { return }
+        Task {
+            do {
+                let (epk, sealed) = try DeviceLinkCrypto.encrypt(token: AuthStore.shared.anonToken, toPubB64: p.pubkey)
+                try await post("complete", body: ["pairingId": pairingId, "blob": ["epk": epk, "sealed": sealed]])
+                status = "已在新设备登录"
+            } catch {
+                status = "登录失败"
+            }
+            pending = nil
+        }
+    }
+
+    func cancel() {
+        guard let p = pending else { return }
+        let pid = p.pairingId
+        pending = nil
+        Task { try? await post("cancel", body: ["pairingId": pid]) }
+    }
+
+    private func post(_ path: String, body: [String: Any]) async throws {
+        var req = URLRequest(url: base.appending(path: path))
+        req.httpMethod = "POST"
+        req.setBearer(AuthStore.shared.bearer)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+        _ = try await URLSession.shared.data(for: req)
+    }
+}
+
+struct DeviceLinkApprovalSheet: View {
+    @Bindable var responder: DeviceLinkResponder
+    let pending: DeviceLinkResponder.Pending
+
+    var body: some View {
+        VStack(spacing: 22) {
+            Text("有新设备想登录你的账号").font(.system(size: 18, weight: .semibold))
+            Text("在新设备上输入下面的验证码").font(.system(size: 14)).foregroundStyle(.secondary)
+            Text(pending.code)
+                .font(.system(size: 44, weight: .bold, design: .monospaced))
+                .tracking(8)
+            Text("不是你本人操作？点「不是我」。").font(.system(size: 12)).foregroundStyle(.secondary)
+            Button(role: .destructive) { responder.cancel() } label: {
+                Text("不是我").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+        }
+        .padding(28)
+        .presentationDetents([.height(320)])
+    }
+}

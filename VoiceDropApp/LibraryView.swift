@@ -11,6 +11,7 @@ struct LibraryView: View {
     @State private var uploader = Uploader()
     @State private var community = CommunityStore()
     @State private var statusSession = StatusSession()
+    @State private var linkResponder = DeviceLinkResponder()
     @State private var tab: HomeTab = .recordings
     @State private var confirmDelete: Recording?
     @State private var confirmReprocess: Recording?
@@ -80,8 +81,13 @@ struct LibraryView: View {
         .task {
             statusSession.onPhase = { stem, phase in store.markPhase(stem: stem, phase: phase) }
             statusSession.onDone = { stem in store.markDone(stem: stem) }
+            statusSession.onLinkRequest = { pid, code, pubkey in linkResponder.present(pairingId: pid, code: code, pubkey: pubkey) }
+            statusSession.onLinkRelease = { pid in linkResponder.release(pairingId: pid) }
             statusSession.connect()
             await refresh()
+        }
+        .sheet(item: $linkResponder.pending) { p in
+            DeviceLinkApprovalSheet(responder: linkResponder, pending: p)
         }
         .onChange(of: scenePhase) { _, p in
             if p == .active { statusSession.connect(); Task { await refresh() } }
