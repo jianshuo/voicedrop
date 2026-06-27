@@ -3,42 +3,38 @@ import Observation
 
 enum AgentState: Equatable { case idle, connecting, working, error }
 
-/// A 320×320 thumbnail to send alongside a voice instruction so the model
-/// can see the image content and decide where to place it.
+/// A 320×320 thumbnail sent alongside a voice instruction so the model can see
+/// the image and decide where to place it.
 struct AgentImage: Equatable {
-    let key: String      // relative R2 key, e.g. "photos/2026-06-25-131500/ts.jpg"
-    let base64: String   // base64-encoded JPEG
+    let key: String
+    let base64: String
 }
 
-/// A live WebSocket conversation with the article-editing Agent (Cloudflare
-/// Durable Object behind wss://jianshuo.dev/agent/edit). You `connect` once for a
-/// recording, `send` spoken instructions, and each time the server finishes
-/// rewriting it pushes the new article doc back — delivered via `onUpdate` so the
-/// detail view can reload it in place. The socket stays open for an unbounded
-/// back-and-forth; `disconnect` ends it.
+/// A live WebSocket conversation with the article-editing Agent (Durable Object
+/// behind wss://jianshuo.dev/agent/edit). The SERVER owns the durable queue; this
+/// client submits instructions (each with a stable id), persists un-acked ones to
+/// disk, and reconciles against the server's connect-time snapshot — so a dropped
+/// socket, a backgrounding, or an app-kill never loses or double-applies an edit.
 @MainActor
 @Observable
 final class ArticleAgentSession {
-    /// One queued spoken instruction, optionally with image thumbnails attached.
     struct EditRequest: Identifiable, Equatable {
-        let id = UUID()
+        let id: String          // stable across reconnects/relaunches (sent on the wire)
         let text: String
-        let images: [AgentImage]   // empty for text-only edits
+        let images: [AgentImage]
+        init(id: String = UUID().uuidString, text: String, images: [AgentImage] = []) {
+            self.id = id; self.text = text; self.images = images
+        }
     }
 
     var state: AgentState = .idle
     var error: String?
 
-    /// Outstanding edits. `queue.first` is the one in flight once `processing`;
-    /// the rest are waiting their turn. Drives the stacked queue UI.
+    /// Outstanding edits the user has spoken but the server hasn't confirmed
+    /// done. Drives the stacked queue UI. The server is the real authority.
     var queue: [EditRequest] = []
-    private var processing = false
 
-    /// Called on the main actor whenever the server pushes a rewritten article.
     var onUpdate: ((ArticleDoc) -> Void)?
-
-    /// Called on the main actor when the agent sends a one-line reply (text + ok).
-    /// Display-only — does not affect the edit queue.
     var onReply: ((String, Bool) -> Void)?
 
     private var task: URLSessionWebSocketTask?
@@ -48,66 +44,75 @@ final class ArticleAgentSession {
 
     private let base = "wss://jianshuo.dev/agent/edit"
     private var token: String { AuthStore.shared.bearer }
+    private var stem: String { rec?.stem ?? "" }
 
     func connect(_ rec: Recording) {
         self.rec = rec
         closed = false
+        // Restore any edits persisted before a previous kill (text-only).
+        queue = EditQueueStore.load(stem: rec.stem).map { EditRequest(id: $0.id, text: $0.text) }
         openSocket()
     }
 
     private func openSocket() {
         guard let rec, !token.isEmpty else { state = .error; error = "未登录"; return }
-        state = .connecting
+        state = queue.isEmpty ? .connecting : .working
         error = nil
         let stem = rec.stem.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? rec.stem
         guard let url = URL(string: "\(base)?stem=\(stem)") else { state = .error; return }
         var req = URLRequest(url: url)
-        // Token rides the upgrade header, not the query string (avoids logging it).
         req.setBearer(token)
         let s = URLSession(configuration: .default)
         session = s
         let t = s.webSocketTask(with: req)
         task = t
         t.resume()
-        state = .idle               // URLSession buffers sends until the socket opens
         receive()
-        if !queue.isEmpty { processing = false; pump() }   // resume after a reconnect
+        // Re-submit everything still outstanding. The server dedups by id, so a
+        // resend of an already-done edit just replays its result (no double-apply).
+        resubmitAll()
     }
 
-    /// Queue a spoken instruction, optionally with image thumbnails so the model
-    /// can see the photos and decide where to insert them.
-    /// Edits run strictly serially — each builds on the previous result.
+    /// Queue a spoken instruction (optionally with photos). Persist it, then send.
     func enqueue(_ instruction: String, images: [AgentImage] = []) {
         let text = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        queue.append(EditRequest(text: text, images: images))
-        pump()
+        let reqItem = EditRequest(text: text, images: images)
+        queue.append(reqItem)
+        persist()
+        send(reqItem)
+        state = .working
     }
 
-    /// Send the head of the queue, but only if nothing is in flight.
-    private func pump() {
-        guard !processing, let head = queue.first, let task else { return }
-        processing = true
-        state = .working
-        error = nil
-        var payload: [String: Any] = ["type": "instruct", "text": head.text]
-        if !head.images.isEmpty {
-            payload["images"] = head.images.map { ["key": $0.key, "data": $0.base64, "mediaType": "image/jpeg"] }
+    private func resubmitAll() {
+        for item in queue { send(item) }
+    }
+
+    private func send(_ item: EditRequest) {
+        guard let task else { return }
+        var payload: [String: Any] = ["type": "instruct", "id": item.id, "text": item.text]
+        if !item.images.isEmpty {
+            payload["images"] = item.images.map { ["key": $0.key, "data": $0.base64, "mediaType": "image/jpeg"] }
         }
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let str = String(data: data, encoding: .utf8) else { return }
         task.send(.string(str)) { [weak self] err in
-            guard let err else { return }
-            Task { @MainActor in self?.failHead(err.localizedDescription) }
+            guard err != nil else { return }
+            // Send failed (socket mid-drop). Leave the item in the queue; the
+            // reconnect path resubmits it. Surface nothing — not a user error.
+            Task { @MainActor in self?.state = .working }
         }
     }
 
-    /// The in-flight edit failed: surface it, drop the head, keep draining the rest.
-    private func failHead(_ message: String) {
-        error = message
-        if processing, !queue.isEmpty { queue.removeFirst() }
-        processing = false
-        if queue.isEmpty { state = .error } else { pump() }
+    /// Drop a finished edit (by id) from the local queue + disk.
+    private func resolve(_ id: String) {
+        queue.removeAll { $0.id == id }
+        persist()
+        state = queue.isEmpty ? .idle : .working
+    }
+
+    private func persist() {
+        EditQueueStore.save(queue.map { PersistedEdit(id: $0.id, text: $0.text) }, stem: stem)
     }
 
     private func receive() {
@@ -129,33 +134,55 @@ final class ArticleAgentSession {
         }
     }
 
+    private func decodeDoc(_ any: Any?) -> ArticleDoc? {
+        guard let any, let d = try? JSONSerialization.data(withJSONObject: any) else { return nil }
+        return try? JSONDecoder().decode(ArticleDoc.self, from: d)
+    }
+
     private func handle(_ str: String) {
         guard let data = str.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let type = obj["type"] as? String else { return }
+        let id = obj["id"] as? String
         switch type {
         case "status":
             if (obj["state"] as? String) == "working" { state = .working }
         case "updated":
-            if let art = obj["article"],
-               let d = try? JSONSerialization.data(withJSONObject: art),
-               let doc = try? JSONDecoder().decode(ArticleDoc.self, from: d) {
-                onUpdate?(doc)
-            }
-            if processing, !queue.isEmpty { queue.removeFirst() }   // this edit is done
-            processing = false
-            state = queue.isEmpty ? .idle : .working
-            pump()                                                  // start the next, if any
+            if let doc = decodeDoc(obj["article"]) { onUpdate?(doc) }
+            if let id { resolve(id) } else if !queue.isEmpty { resolve(queue[0].id) } // old-server fallback
         case "reply":
             if let text = obj["text"] as? String, !text.isEmpty {
-                let ok = obj["ok"] as? Bool ?? true
-                onReply?(text, ok)
+                onReply?(text, obj["ok"] as? Bool ?? true)
             }
         case "error":
-            failHead((obj["message"] as? String) ?? "出错了")
+            error = (obj["message"] as? String) ?? "出错了"
+            if let id { resolve(id) } else if !queue.isEmpty { resolve(queue[0].id) }
+            if queue.isEmpty { state = .error }
+        case "snapshot":
+            reconcile(obj)
         default:
             break
         }
+    }
+
+    /// Reconcile the local queue against the server's authoritative snapshot.
+    /// done → drop locally (apply the doc); pending/running → keep showing;
+    /// anything the server doesn't know about → resend (we were killed before
+    /// it landed). Always apply the snapshot's current article.
+    private func reconcile(_ obj: [String: Any]) {
+        if let doc = decodeDoc(obj["article"]) { onUpdate?(doc) }
+        let serverItems = (obj["queue"] as? [[String: Any]]) ?? []
+        var serverStatus: [String: String] = [:]
+        for it in serverItems { if let sid = it["id"] as? String, let st = it["status"] as? String { serverStatus[sid] = st } }
+        for item in queue {
+            switch serverStatus[item.id] {
+            case "done": resolve(item.id)
+            case "pending", "running": break          // in flight on the server; keep it shown
+            case "error": resolve(item.id)
+            default: send(item)                        // server never saw it → resend
+            }
+        }
+        state = queue.isEmpty ? .idle : .working
     }
 
     private func reconnect() {
@@ -166,15 +193,15 @@ final class ArticleAgentSession {
         }
     }
 
+    /// Close the socket but KEEP the queue (persisted). Called on a transient
+    /// disappear (navigation away / backgrounding). The next connect resumes.
     func disconnect() {
         closed = true
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
         session?.invalidateAndCancel()
         session = nil
-        queue.removeAll()
-        processing = false
-        state = .idle
-        error = nil
+        state = queue.isEmpty ? .idle : .working
+        // queue + disk intentionally preserved.
     }
 }
