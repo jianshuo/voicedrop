@@ -4,6 +4,7 @@ Plan: docs/superpowers/plans/2026-06-27-voice-edit-durable-queue.md
 Phase A repo+worktree: ~/code/jianshuo.dev/.claude/worktrees/voice-edit-durable-queue (branch voice-edit-durable-queue, base b856856)
 Phase B repo+worktree: ~/code/voicedrop/.claude/worktrees/voice-edit-durable-queue (branch worktree-voice-edit-durable-queue)
 Deploy/push: DEFERRED to user (active WIP in both repos; outward-facing).
+BASELINE FIX (2026-06-27): Phase B branch was initially cut from stale origin/main; REBASED onto local main 2dca5f4 (3 unpushed commits incl. Networking setBearer). Branch now merges cleanly into local main. New Phase B SHAs: B1=dbccc4d, B2=55092eb (uses req.setBearer, not inline). Phase A is a separate repo (jianshuo.dev) — unaffected, SHAs unchanged.
 
 ## Tasks
 - [x] A1 queue.js durable queue module
