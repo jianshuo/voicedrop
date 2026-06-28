@@ -18,6 +18,7 @@ on:
         options:
           - testflight   # build + upload to TestFlight (same as a push to main)
           - appstore     # submit the build already on TestFlight to App Store review
+          - certs        # one-shot: run match refresh_profiles (create/sync signing profiles), no build/upload
 
 # Serialize all builds: two parallel runs would each compute
 # latest_testflight_build_number + 1 and collide on the same build number.
@@ -79,7 +80,9 @@ jobs:
           ASC_API_ISSUER_ID:    ${{ secrets.ASC_API_ISSUER_ID }}
           ASC_API_KEY_CONTENT:  ${{ secrets.ASC_API_KEY_CONTENT }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.destination }}" = "appstore" ]; then
+          if [ "${{ github.event.inputs.destination }}" = "certs" ]; then
+            bundle exec fastlane refresh_profiles
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ github.event.inputs.destination }}" = "appstore" ]; then
             bundle exec fastlane release skip_build:true
           else
             bundle exec fastlane beta
