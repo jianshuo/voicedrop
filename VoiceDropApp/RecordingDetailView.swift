@@ -34,6 +34,7 @@ struct RecordingDetailView: View {
     @State private var published = false            // already has a WeChat draft
     @State private var sharedToCommunity = false    // already shared to the community
     @State private var communityShareId: String?    // shareId when shared (needed for unshare)
+    @State private var showCommunityTerms = false   // 社区公约 agree-gate before first post
 
     // Live voice editing — persistent push-to-talk bar.
     @State private var agentReply: AgentReply?
@@ -103,6 +104,9 @@ struct RecordingDetailView: View {
             }
         }) { WechatSettingsSheet(store: settings) }
         .sheet(item: $sharePayload) { ShareSheet(items: [$0.text]) }
+        .sheet(isPresented: $showCommunityTerms) {
+            CommunityTermsSheet(onAgree: { Task { await toggleCommunity(true) } }, onCancel: {})
+        }
         .fullScreenCover(isPresented: $showingInsertPhoto) {
             PhotoCaptureView(recordingStart: nil) { photos in insertPhotos(photos) }
                 .ignoresSafeArea()
@@ -327,7 +331,11 @@ struct RecordingDetailView: View {
             }
             Toggle(isOn: Binding(
                 get: { sharedToCommunity },
-                set: { newValue in Task { await toggleCommunity(newValue) } }
+                set: { newValue in
+                    // Apple 1.2: first community post requires agreeing to the 社区公约 (EULA).
+                    if newValue && !CommunityTerms.agreed { showCommunityTerms = true }
+                    else { Task { await toggleCommunity(newValue) } }
+                }
             )) {
                 Label("VD社区可见", systemImage: "person.2")
             }

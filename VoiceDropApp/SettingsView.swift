@@ -299,6 +299,7 @@ struct SettingsView: View {
     @State private var showWechat = false
     @State private var showStyle = false
     @State private var showPrivacy = false
+    @State private var showGuidelines = false
     @State private var showingExport = false
     @State private var exportManager = ExportManager()
 
@@ -402,6 +403,21 @@ struct SettingsView: View {
                                             title: "隐私说明") { settingsChevron }
                             }.buttonStyle(.plain)
                             settingsRowDivider
+                            Button { showGuidelines = true } label: {
+                                SettingsRow(tileBG: Theme.tileNeutral, symbol: "doc.text", tileFG: Theme.secondary,
+                                            title: "社区公约") { settingsChevron }
+                            }.buttonStyle(.plain)
+                            settingsRowDivider
+                            NavigationLink { BlockedUsersView() } label: {
+                                SettingsRow(tileBG: Theme.tileNeutral, symbol: "hand.raised.slash", tileFG: Theme.secondary,
+                                            title: "已屏蔽用户") { settingsChevron }
+                            }
+                            settingsRowDivider
+                            Link(destination: URL(string: "mailto:\(CommunityTerms.supportEmail)?subject=VoiceDrop%20反馈与投诉")!) {
+                                SettingsRow(tileBG: Theme.tileNeutral, symbol: "envelope", tileFG: Theme.secondary,
+                                            title: "联系我们 / 内容投诉") { settingsChevron }
+                            }.buttonStyle(.plain)
+                            settingsRowDivider
                             SettingsRow(tileBG: Theme.tileNeutral, symbol: "info.circle", tileFG: Theme.secondary,
                                         title: "版本") {
                                 Text(Prefs.versionBuild).font(.system(size: 14)).foregroundStyle(Theme.faint)
@@ -426,6 +442,11 @@ struct SettingsView: View {
             Button("好") {}
         } message: {
             Text("录音只上传到你自己的云端空间；麦克风仅在录音和语音修改时使用；身份是本机生成的匿名 ID，随 iCloud 钥匙串备份。")
+        }
+        .alert("社区公约", isPresented: $showGuidelines) {
+            Button("好") {}
+        } message: {
+            Text(CommunityTerms.body)
         }
     }
 

@@ -59,6 +59,7 @@ final class CommunityStore {
             guard resp.isOK else { error = "加载失败"; return }
             struct R: Decodable { let posts: [CommunityPost] }
             posts = try JSONDecoder().decode(R.self, from: data).posts
+                .filter { !BlockStore.isBlocked($0.author) }   // local block list (Apple 1.2)
             await applyRanking()
         } catch { self.error = error.localizedDescription }
     }
@@ -226,6 +227,23 @@ final class CommunityStore {
         _ = try? await URLSession.shared.data(for: req)
     }
 
+    /// Report a post for objectionable content (Apple 1.2). The server HIDES it from
+    /// the community immediately (pending owner review); we also drop it from the local
+    /// feed right away so the reporter never sees it again.
+    @discardableResult
+    func report(_ shareId: String, reason: String = "") async -> Bool {
+        guard !token.isEmpty else { return false }
+        posts.removeAll { $0.shareId == shareId }
+        var req = URLRequest(url: base.appending(path: "community").appending(path: "report").appending(path: shareId))
+        req.httpMethod = "POST"
+        req.timeoutInterval = 5
+        req.setBearer(token)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["reason": reason])
+        do { let (_, resp) = try await URLSession.shared.data(for: req); return resp.isOK }
+        catch { return false }
+    }
+
     /// Posts that are responses to `shareId`, oldest-first.
     func loadReplies(_ shareId: String) async -> [CommunityPost] {
         guard !token.isEmpty else { return [] }
@@ -272,6 +290,7 @@ struct CommunityPostView: View {
     @State private var liked = false
     @State private var finishedReported = false
     @State private var showReportConfirm = false
+    @State private var showBlockConfirm = false
 
     // Recording a response
     @State private var recorder = AudioRecorder()
@@ -335,14 +354,26 @@ struct CommunityPostView: View {
         }
         .sheet(item: $sharePayload) { ShareSheet(items: [$0.text]) }
         .confirmationDialog("举报这篇分享？", isPresented: $showReportConfirm, titleVisibility: .visible) {
-            Button("举报", role: .destructive) {
-                // 举报就是一次 engage 互动 —— 大幅降低它在社区里的排序。一次性、无法撤销。
-                Task { await store.engage(post.shareId, action: "report") }
-                showToast("已举报，感谢反馈")
+            Button("举报并下架", role: .destructive) {
+                // 举报立即让它从社区下架（待人工审核），并从本地列表移除。
+                Task { await store.report(post.shareId) }
+                showToast("已举报，内容已下架待审核")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { dismiss() }
             }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("举报会降低它在社区里的排序，且无法撤销。")
+            Text("举报后这篇会立即从社区下架，并在 24 小时内由人工审核处理。")
+        }
+        .confirmationDialog("屏蔽此用户？", isPresented: $showBlockConfirm, titleVisibility: .visible) {
+            Button("屏蔽", role: .destructive) {
+                BlockStore.block(full?.author ?? post.author)
+                store.posts.removeAll { ($0.author ?? "") == (full?.author ?? post.author ?? "") }
+                showToast("已屏蔽，TA 的内容将不再显示")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { dismiss() }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("屏蔽后，你将不再看到 \(full?.author ?? post.author ?? "该用户") 的任何社区内容。可在「设置」里取消屏蔽。")
         }
         .task {
             liked = store.likedShareIds.contains(post.shareId)
@@ -388,6 +419,9 @@ struct CommunityPostView: View {
                 }
                 Button(role: .destructive) { showReportConfirm = true } label: {
                     Label("举报", systemImage: "flag")
+                }
+                Button(role: .destructive) { showBlockConfirm = true } label: {
+                    Label("屏蔽此用户", systemImage: "hand.raised")
                 }
             } label: {
                 RoundedRectangle(cornerRadius: Theme.R.nav)
