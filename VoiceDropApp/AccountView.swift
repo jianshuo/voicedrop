@@ -146,6 +146,15 @@ struct AccountView: View {
             settingsRowDivider
             dataRow("成文", "\(minedCount) 篇", trailingChevron: false)
             settingsRowDivider
+            NavigationLink { UsageView() } label: {
+                HStack {
+                    Text("算力余额").font(.system(size: 16)).foregroundStyle(Theme.ink)
+                    Spacer()
+                    Text("查看明细").font(.system(size: 14)).foregroundStyle(Theme.secondary)
+                }
+                .padding(.vertical, 14).padding(.horizontal, 15)
+            }
+            settingsRowDivider
             Button {
                 guard !openingArticles else { return }
                 Task {
