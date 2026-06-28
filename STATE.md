@@ -134,11 +134,31 @@ runs ON that VPS and calls `api.weixin.qq.com` directly.
   relay. See `mining/REMOVED.md` for the tombstone + git-restore commands. **Nothing runs `python mine.py`
   anymore** — there is no `mine.yml`, and `POST /files/api/mine` dispatches the Worker DO, not a workflow.
 
-**Per-article covers:** `resolve_cover_thumb(token, doc_id, wechat_cfg)` (in `relay_server.py`) picks one
-of `assets/wechat-covers/style01–10.png` by `hash(doc.id)`, uploads it to WeChat once, and caches the
-material id per cover name in `WECHAT.json.coverMediaIds` (reused across docs sharing a cover); the
-Function passes the cache in and persists what the relay returns. Gray placeholder = fallback when the
-cover set is empty/unreachable.
+**Per-article 题图 (cover) — article's OWN first photo (2026-06-28):** the WeChat draft cover now uses
+**the article body's FIRST `[[photo:<relkey>]]`** as `thumb_media_id`, so a photo article shares with its
+real picture, not a generic style cover. `make_cover_resolver(token, owner, doc_id, cfg)` (in
+`relay_server.py`) → `cover_for(a, force=False)`: fetch that article's first photo from the public
+`/files/api/photo/<owner+relkey>` endpoint, upload ONCE as a permanent image material
+(`_upload_cover_material`, `material/add_material type=image` — usable as a thumb), cache the media_id in
+`WECHAT.json.coverMediaIds` under key `photo:<fullkey>` (the Function persists it, so re-publishing reuses
+it). **Fallback chain (cover is always something):** no body photo / legacy numeric `[[photo:N]]` / fetch
+fails → the per-doc style cover `resolve_cover_thumb` (one of `assets/wechat-covers/style01–10.png` by
+`hash(doc.id)`, cached per cover NAME in `coverMediaIds`) → gray placeholder if the cover set is empty.
+A photo-cover failure is caught and degrades to the style cover — it never fails the publish. On a create
+40007 (cover material wiped) the cover is re-uploaded `force=True` and the create retried once.
+**Note:** each unique photo cover consumes one permanent image material (huge quota; cached so each photo
+uploads once) — inline body photos still use `media/uploadimg` (no quota).
+
+**摘要 (digest) — generated (2026-06-28):** `create/update_wechat_draft` now set the draft `digest` from
+`_digest_from_body(body)` (strip `[[photo:…]]` markers + markdown image/link/inline marks, collapse
+whitespace, cap ~110 chars + `…`), so the WeChat share card shows a real summary instead of WeChat's raw
+first-54-chars fallback. Empty body → no `digest` field (WeChat's auto-grab, as before).
+
+> Public **link card** (系统分享 a `/voicedrop/<token>` URL into WeChat chat) is a SEPARATE path —
+> `functions/voicedrop/[token].js` `metaTags()` already emits `og:image` = the section's first photo
+> (absolute URL) + `<meta name=description>` summary + `<link rel=image_src>` for old WeChat. If a shared
+> link still shows no image, it's almost always WeChat's per-URL link-card **cache** — test with a fresh
+> share. (Both relay + Pages redeployed 2026-06-28.)
 
 **Inline body photos in WeChat drafts (2026-06-26):** the body's `[[photo:<relkey>]]` markers used to be
 **stripped** from WeChat drafts (the markers never carried the actual image). Now the relay embeds them:
@@ -191,6 +211,33 @@ anon tokens work without it), `CLAUDE_API_KEY`, **`FILES_TOKEN`** (= Pages FILES
 Deploy: `cd ~/code/jianshuo.dev/agent && npx wrangler deploy`.
 
 ## Community (VD社区)
+
+### Apple App Store Guideline 1.2 — UGC compliance (2026-06-28)
+
+VD社区 is cross-user UGC, so all four 1.2 pillars are implemented (and described in the App Review
+notes `fastlane/metadata/review_information/notes.txt`):
+- **① Filter (proactive, at share time):** `functions/lib/moderation.js` `checkArticlesShareable` scans
+  the article's title+body for unambiguous objectionable keywords (CJK substring, ASCII word-boundary)
+  when a user shares; `community/share` returns 403 `content_flagged` on a hit. **Zero-cost / zero-LLM** —
+  runs only on share, not on every generation. Tunable without deploy via R2 `config/community-blocklist.json`
+  (merged with the built-in list). Tests: `agent/test/moderation.test.js`. **History:** an earlier design did a
+  Claude-haiku moderation pass at *generation* time (`miner.js moderateArticles`, stamped `doc.moderation`),
+  but that was removed (judged every article incl. private ones); the function stays defined-but-dormant and
+  `community/share` still honors a legacy `doc.moderation.flagged` defensively.
+- **② Report → immediate takedown + review:** `POST community/report/<shareId>` (any signed-in user) writes
+  `community/reports/<shareId>.json`, which `community/list` filters out **immediately** (hidden pending
+  review). Admin reviews at **`/voicedrop/admin/reports`** (`GET community/reports` + `POST community/resolve/<id>`
+  `{action:remove|restore}`). iOS ⋯「举报」calls report + removes locally + dismisses. 24h SLA (in the copy).
+- **③ Block users:** ⋯「屏蔽此用户」→ `BlockStore` (`CommunityModeration.swift`) — **local UserDefaults only,
+  never sent to the server**; the feed filters blocked authors client-side. Managed in 设置 → 已屏蔽用户.
+- **④ EULA + contact:** first time a user toggles 「VD社区可见」, `CommunityTermsSheet` (社区公约, zero-tolerance)
+  must be agreed (`CommunityTerms.agreed`). 设置 has 社区公约 + 联系我们/内容投诉 (mailto `jianshuo@hotmail.com`).
+
+App Store status: 1.0 / **build 101** submitted `WAITING_FOR_REVIEW` (2026-06-28, the UGC-compliant build).
+Resubmit playbook = ASC API delete `appStoreVersionSubmission` (or cancel reviewSubmission) → PATCH version
+`build` relationship to the target build → dispatch `appstore` workflow (`fastlane release skip_build:true`
+uploads metadata incl. review notes + submits the attached build; `guard_not_in_review` needs the version
+NOT in WAITING_FOR_REVIEW/IN_REVIEW first, hence the cancel).
 
 The home has two tabs — **我的录音** + **VD社区** (`LibraryView.swift`). A user shares one of their
 articles to a public community from the detail-view ⋯ menu (分享到 VD社区). Files API routes
