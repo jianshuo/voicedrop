@@ -299,12 +299,22 @@ gear → **设置** (redesign "方案二"; the old `ContentView` 3-tab `TabView`
   line and consumes a line number too, so paragraph line numbers accumulate across images and the displayed
   第N行 lines up 1:1 with the raw body the agent edits (an image row shows BOTH its 第N行 in the margin and its
   图M badge in the corner). Before this, 第N行 counted text paragraphs only — an image was skipped, so a
-  paragraph after an image showed a number lower than its true line position ("行号对不上"). The agent prompt
-  (`agent/src/index.js`, lines ~60-63) defines the SAME convention (第N行 = N-th non-empty line counting
-  photo-marker lines; 图N = N-th photo, which also has a 第N行) so locating is consistent end-to-end. **These two
-  must change together** — deploying the agent prompt without shipping the matching iOS build (or vice-versa)
-  reintroduces a transient off-by-image mismatch. The live transcript bubble tints spoken 第N行/图N references
-  accent (`highlightedTranscript`, regex `第[0-9]+行|图[0-9]+`).
+  paragraph after an image showed a number lower than its true line position ("行号对不上").
+  **The model READS the line number, never counts it (2026-06-28).** The whole point is "模型理解的行 == 用户标的行".
+  Relying on the model to count 第N行 from the body is fragile (it miscounts long/image-laden bodies), so the
+  worker now hands it the numbers: `agent/src/linenum.js` (`numberBodyRows`/`locatorTable`) numbers a body with
+  the EXACT algorithm as iOS `bodyRows()`+`ArticleBody.segments` (continuous counter, photo-marker line = one
+  line + 图M), and `edit-turn.js` injects a **行号对照** block (`第3行：…` / `第4行 = 图2：[[photo:…]]`) into the
+  user message for the article the user is viewing. The prompt (`index.js` REVISE_SYSTEM) tells the model to
+  locate 第N行/图M **strictly by that table, not by counting**, and to omit numbers from output. `linenum.js` is
+  the SHARED contract — **if you change the numbering, change BOTH `linenum.js` (with its `test/linenum.test.js`)
+  AND the Swift `bodyRows`/`segments` in lockstep**, or the model's number drifts from the user's. Multi-article:
+  iOS renumbers 第1行 per displayed article, so the app sends **`articleIndex`** with each `instruct`
+  (`AgentSession.swift` `EditRequest.articleIndex`, persisted in `EditQueueStore`/`PersistedEdit`, carried
+  through the durable queue's new `article_index` column → `runEditTurn({articleIndex})`), and the worker numbers
+  THAT article. Old apps omit it → defaults to article 0. **iOS build + worker deploy must ship together** — a
+  mismatch (e.g. old app's text-only numbers vs. new worker's image-inclusive table) mislocates edits. The live
+  transcript bubble tints spoken 第N行/图N references accent (`highlightedTranscript`, regex `第[0-9]+行|图[0-9]+`).
   ⋯ menu: **发布/更新公众号草稿** ·
   **分享/更新 VD社区** · 系统分享 (labels flip once published/shared) · **编辑 = hold-to-talk voice editing**
   (serial queue, mic-as-indicator — see the agent Worker section). Share text = `composeShareText()`: ONE

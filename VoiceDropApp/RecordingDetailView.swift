@@ -204,7 +204,7 @@ struct RecordingDetailView: View {
             let countWord = relKeys.count == 1 ? "这张照片" : "这\(relKeys.count)张照片"
             agent.enqueue(
                 "我刚拍了\(countWord)，请把\(relKeys.count == 1 ? "它" : "每一张都")插入文章里最合适的位置。每张照片用它自己的标记（原样写进正文，放在和场景最相符的段落附近）：\(keysDesc)。所有照片必须全部插入，不能遗漏。",
-                images: agentImages
+                images: agentImages, articleIndex: articleIndex
             )
             showToast("图片已上传，AI正在插入…")
         }
@@ -425,20 +425,25 @@ struct RecordingDetailView: View {
     }
 
     /// One rendered row of the body: a numbered text paragraph, or a numbered image.
+    /// Both share the SAME continuous 第N行 counter; an image additionally carries
+    /// its 图M number (the M-th photo). So an image row is e.g. 第4行 + 图2.
     private enum BodyRow: Identifiable {
-        case paragraph(Int, String)   // 第N行
-        case image(Int, String)       // 图N (relative photo key)
+        case paragraph(Int, String)        // 第N行
+        case image(Int, Int, String)       // 第N行, 图M, relative photo key
         var id: String {
             switch self {
             case .paragraph(let n, _): return "p\(n)"
-            case .image(let n, _):     return "i\(n)"
+            case .image(let n, _, _):  return "i\(n)"
             }
         }
     }
 
-    /// Flatten the body (text + `[[photo:N]]` markers) into a numbered row list:
-    /// paragraphs counted 第1/2/3…行 by real line breaks, images counted 图1/2/3…
-    /// by appearance. Photos with no marker in the body are simply not shown.
+    /// Flatten the body (text + `[[photo:…]]` markers) into a numbered row list.
+    /// EVERY row — paragraph OR image — consumes one slot of a single continuous
+    /// 第N行 counter (counted by real line breaks; a photo marker is its own line),
+    /// so paragraph line numbers correctly accumulate across images and the numbers
+    /// the user sees line up 1:1 with the body the agent edits. Images ALSO carry a
+    /// 图M number (M-th photo). Photos with no marker in the body are not shown.
     private func bodyRows(_ a: MinedArticle) -> [BodyRow] {
         let photos = doc?.photos ?? []
         let segments = ArticleBody.segments(a.body)
@@ -454,7 +459,10 @@ struct RecordingDetailView: View {
                     rows.append(.paragraph(lineNo, para))
                 }
             case .photo(let token):
-                if let key = ArticleBody.resolvePhotoKey(token, photos: photos) { imgNo += 1; rows.append(.image(imgNo, key)) }
+                if let key = ArticleBody.resolvePhotoKey(token, photos: photos) {
+                    lineNo += 1; imgNo += 1
+                    rows.append(.image(lineNo, imgNo, key))
+                }
             }
         }
         return rows
@@ -477,9 +485,10 @@ struct RecordingDetailView: View {
                         .lineSpacing(9).textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .overlay(alignment: .topLeading) { lineNumber(n, visible: editing) }
-                case .image(let n, let key):
+                case .image(let n, let m, let key):
                     PhotoTile(store: store, relKey: key)
-                        .overlay(alignment: .topLeading) { imageBadge(n, visible: editing) }
+                        .overlay(alignment: .topLeading) { lineNumber(n, visible: editing) }
+                        .overlay(alignment: .topLeading) { imageBadge(m, visible: editing) }
                 }
             }
         }
@@ -765,7 +774,7 @@ struct RecordingDetailView: View {
                 if cancel { dictation.stop(); return }
                 Task {
                     let text = (await dictation.stopAndGetFinal()).trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !text.isEmpty { agent.enqueue(text) }
+                    if !text.isEmpty { agent.enqueue(text, articleIndex: articleIndex) }
                 }
             }
     }

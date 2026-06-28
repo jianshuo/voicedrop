@@ -6,6 +6,10 @@ import Foundation
 struct PersistedEdit: Codable, Equatable {
     let id: String
     let text: String
+    /// Which article (chip) the user was viewing when they spoke — so a resumed
+    /// edit still targets the right one's line numbers. Optional: pre-existing
+    /// saved queues lack the key and decode to nil (→ treated as 0).
+    let articleIndex: Int?
 }
 
 /// Disk mirror of the per-article edit queue (UserDefaults, keyed by stem).

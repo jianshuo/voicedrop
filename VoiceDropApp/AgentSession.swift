@@ -22,8 +22,9 @@ final class ArticleAgentSession {
         let id: String          // stable across reconnects/relaunches (sent on the wire)
         let text: String
         let images: [AgentImage]
-        init(id: String = UUID().uuidString, text: String, images: [AgentImage] = []) {
-            self.id = id; self.text = text; self.images = images
+        let articleIndex: Int   // which article (chip) was on screen — locator targeting
+        init(id: String = UUID().uuidString, text: String, images: [AgentImage] = [], articleIndex: Int = 0) {
+            self.id = id; self.text = text; self.images = images; self.articleIndex = articleIndex
         }
     }
 
@@ -50,7 +51,7 @@ final class ArticleAgentSession {
         self.rec = rec
         closed = false
         // Restore any edits persisted before a previous kill (text-only).
-        queue = EditQueueStore.load(stem: rec.stem).map { EditRequest(id: $0.id, text: $0.text) }
+        queue = EditQueueStore.load(stem: rec.stem).map { EditRequest(id: $0.id, text: $0.text, articleIndex: $0.articleIndex ?? 0) }
         openSocket()
     }
 
@@ -74,10 +75,10 @@ final class ArticleAgentSession {
     }
 
     /// Queue a spoken instruction (optionally with photos). Persist it, then send.
-    func enqueue(_ instruction: String, images: [AgentImage] = []) {
+    func enqueue(_ instruction: String, images: [AgentImage] = [], articleIndex: Int = 0) {
         let text = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        let reqItem = EditRequest(text: text, images: images)
+        let reqItem = EditRequest(text: text, images: images, articleIndex: articleIndex)
         queue.append(reqItem)
         persist()
         send(reqItem)
@@ -90,7 +91,7 @@ final class ArticleAgentSession {
 
     private func send(_ item: EditRequest) {
         guard let task else { return }
-        var payload: [String: Any] = ["type": "instruct", "id": item.id, "text": item.text]
+        var payload: [String: Any] = ["type": "instruct", "id": item.id, "text": item.text, "articleIndex": item.articleIndex]
         if !item.images.isEmpty {
             payload["images"] = item.images.map { ["key": $0.key, "data": $0.base64, "mediaType": "image/jpeg"] }
         }
@@ -112,7 +113,7 @@ final class ArticleAgentSession {
     }
 
     private func persist() {
-        EditQueueStore.save(queue.map { PersistedEdit(id: $0.id, text: $0.text) }, stem: stem)
+        EditQueueStore.save(queue.map { PersistedEdit(id: $0.id, text: $0.text, articleIndex: $0.articleIndex) }, stem: stem)
     }
 
     private func receive() {
