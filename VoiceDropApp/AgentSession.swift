@@ -156,7 +156,9 @@ final class ArticleAgentSession {
                 onReply?(text, obj["ok"] as? Bool ?? true)
             }
         case "error":
-            error = (obj["message"] as? String) ?? "出错了"
+            let msg = (obj["message"] as? String) ?? "出错了"
+            error = msg
+            onReply?(msg, false)
             if let id { resolve(id) } else if !queue.isEmpty { resolve(queue[0].id) }
             if queue.isEmpty { state = .error }
         case "snapshot":
