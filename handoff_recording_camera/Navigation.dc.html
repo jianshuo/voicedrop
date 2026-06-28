@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style> * { -webkit-font-smoothing: antialiased; } ::-webkit-scrollbar { width:0;height:0; } </style>
+</helmet>
+
+<div style="min-width:100%;min-height:100vh;width:max-content;box-sizing:border-box;padding:56px;background:#e7e5df;display:flex;flex-direction:column;gap:30px;font-family:-apple-system,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',system-ui,sans-serif;">
+
+  <div style="display:flex;flex-direction:column;gap:8px;max-width:1100px;">
+    <div style="font-size:13px;font-weight:700;letter-spacing:3px;color:#a79f93;text-transform:uppercase;">VoiceDrop · 导航与录音流程</div>
+    <div style="font-size:30px;font-weight:600;color:#2a2521;letter-spacing:0.5px;">方案二 · 列表为主页，底部纯红录音键</div>
+    <div style="font-size:15px;color:#7d766b;max-width:780px;line-height:1.6;">「我的录音」即主页，设置进右上角齿轮。底部纯红录音键（仿 iOS 语音备忘录）。点击后上半部分隐去、转为大秒表；停止即上传。</div>
+  </div>
+
+  <div style="display:flex;gap:34px;align-items:flex-start;">
+
+    <!-- ░ 1 · 列表主页（idle） ░ -->
+    <div style="display:flex;flex-direction:column;gap:12px;flex:none;">
+      <span style="font-size:13px;color:#9b9488;padding-left:4px;">① 我的录音 · 主页</span>
+      <x-import component="IOSDevice" from="./ios-frame.jsx" width="380" height="824" hint-size="380px,824px">
+        <div style="height:100%;box-sizing:border-box;background:#FAF6EF;display:flex;flex-direction:column;font-family:-apple-system,'PingFang SC',system-ui;">
+          <div style="padding:62px 22px 12px;flex:none;display:flex;align-items:flex-end;justify-content:space-between;">
+            <div style="display:flex;flex-direction:column;gap:9px;">
+              <div style="display:flex;align-items:center;gap:8px;"><svg width="20" height="16" viewBox="0 0 22 18"><rect x="1" y="6" width="3" height="6" rx="1.5" fill="#E5392E"/><rect x="6.5" y="3" width="3" height="12" rx="1.5" fill="#E5392E"/><rect x="12" y="1" width="3" height="16" rx="1.5" fill="#E5392E"/><rect x="17.5" y="5" width="3" height="8" rx="1.5" fill="#E5392E"/></svg><span style="font-size:14px;font-weight:600;letter-spacing:1px;color:#2A2521;white-space:nowrap;">VoiceDrop 口述</span></div>
+              <div style="font-size:27px;font-weight:600;color:#2A2521;">我的录音</div>
+            </div>
+            <div style="width:38px;height:38px;border-radius:10px;background:#fff;border:1px solid #ECE3D5;display:flex;align-items:center;justify-content:center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#6f685d" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg></div>
+          </div>
+          <div style="flex:1;overflow:auto;padding:4px 16px 16px;display:flex;flex-direction:column;gap:11px;">
+            <div style="background:#fff;border:1px solid #ECE3D5;border-radius:5px;box-shadow:0 2px 8px rgba(180,140,100,0.09);padding:14px 15px;display:flex;align-items:center;gap:13px;"><div style="width:42px;height:42px;border-radius:5px;background:#FBEAE7;flex:none;display:flex;align-items:center;justify-content:center;gap:2.5px;"><span style="width:3px;height:11px;border-radius:2px;background:#E5392E;"></span><span style="width:3px;height:19px;border-radius:2px;background:#E5392E;"></span><span style="width:3px;height:14px;border-radius:2px;background:#E5392E;"></span></div><div style="flex:1;"><div style="font-size:16px;font-weight:600;color:#2A2521;">周一下午 · 浦东新区</div><div style="display:flex;gap:9px;margin-top:5px;"><span style="font-size:13px;color:#a89e8e;">14:02</span><span style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:#5E8A6A;"><span style="width:6px;height:6px;border-radius:50%;background:#5E8A6A;"></span>已成文</span></div></div><svg width="7" height="12" viewBox="0 0 7 12"><path d="M1 1l5 5-5 5" fill="none" stroke="#CFC6B6" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div style="background:#fff;border:1px solid #ECE3D5;border-radius:5px;box-shadow:0 2px 8px rgba(180,140,100,0.09);padding:14px 15px;display:flex;align-items:center;gap:13px;"><div style="width:42px;height:42px;border-radius:5px;background:#FBEAE7;flex:none;display:flex;align-items:center;justify-content:center;gap:2.5px;"><span style="width:3px;height:8px;border-radius:2px;background:#E5392E;"></span><span style="width:3px;height:16px;border-radius:2px;background:#E5392E;"></span><span style="width:3px;height:11px;border-radius:2px;background:#E5392E;"></span></div><div style="flex:1;"><div style="font-size:16px;font-weight:600;color:#2A2521;">周日傍晚 · 徐汇区</div><div style="display:flex;gap:9px;margin-top:5px;"><span style="font-size:13px;color:#a89e8e;">06:48</span><span style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:#5E8A6A;"><span style="width:6px;height:6px;border-radius:50%;background:#5E8A6A;"></span>已成文</span></div></div><svg width="7" height="12" viewBox="0 0 7 12"><path d="M1 1l5 5-5 5" fill="none" stroke="#CFC6B6" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+            <div style="background:#fff;border:1px solid #ECE3D5;border-radius:5px;box-shadow:0 2px 8px rgba(180,140,100,0.09);padding:14px 15px;display:flex;align-items:center;gap:13px;"><div style="width:42px;height:42px;border-radius:5px;background:#FBEAE7;flex:none;display:flex;align-items:center;justify-content:center;gap:2.5px;"><span style="width:3px;height:13px;border-radius:2px;background:#E5392E;"></span><span style="width:3px;height:21px;border-radius:2px;background:#E5392E;"></span><span style="width:3px;height:10px;border-radius:2px;background:#E5392E;"></span></div><div style="flex:1;"><div style="font-size:16px;font-weight:600;color:#2A2521;">周六上午 · 静安区</div><div style="display:flex;gap:9px;margin-top:5px;"><span style="font-size:13px;color:#a89e8e;">21:35</span><span style="display:inline-flex;align-items:center;gap:5px;font-size:12.5px;color:#C98A3C;"><span style="width:6px;height:6px;border-radius:50%;background:#C98A3C;"></span>待处理</span></div></div><svg width="7" height="12" viewBox="0 0 7 12"><path d="M1 1l5 5-5 5" fill="none" stroke="#CFC6B6" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+          </div>
+          <div style="flex:none;background:#FAF6EF;border-top:1px solid #ECE3D5;padding:14px 0 26px;display:flex;flex-direction:column;align-items:center;gap:7px;">
+            <div style="width:66px;height:66px;border-radius:50%;background:#fff;border:1px solid #E8DECF;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,0.06);"><div style="width:54px;height:54px;border-radius:50%;background:#E5392E;box-shadow:0 2px 8px rgba(229,57,46,0.4);"></div></div>
+            <span style="font-size:12px;color:#8A8175;letter-spacing:1px;">轻点录音</span>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <!-- ░ 2 · 录音中（大秒表） ░ -->
+    <div style="display:flex;flex-direction:column;gap:12px;flex:none;">
+      <span style="font-size:13px;color:#9b9488;padding-left:4px;">② 录音中 · 上半隐去，大秒表</span>
+      <x-import component="IOSDevice" from="./ios-frame.jsx" width="380" height="824" hint-size="380px,824px">
+        <div style="height:824px;box-sizing:border-box;background:#FAF6EF;display:flex;flex-direction:column;align-items:center;font-family:-apple-system,'PingFang SC',system-ui;">
+          <div style="padding:64px 22px 0;flex:none;width:100%;display:flex;align-items:center;justify-content:center;gap:8px;">
+            <span style="width:9px;height:9px;border-radius:50%;background:#E5392E;"></span>
+            <span style="font-size:14px;color:#8A8175;letter-spacing:2px;white-space:nowrap;">正在录音</span>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:34px;width:100%;">
+            <div style="font-size:78px;font-weight:200;color:#2A2521;letter-spacing:2px;font-variant-numeric:tabular-nums;font-family:-apple-system,'SF Pro Display',system-ui;">00:47</div>
+            <div style="display:flex;align-items:flex-end;gap:3px;height:46px;">
+              <span style="width:3px;height:14px;border-radius:2px;background:#E5C8C3;"></span><span style="width:3px;height:26px;border-radius:2px;background:#EBA89F;"></span><span style="width:3px;height:38px;border-radius:2px;background:#E5392E;"></span><span style="width:3px;height:22px;border-radius:2px;background:#EBA89F;"></span><span style="width:3px;height:44px;border-radius:2px;background:#E5392E;"></span><span style="width:3px;height:30px;border-radius:2px;background:#EBA89F;"></span><span style="width:3px;height:18px;border-radius:2px;background:#E5C8C3;"></span><span style="width:3px;height:34px;border-radius:2px;background:#E5392E;"></span><span style="width:3px;height:24px;border-radius:2px;background:#EBA89F;"></span><span style="width:3px;height:40px;border-radius:2px;background:#E5392E;"></span><span style="width:3px;height:16px;border-radius:2px;background:#E5C8C3;"></span><span style="width:3px;height:28px;border-radius:2px;background:#EBA89F;"></span><span style="width:3px;height:20px;border-radius:2px;background:#E5C8C3;"></span>
+            </div>
+          </div>
+          <div style="flex:none;position:relative;padding:14px 30px 26px;display:flex;align-items:center;justify-content:center;width:100%;box-sizing:border-box;">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:7px;">
+              <div style="width:66px;height:66px;border-radius:50%;background:#fff;border:1px solid #E8DECF;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 14px rgba(0,0,0,0.06);"><div style="width:26px;height:26px;border-radius:6px;background:#E5392E;"></div></div>
+              <span style="font-size:12px;color:#8A8175;letter-spacing:1px;white-space:nowrap;">点击停止</span>
+            </div>
+            <div style="position:absolute;left:75%;top:26px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:7px;">
+              <div style="width:42px;height:42px;display:flex;align-items:center;justify-content:center;opacity:0.45;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#A89E8E" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5A2 2 0 016 6.5h1.4l.9-1.5A1 1 0 019.2 4.5h5.6a1 1 0 01.86.5l.9 1.5H18a2 2 0 012 2v7a2 2 0 01-2 2H6a2 2 0 01-2-2z"/><circle cx="12" cy="11.8" r="3.1"/></svg></div>
+              <span style="font-size:11px;color:#C2B8A8;letter-spacing:2px;white-space:nowrap;">拍照</span>
+            </div>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+    <!-- ░ 3 · 上传中 ░ -->
+    <div style="display:flex;flex-direction:column;gap:12px;flex:none;">
+      <span style="font-size:13px;color:#9b9488;padding-left:4px;">③ 停止后 · 上传</span>
+      <x-import component="IOSDevice" from="./ios-frame.jsx" width="380" height="824" hint-size="380px,824px">
+        <div style="height:824px;box-sizing:border-box;background:#FAF6EF;display:flex;flex-direction:column;align-items:center;font-family:-apple-system,'PingFang SC',system-ui;">
+          <div style="padding:64px 22px 0;flex:none;width:100%;display:flex;align-items:center;justify-content:center;gap:8px;">
+            <span style="font-size:14px;color:#8A8175;letter-spacing:2px;">已录制 00:47</span>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;width:100%;">
+            <div style="width:88px;height:88px;border-radius:50%;background:#fff;border:1px solid #ECE3D5;box-shadow:0 6px 18px rgba(180,140,100,0.12);display:flex;align-items:center;justify-content:center;position:relative;">
+              <svg width="88" height="88" viewBox="0 0 88 88" style="position:absolute;top:0;left:0;transform:rotate(-90deg);"><circle cx="44" cy="44" r="40" fill="none" stroke="#F0E8DA" stroke-width="3"/><circle cx="44" cy="44" r="40" fill="none" stroke="#E5392E" stroke-width="3" stroke-linecap="round" stroke-dasharray="251" stroke-dashoffset="92"/></svg>
+              <span style="font-size:20px;font-weight:600;color:#E5392E;font-variant-numeric:tabular-nums;">63%</span>
+            </div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:5px;">
+              <div style="font-size:17px;font-weight:600;color:#2A2521;white-space:nowrap;">正在上传…</div>
+              <div style="font-size:13px;color:#a89e8e;">上传后将自动转写、成文</div>
+            </div>
+          </div>
+          <div style="flex:none;padding:14px 24px 30px;width:100%;box-sizing:border-box;">
+            <div style="background:#fff;border:1px solid #ECE3D5;border-radius:8px;padding:14px;text-align:center;font-size:15px;font-weight:600;color:#8A8175;white-space:nowrap;">在后台上传</div>
+          </div>
+        </div>
+      </x-import>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
