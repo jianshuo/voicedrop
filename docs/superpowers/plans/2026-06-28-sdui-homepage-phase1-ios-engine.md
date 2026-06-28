@@ -2,6 +2,27 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## ⚠️ 交接状态（2026-06-28 — 接手的 agent 先读这里）
+
+**为什么交接**：原会话所在机器只有 Xcode 26.3，**没装 iOS SDK / 模拟器运行时**（装 iOS 平台要 ~7GB），无法编译或跑测试。为避免提交未编译的 Swift 6 代码，Task 2 起的实现没有盲写。**请在装了 iOS SDK + 模拟器运行时的 Mac 上接手。**
+
+**已完成并提交（分支 `design/sdui-homepage`）**
+- 设计 spec：`docs/superpowers/specs/2026-06-28-voicedrop-sdui-homepage-design.md`
+- 本实现计划（**每个文件的完整源码都在下面对应 Task 里，逐字可用**）
+- Task 1 脚手架：`project.yml` 新增 `VoiceDropTests` target + `scheme.testTargets`；新增 `VoiceDropTests/SmokeTests.swift`。**已用 `xcodegen generate` 验证工程能正确生成并含测试 target**；但 `xcodebuild test` 未执行（本机无 SDK）。
+
+**未开始：Task 2–7**（PageModel / PageStore / PageRenderer / HomeLists 抽取 / LibraryView 接线 / 文档）。照计划逐任务 TDD。
+
+**接手前置（本机已做 / 你需要做）**
+- xcodegen：本机已 `brew install xcodegen`(2.45.4)；你的机器若没有先装。
+- `Secrets.xcconfig`（gitignore，不入库）：先 `cp Secrets.example.xcconfig Secrets.xcconfig` 填真实 `FILES_TOKEN`（记忆 `jianshuo-dev-files-transfer`）再 `xcodegen generate`。本会话用 `REPLACE_ME` 占位仅为生成工程。
+- iOS 运行时：`xcodebuild -downloadPlatform iOS` 或 Xcode > Settings > Components 装一个 iOS 模拟器运行时，否则 `xcodebuild test` 没有目标设备。
+- 后台隔离：本仓库 `.claude/settings.json`（**gitignore，不会被提交**）这次被设了 `{"worktree":{"bgIsolation":"none"}}`，以便在父目录非 git 仓库的后台会话里直接写文件。你若也是后台 agent 且 cwd 不在本仓库内，可能要同样处理（或用 EnterWorktree）。
+
+**第一步**：`cd ~/code/voicedrop && xcodegen generate && xcodebuild -project VoiceDrop.xcodeproj -scheme VoiceDrop -destination 'platform=iOS Simulator,name=iPhone 16' test` 确认 SmokeTests 绿，然后从 **Task 2** 起逐任务做。
+
+---
+
 **Goal:** 让 iOS app 能把一份 `users/<sub>/page.json`（服务端驱动 UI 文档）解码、校验、渲染成首页内容区；没有自定义 page.json 时原样显示现有原生首页（零回归）。
 
 **Architecture:** 纯 Foundation 的 `PageNode` 模型 + 健壮解码器（未知节点降级为 `.unknown`，结构损坏返回 nil）；`PageStore` 拉 page.json 并用纯函数 `resolveTree` 决定回退；`PageRenderer` 把节点树递归渲染成 SwiftUI，`embed` 桥接到从 `LibraryView` 抽出的可复用列表子视图。`LibraryView` 变成「固定外壳 + (自定义页 ? PageRenderer : 原生首页)」。
