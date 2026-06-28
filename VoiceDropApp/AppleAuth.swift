@@ -53,6 +53,7 @@ final class AuthStore {
         session = keychainLoad(account: sessionAccount)
         if let s = session, isJWTExpired(s) { keychainDelete(account: sessionAccount); session = nil }
         anonToken = loadOrCreateAnon()
+        AppGroup.publishBearer(anonToken)   // mirror to the Share Extension
     }
 
     /// True if a JWT's `exp` (Unix seconds) is in the past, or it can't be parsed.
@@ -160,6 +161,7 @@ final class AuthStore {
         let token = "anon_" + randomHex(32)
         keychainSave(token, account: anonAccount)
         anonToken = token
+        AppGroup.publishBearer(anonToken)   // keep the Share Extension in sync
     }
 
     /// Adopt an anon_… token received from another device (device-link login).
