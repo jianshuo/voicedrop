@@ -26,3 +26,24 @@ extension String {
         addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? self
     }
 }
+
+/// Cross-process bridge between the VoiceDrop app and its Share Extension. The
+/// two run in separate sandboxes; the App Group is the only channel they share.
+/// We mirror just the bearer token here (not the Keychain itself) so the
+/// extension can upload as the same user without any Keychain migration risk.
+/// Compiled into BOTH targets.
+enum AppGroup {
+    static let id = "group.com.wangjianshuo.VoiceDrop"
+
+    /// Same R2-backed upload endpoint the in-app `Uploader` PUTs to.
+    static let uploadBase = URL(string: "https://jianshuo.dev/files/api/upload")!
+
+    private static let bearerKey = "bearer"
+    private static var store: UserDefaults? { UserDefaults(suiteName: id) }
+
+    /// Called by the app whenever its anon token loads or changes.
+    static func publishBearer(_ token: String) { store?.set(token, forKey: bearerKey) }
+
+    /// Read by the extension at upload time. Empty until the app has run once.
+    static var sharedBearer: String { store?.string(forKey: bearerKey) ?? "" }
+}
