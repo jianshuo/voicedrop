@@ -1,6 +1,6 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-06-25
+Last updated: 2026-06-28
 
 ## What it is
 
@@ -217,6 +217,18 @@ app's existing tokens) + `CLAUDE_API_KEY`. Two Durable Objects (`agent/src/index
   verbatim — no whitelist) to that user's app sockets, so rows flip **待处理 → 听录音 → 挖文章 → 已成文**
   (or → 无语音) with no polling (`StatusSession.swift` `onPhase/onDone`, `LibraryStore.markPhase/markDone`).
   Phases map to badges in `MiningPhase` (`asr`=听录音, `mining`=挖文章).
+- **`/agent/asr` — Volcengine 流式 ASR 的鉴权 WebSocket 代理（2026-06-28）.** 语音编辑的听写从前用
+  Apple 本地 `SFSpeechRecognizer`，现在改走火山引擎流式 ASR（对齐「ASR 用火山」的约定，zh-CN 更准）。
+  **iOS 客户端**（`VoiceDropApp/VolcASRProtocol.swift` + `VoiceEdit.swift` 的 `SpeechDictation`）自己实现火山
+  bigmodel 二进制协议（gzip 分帧 + 序列号，`project.yml` 加 `-lz` 链接 zlib），把麦克风 PCM 重采样成 mono 16k
+  发到 `wss://jianshuo.dev/agent/asr`，带 `AuthStore.bearer`（默认 anon token）。**服务端**（`agent/src/asr-proxy.js`，
+  路由在 `index.js`）是个**哑中继**：`resolveScope` 验 token（401 拦）→ 用 worker 已有的 `VOLC_ASR_APPID`/
+  `VOLC_ASR_ACCESS_TOKEN` 作 header、剥掉客户端 `Authorization`（不外泄）→ **`fetch` 出站到
+  `https://openspeech.bytedance.com/api/v3/sauc/bigmodel`**（资源 `volc.bigasr.sauc.duration`，**流式**，不同于挖矿用的
+  文件 `volc.bigasr.auc`）→ 双向转发字节。客户端拿全部协议复杂度，服务端不持密钥。⚠️ **坑（已修）：CF Workers 出站
+  WebSocket 必须用 `https://` scheme（`fetch`+`Upgrade: websocket`→`resp.webSocket`），写成 `wss://` 会
+  `Fetch API cannot load` → 500**；单测只构造 Request 不 fetch，没暴露，靠端到端冒烟测才抓到。测试 `agent/test/asr-proxy.test.js`。
+  **iOS 与 worker 必须一起上**：客户端连的 `/agent/asr` 只有 worker 部署后才存在（部署 worker 在先、发 build 在后）。
 
 Secrets (`wrangler secret put`): `SESSION_SECRET` (same value as Pages — verifies Apple JWTs;
 anon tokens work without it), `CLAUDE_API_KEY`, **`FILES_TOKEN`** (= Pages FILES_TOKEN; authenticates
