@@ -29,7 +29,6 @@ struct StyleVersion: Identifiable, Decodable {
 @MainActor
 @Observable
 final class SettingsStore {
-    var name = ""
     var style = ""
     var styleVersions: [StyleVersion] = []   // oldest-first, from /style/history
     var styleHead = 0
@@ -50,26 +49,9 @@ final class SettingsStore {
     private let base = API.filesBase
     private var token: String { AuthStore.shared.bearer }
 
-    // 名字暂留老 CLAUDE.md（名字以后再找正式的家）；文风已迁到 CLAUDE.json，单独走 /style。
-    func composeName() -> String {
-        "# 我的名字\n\(name.trimmingCharacters(in: .whitespacesAndNewlines))\n"
-    }
-
+    // 文风存在 CLAUDE.json，单独走 /style（版本化）。
     private struct StylePayload: Encodable { let style: String }
     private struct StyleResponse: Decodable { let style: String }
-
-    static func parse(_ md: String) -> (name: String, style: String) {
-        guard let s = md.range(of: "# 我的文风") else {
-            return ("", md.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-        let style = String(md[s.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
-        var name = ""
-        let before = String(md[..<s.lowerBound])
-        if let n = before.range(of: "# 我的名字") {
-            name = String(before[n.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
-        }
-        return (name, style)
-    }
 
     func load() async {
         guard !token.isEmpty else { error = "请先登录"; return }
@@ -87,13 +69,6 @@ final class SettingsStore {
                 error = "加载失败"
             }
         } catch { self.error = error.localizedDescription }
-        // 名字：暂留老 CLAUDE.md（名字以后再搬家）。
-        var nameReq = URLRequest(url: base.appending(path: "download").appending(path: "CLAUDE.md"))
-        nameReq.setBearer(token)
-        if let (data, resp) = try? await URLSession.shared.data(for: nameReq),
-           (200..<300).contains(resp.httpStatusCode) {
-            name = Self.parse(String(decoding: data, as: UTF8.self)).name
-        }
     }
 
     /// Fetch the 文风 version history (newest-first after load). Best-effort.
@@ -125,29 +100,23 @@ final class SettingsStore {
         return url
     }
 
-    func save() async {
+    /// Save ONLY the 文风 (versioned /style). No name write — the name field is gone
+    /// from the sheet, and the caller only invokes this on a real change, so each save
+    /// creates at most one new version.
+    func saveStyle() async {
         guard !token.isEmpty else { error = "请先登录"; return }
+        let trimmed = style.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
         saving = true; saved = false; error = nil
         defer { saving = false }
         do {
-            // 文风：版本化写回 CLAUDE.json（/style）。空文风跳过（服务端拒绝空写）。
-            let trimmedStyle = style.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmedStyle.isEmpty {
-                var styleReq = URLRequest(url: base.appending(path: "style"))
-                styleReq.httpMethod = "PUT"
-                styleReq.setBearer(token)
-                styleReq.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                let payload = try JSONEncoder().encode(StylePayload(style: trimmedStyle))
-                let (_, resp) = try await URLSession.shared.upload(for: styleReq, from: payload)
-                guard resp.isOK else { error = "保存失败"; return }
-            }
-            // 名字：暂留老 CLAUDE.md（名字以后再搬家）。
-            var nameReq = URLRequest(url: base.appending(path: "upload").appending(path: "CLAUDE.md"))
-            nameReq.httpMethod = "PUT"
-            nameReq.setBearer(token)
-            nameReq.setValue("text/markdown; charset=utf-8", forHTTPHeaderField: "Content-Type")
-            let (_, nResp) = try await URLSession.shared.upload(for: nameReq, from: Data(composeName().utf8))
-            guard nResp.isOK else { error = "保存失败"; return }
+            var req = URLRequest(url: base.appending(path: "style"))
+            req.httpMethod = "PUT"
+            req.setBearer(token)
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            let payload = try JSONEncoder().encode(StylePayload(style: trimmed))
+            let (_, resp) = try await URLSession.shared.upload(for: req, from: payload)
+            guard resp.isOK else { error = "保存失败"; return }
             saved = true
         } catch { self.error = error.localizedDescription }
     }
@@ -391,7 +360,7 @@ struct SettingsView: View {
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
-                    // 账户
+                    // 账户 + 写作风格 — 同一张卡，连在一起
                     SettingsCard {
                         NavigationLink { AccountView() } label: {
                             SettingsRow(tileBG: Theme.inkTile, symbol: "checkmark.shield.fill", tileFG: .white,
@@ -403,10 +372,7 @@ struct SettingsView: View {
                             }
                         }
                         .buttonStyle(.plain)
-                    }
-
-                    // 写作风格 — 紧挨账户下方（独立卡片）
-                    SettingsCard {
+                        settingsRowDivider
                         Button { showStyle = true } label: {
                             SettingsRow(tileBG: Theme.tileNeutral, symbol: "pencil", tileFG: Theme.secondary,
                                         title: "写作风格", subtitle: "成文时模仿这套语气") { settingsChevron }
@@ -551,27 +517,22 @@ struct WritingStyleSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showVersions = false
     @State private var selectedV: Int?     // version loaded in the editor; nil → head
+    @State private var originalStyle = ""  // baseline at open; 保存 enables only on a real diff
 
     private var currentV: Int { selectedV ?? store.styleHead }
     private var versionsDesc: [StyleVersion] { store.styleVersions.reversed() }
     private var currentDate: Date? { store.styleVersions.first { $0.v == currentV }?.date }
+    // Real change only: trimmed text differs from the baseline (edit-then-revert = no change).
+    private var canSave: Bool {
+        let now = store.style.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !now.isEmpty && now != originalStyle.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // 名字（紧凑，保留——设计稿只画了文风，但名字仍可编辑）
-                HStack(spacing: 10) {
-                    Text("名字").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.secondary)
-                    TextField("你的名字", text: $store.name)
-                        .textFieldStyle(.plain).foregroundStyle(Theme.ink).font(.system(size: 15))
-                }
-                .padding(.horizontal, 14).padding(.vertical, 11)
-                .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.R.input))
-                .overlay(RoundedRectangle(cornerRadius: Theme.R.input).stroke(Theme.inputBorder, lineWidth: 1.5))
-                .padding(.horizontal, 16).padding(.top, 8)
-
                 if !store.styleVersions.isEmpty {
-                    versionBar.padding(.horizontal, 16).padding(.top, 12)
+                    versionBar.padding(.horizontal, 16).padding(.top, 10)
                 }
                 if let e = store.error {
                     Text(e).font(.system(size: 13)).foregroundStyle(.orange)
@@ -601,14 +562,18 @@ struct WritingStyleSheet: View {
                 ToolbarItem(placement: .topBarLeading) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        Task { await store.save(); if store.error == nil { dismiss() } }
+                        Task { await store.saveStyle(); if store.error == nil { dismiss() } }
                     } label: {
-                        if store.saving { ProgressView() } else { Text("完成").bold() }
+                        if store.saving { ProgressView() } else { Text("保存").bold() }
                     }
-                    .disabled(store.saving)
+                    .disabled(!canSave || store.saving)   // 只有真有改动才能保存
                 }
             }
-            .task { await store.loadStyleHistory(); if selectedV == nil { selectedV = store.styleHead } }
+            .task {
+                await store.loadStyleHistory()
+                if selectedV == nil { selectedV = store.styleHead }
+                originalStyle = store.styleVersions.first { $0.v == store.styleHead }?.style ?? store.style
+            }
         }
     }
 
