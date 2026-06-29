@@ -32,6 +32,7 @@ final class SettingsStore {
     var style = ""
     var styleVersions: [StyleVersion] = []   // oldest-first, from /style/history
     var styleHead = 0
+    var serverStyles: [Int] = []   // profile.styles (多风格对比 selection) from GET /style
     var loading = false
     var saving = false
     var saved = false
@@ -51,7 +52,7 @@ final class SettingsStore {
 
     // 文风存在 CLAUDE.json，单独走 /style（版本化）。
     private struct StylePayload: Encodable { let style: String }
-    private struct StyleResponse: Decodable { let style: String }
+    private struct StyleResponse: Decodable { let style: String?; let styles: [Int]? }
 
     func load() async {
         guard !token.isEmpty else { error = "请先登录"; return }
@@ -64,7 +65,10 @@ final class SettingsStore {
             let (data, resp) = try await URLSession.shared.data(for: styleReq)
             let code = resp.httpStatusCode
             if (200..<300).contains(code) {
-                if let obj = try? JSONDecoder().decode(StyleResponse.self, from: data) { style = obj.style }
+                if let obj = try? JSONDecoder().decode(StyleResponse.self, from: data) {
+                    style = obj.style ?? ""
+                    serverStyles = obj.styles ?? []
+                }
             } else if code != 404 {
                 error = "加载失败"
             }
@@ -120,6 +124,19 @@ final class SettingsStore {
             styleHead = head
             saved = true
         } catch { self.error = error.localizedDescription }
+    }
+
+    /// Persist the 多风格对比 selection to profile.styles (PUT /style {styles}) — the
+    /// miner reads it. No 文风 version is created. Empty array = single-style.
+    func saveStyles(_ styles: [Int]) async {
+        guard !token.isEmpty else { return }
+        var req = URLRequest(url: base.appending(path: "style"))
+        req.httpMethod = "PUT"
+        req.setBearer(token)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body = (try? JSONEncoder().encode(["styles": styles])) ?? Data()
+        _ = try? await URLSession.shared.upload(for: req, from: body)
+        serverStyles = styles
     }
 
     func saveStyle() async {
@@ -625,8 +642,10 @@ struct WritingStyleSheet: View {
                 ToolbarItem(placement: .topBarLeading) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) {
                     if compareOn {
-                        // 对比模式：选择已实时存入 Prefs，「完成」只收起。
-                        Button("完成") { dismiss() }.bold()
+                        // 对比模式：「完成」把选择写进 profile.styles（miner 读它）。
+                        Button("完成") {
+                            Task { await store.saveStyles(prefs.styles); dismiss() }
+                        }.bold()
                     } else {
                         Button {
                             Task {
@@ -647,6 +666,8 @@ struct WritingStyleSheet: View {
                 await store.loadStyleHistory()
                 if selectedV == nil { selectedV = store.styleHead }
                 originalStyle = store.styleVersions.first { $0.v == store.styleHead }?.style ?? store.style
+                // Seed the compare selection from the server (profile.styles is the source of truth).
+                if !store.serverStyles.isEmpty { prefs.styles = store.serverStyles; prefs.multiStyle = true }
             }
         }
     }
@@ -698,8 +719,10 @@ struct WritingStyleSheet: View {
                     Text("勾选多个版本，成文时各生成一篇并排挑").font(.system(size: 12)).foregroundStyle(Theme.faint)
                 }
                 Spacer(minLength: 8)
-                Toggle("", isOn: Binding(get: { prefs.multiStyle }, set: { prefs.multiStyle = $0 }))
-                    .labelsHidden().tint(Theme.accent)
+                Toggle("", isOn: Binding(get: { prefs.multiStyle }, set: { on in
+                    prefs.multiStyle = on
+                    if !on { prefs.styles = []; Task { await store.saveStyles([]) } }   // 关 → 清空 profile.styles，miner 回到单篇
+                })).labelsHidden().tint(Theme.accent)
             }
             .padding(.horizontal, 15).padding(.vertical, 11).background(Theme.appBG)
             Rectangle().fill(Theme.dividerInCard).frame(height: 1)
