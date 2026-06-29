@@ -68,14 +68,48 @@ struct RecordingDetailView: View {
         guard versions.count > 1, let body = articles.first?.body else { return nil }
         return ArticleBody.versionLabel(body)
     }
-    private func versionBadge(_ label: String) -> some View {
-        HStack(spacing: 5) {
-            Image(systemName: "sparkles").font(.system(size: 10))
-            Text(label).font(.system(size: 12, weight: .semibold))
+    /// (current, total) position of the active version, 1-based. nil if ≤1 version.
+    private var versionPos: (Int, Int)? {
+        guard versions.count > 1, let i = versions.firstIndex(where: { $0.v == head }) else { return nil }
+        return (i + 1, versions.count)
+    }
+
+    /// Top-of-article hint row when there are multiple versions: the current 风格 badge
+    /// plus an inline 撤销/重做 switcher that MIRRORS the two nav-bar buttons (same icons,
+    /// same enabled colors) — so users discover that those top-right arrows switch styles.
+    /// The mini buttons are themselves functional.
+    private var versionSwitchHint: some View {
+        HStack(spacing: 8) {
+            if let label = currentVersionLabel {
+                HStack(spacing: 5) {
+                    Image(systemName: "sparkles").font(.system(size: 10))
+                    Text(label).font(.system(size: 12, weight: .semibold))
+                }
+                .foregroundStyle(Theme.accent)
+                .padding(.horizontal, 9).padding(.vertical, 4)
+                .background(Theme.accentSoft, in: Capsule())
+            }
+            Spacer(minLength: 8)
+            Text("切换风格").font(.system(size: 11)).foregroundStyle(Theme.metaRead)
+            miniSwitch("arrow.uturn.backward", enabled: canUndo) { performUndo() }
+            miniSwitch("arrow.uturn.forward",  enabled: canRedo) { performRedo() }
+            if let p = versionPos {
+                Text("\(p.0)/\(p.1)").font(.system(size: 11, weight: .medium))
+                    .monospacedDigit().foregroundStyle(Theme.metaRead)
+            }
         }
-        .foregroundStyle(Theme.accent)
-        .padding(.horizontal, 9).padding(.vertical, 4)
-        .background(Theme.accentSoft, in: Capsule())
+    }
+    /// One mini arrow button — visually identical to a nav-bar undo/redo button, scaled down.
+    private func miniSwitch(_ symbol: String, enabled: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(enabled ? Color(hex: "3A352E") : Color(hex: "C9BFB0"))
+                .frame(width: 28, height: 25)
+                .background(Theme.card, in: RoundedRectangle(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Theme.borderRead, lineWidth: 1))
+        }
+        .buttonStyle(.plain).disabled(!enabled)
     }
 
     var body: some View {
@@ -431,7 +465,7 @@ struct RecordingDetailView: View {
         // 整条播放条已收进顶部播放键，正文直接上移、阅读区更大。
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                if let label = currentVersionLabel { versionBadge(label).padding(.top, 12) }
+                if versions.count > 1 { versionSwitchHint.padding(.top, 12) }
                 if let a = articles[safe: articleIndex] {
                     Text(a.title)
                         .font(.system(size: 23, weight: .semibold)).foregroundStyle(Theme.inkRead)
