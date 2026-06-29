@@ -103,6 +103,25 @@ final class SettingsStore {
     /// Save ONLY the 文风 (versioned /style). No name write — the name field is gone
     /// from the sheet, and the caller only invokes this on a real change, so each save
     /// creates at most one new version.
+    /// Move the head pointer to an existing version (PATCH /style/head) — no new
+    /// version. Used when the user just switched to a saved version without editing.
+    func setStyleHead(_ head: Int) async {
+        guard !token.isEmpty else { error = "请先登录"; return }
+        saving = true; saved = false; error = nil
+        defer { saving = false }
+        var req = URLRequest(url: base.appending(path: "style").appending(path: "head"))
+        req.httpMethod = "PATCH"
+        req.setBearer(token)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let body = (try? JSONEncoder().encode(["head": head])) ?? Data()
+        do {
+            let (_, resp) = try await URLSession.shared.upload(for: req, from: body)
+            guard resp.isOK else { error = "保存失败"; return }
+            styleHead = head
+            saved = true
+        } catch { self.error = error.localizedDescription }
+    }
+
     func saveStyle() async {
         guard !token.isEmpty else { error = "请先登录"; return }
         let trimmed = style.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -523,11 +542,28 @@ struct WritingStyleSheet: View {
     private var currentV: Int { selectedV ?? store.styleHead }
     private var versionsDesc: [StyleVersion] { store.styleVersions.reversed() }
     private var currentDate: Date? { store.styleVersions.first { $0.v == currentV }?.date }
-    // Real change only: trimmed text differs from the baseline (edit-then-revert = no change).
-    private var canSave: Bool {
-        let now = store.style.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !now.isEmpty && now != originalStyle.trimmingCharacters(in: .whitespacesAndNewlines)
+    private var loadedVersionStyle: String? { store.styleVersions.first { $0.v == currentV }?.style }
+    private func trimmed(_ s: String) -> String { s.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// The editor text is UNCHANGED from the version it was loaded from (no manual edit).
+    private var textUnchangedFromLoaded: Bool {
+        guard let loaded = loadedVersionStyle else { return false }
+        return trimmed(store.style) == trimmed(loaded)
     }
+    private var canSave: Bool {
+        let now = trimmed(store.style)
+        guard !now.isEmpty else { return false }
+        if loadedVersionStyle != nil {
+            // Switched to a saved version without editing → only actionable (move head)
+            // when it's not already the head. Edited text → always saveable (new version).
+            return textUnchangedFromLoaded ? (currentV != store.styleHead) : true
+        }
+        // Legacy / no versions yet: compare to the open-time baseline (edit-then-revert = no change).
+        return now != trimmed(originalStyle)
+    }
+    /// 保存 should only MOVE the head (no new version) when the user merely switched to a
+    /// different saved version and didn't touch the text.
+    private var saveJustMovesHead: Bool { textUnchangedFromLoaded && currentV != store.styleHead }
 
     // 多风格对比（设置侧 UI；选择存 Prefs。挖矿/阅读页暂未接入——本版只做选择）。
     private var compareOn: Bool { prefs.compareStyles }
@@ -593,11 +629,17 @@ struct WritingStyleSheet: View {
                         Button("完成") { dismiss() }.bold()
                     } else {
                         Button {
-                            Task { await store.saveStyle(); if store.error == nil { dismiss() } }
+                            Task {
+                                // Switched version, no edit → just move the head pointer.
+                                // Actually edited → write a new version.
+                                if saveJustMovesHead { await store.setStyleHead(currentV) }
+                                else { await store.saveStyle() }
+                                if store.error == nil { dismiss() }
+                            }
                         } label: {
                             if store.saving { ProgressView() } else { Text("保存").bold() }
                         }
-                        .disabled(!canSave || store.saving)   // 只有真有改动才能保存
+                        .disabled(!canSave || store.saving)
                     }
                 }
             }
