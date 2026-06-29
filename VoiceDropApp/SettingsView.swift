@@ -13,6 +13,16 @@ private enum ArticlesLinkError: LocalizedError {
     }
 }
 
+/// One saved 文风 version (from GET /style/history). `savedAt` is epoch ms.
+struct StyleVersion: Identifiable, Decodable {
+    let v: Int
+    let savedAt: Double
+    let style: String
+    var id: Int { v }
+    var charCount: Int { style.count }
+    var date: Date { Date(timeIntervalSince1970: savedAt / 1000) }
+}
+
 /// Per-user writing identity, stored on the server as users/<sub>/CLAUDE.md, plus
 /// the WeChat config (users/<sub>/WECHAT.json). Logic unchanged from the dark
 /// build — only the views around it were restyled.
@@ -21,6 +31,8 @@ private enum ArticlesLinkError: LocalizedError {
 final class SettingsStore {
     var name = ""
     var style = ""
+    var styleVersions: [StyleVersion] = []   // oldest-first, from /style/history
+    var styleHead = 0
     var loading = false
     var saving = false
     var saved = false
@@ -81,6 +93,19 @@ final class SettingsStore {
         if let (data, resp) = try? await URLSession.shared.data(for: nameReq),
            (200..<300).contains(resp.httpStatusCode) {
             name = Self.parse(String(decoding: data, as: UTF8.self)).name
+        }
+    }
+
+    /// Fetch the 文风 version history (newest-first after load). Best-effort.
+    func loadStyleHistory() async {
+        guard !token.isEmpty else { return }
+        var req = URLRequest(url: base.appending(path: "style").appending(path: "history"))
+        req.setBearer(token)
+        struct R: Decodable { let head: Int; let versions: [StyleVersion] }
+        if let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
+           let r = try? JSONDecoder().decode(R.self, from: data) {
+            styleVersions = r.versions
+            styleHead = r.head
         }
     }
 
@@ -519,44 +544,57 @@ struct AboutView: View {
     }
 }
 
-// MARK: - Writing style (名字 + 文风) — kept from the original, restyled
+// MARK: - Writing style (文风 + 版本历史) — full-page editor per Settings.dc.html
 
 struct WritingStyleSheet: View {
     @Bindable var store: SettingsStore
     @Environment(\.dismiss) private var dismiss
+    @State private var showVersions = false
+    @State private var selectedV: Int?     // version loaded in the editor; nil → head
+
+    private var currentV: Int { selectedV ?? store.styleHead }
+    private var versionsDesc: [StyleVersion] { store.styleVersions.reversed() }
+    private var currentDate: Date? { store.styleVersions.first { $0.v == currentV }?.date }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    field("名字") {
-                        TextField("你的名字", text: $store.name)
-                            .textFieldStyle(.plain).foregroundStyle(Theme.ink)
-                            .padding(13)
-                            .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.R.input))
-                            .overlay(RoundedRectangle(cornerRadius: Theme.R.input).stroke(Theme.inputBorder, lineWidth: 1.5))
-                    }
-                    field("文风") {
-                        VStack(alignment: .leading, spacing: 6) {
-                            TextEditor(text: $store.style)
-                                .scrollContentBackground(.hidden)
-                                .foregroundStyle(Theme.ink).font(.system(size: 15))
-                                .frame(minHeight: 220)
-                                .padding(10)
-                                .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.R.input))
-                                .overlay(RoundedRectangle(cornerRadius: Theme.R.input).stroke(Theme.inputBorder, lineWidth: 1.5))
-                            Text("把蒸馏出来的文风贴进来。服务器挖文章时会带上它，让文章更像你。")
-                                .font(.system(size: 12.5)).foregroundStyle(Theme.faint)
-                        }
-                    }
-                    if let e = store.error {
-                        Text(e).font(.system(size: 13)).foregroundStyle(.orange)
+            VStack(spacing: 0) {
+                // 名字（紧凑，保留——设计稿只画了文风，但名字仍可编辑）
+                HStack(spacing: 10) {
+                    Text("名字").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.secondary)
+                    TextField("你的名字", text: $store.name)
+                        .textFieldStyle(.plain).foregroundStyle(Theme.ink).font(.system(size: 15))
+                }
+                .padding(.horizontal, 14).padding(.vertical, 11)
+                .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.R.input))
+                .overlay(RoundedRectangle(cornerRadius: Theme.R.input).stroke(Theme.inputBorder, lineWidth: 1.5))
+                .padding(.horizontal, 16).padding(.top, 8)
+
+                if !store.styleVersions.isEmpty {
+                    versionBar.padding(.horizontal, 16).padding(.top, 12)
+                }
+                if let e = store.error {
+                    Text(e).font(.system(size: 13)).foregroundStyle(.orange)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 18).padding(.top, 8)
+                }
+
+                // 整页编辑框 + 版本下拉浮层
+                ZStack(alignment: .top) {
+                    TextEditor(text: $store.style)
+                        .scrollContentBackground(.hidden)
+                        .foregroundStyle(Theme.ink).font(.system(size: 15.5)).lineSpacing(5)
+                        .padding(.horizontal, 14).padding(.top, 12)
+                        .background(Theme.appBG)
+                    if showVersions {
+                        Color.black.opacity(0.04).ignoresSafeArea()
+                            .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { showVersions = false } }
+                        versionDropdown.padding(.horizontal, 16).padding(.top, 4)
                     }
                 }
-                .padding(20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .scrollDismissesKeyboard(.interactively)
             .background(Theme.appBG.ignoresSafeArea())
+            .scrollDismissesKeyboard(.interactively)
             .navigationTitle("写作风格")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -565,19 +603,73 @@ struct WritingStyleSheet: View {
                     Button {
                         Task { await store.save(); if store.error == nil { dismiss() } }
                     } label: {
-                        if store.saving { ProgressView() } else { Text("保存").bold() }
+                        if store.saving { ProgressView() } else { Text("完成").bold() }
                     }
                     .disabled(store.saving)
                 }
             }
+            .task { await store.loadStyleHistory(); if selectedV == nil { selectedV = store.styleHead } }
         }
     }
 
-    @ViewBuilder private func field<C: View>(_ title: String, @ViewBuilder _ content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.ink)
-            content()
+    private var versionBar: some View {
+        Button { withAnimation(.easeOut(duration: 0.15)) { showVersions.toggle() } } label: {
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    Text("v\(currentV)").font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
+                    Image(systemName: showVersions ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(Theme.ink, in: RoundedRectangle(cornerRadius: 6))
+                Text("\(store.style.count) 字").font(.system(size: 13)).foregroundStyle(Theme.secondary)
+                if let d = currentDate {
+                    Circle().fill(Theme.chevron).frame(width: 3, height: 3)
+                    Text(DateFormatter.zh("M月d日 HH:mm").string(from: d))
+                        .font(.system(size: 13)).foregroundStyle(Theme.secondary)
+                }
+                Spacer(minLength: 8)
+                Text("共 \(store.styleVersions.count) 版").font(.system(size: 13)).foregroundStyle(Theme.faint)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 9)
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(showVersions ? Theme.ink : Theme.inputBorder, lineWidth: 1))
         }
+        .buttonStyle(.plain)
+    }
+
+    private var versionDropdown: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(versionsDesc.enumerated()), id: \.element.id) { i, ver in
+                let isCurrent = ver.v == currentV
+                Button {
+                    store.style = ver.style
+                    selectedV = ver.v
+                    withAnimation(.easeOut(duration: 0.15)) { showVersions = false }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text("v\(ver.v)").font(.system(size: 15, weight: .bold))
+                            .foregroundStyle(isCurrent ? Theme.accent : Theme.ink).frame(width: 40, alignment: .leading)
+                        Text("\(ver.charCount) 字").font(.system(size: 13))
+                            .foregroundStyle(isCurrent ? Theme.accent : Theme.secondary)
+                        Spacer(minLength: 8)
+                        Text(DateFormatter.zh("M月d日").string(from: ver.date))
+                            .font(.system(size: 13)).foregroundStyle(Theme.faint)
+                        if isCurrent {
+                            Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.accent)
+                        }
+                    }
+                    .padding(.horizontal, 15).padding(.vertical, 12)
+                    .background(isCurrent ? Theme.accentSoft : Theme.card)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                if i < versionsDesc.count - 1 { Rectangle().fill(Theme.dividerInCard).frame(height: 1) }
+            }
+        }
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.inputBorder, lineWidth: 1))
+        .shadow(color: .black.opacity(0.12), radius: 14, y: 8)
     }
 }
 
