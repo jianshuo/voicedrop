@@ -3,7 +3,7 @@ import SwiftUI
 import Observation
 
 private enum ASRProxyConfig {
-    static let endpoint = URL(string: "wss://jianshuo.dev/agent/asr")!
+    static let endpoint = URL(string: API.agentWS + "/asr")!
     static let userID = "voicedrop-edit"
     static let sampleRate = 16_000.0
 }

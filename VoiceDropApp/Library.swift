@@ -107,6 +107,26 @@ enum ArticleBody {
         return stripped.replacingOccurrences(of: "\n\n\n", with: "\n\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
+
+    /// Relative R2 key of the FIRST photo referenced in `body` (legacy numeric markers
+    /// resolved via `photos`), or nil. Callers join their own scope/owner prefix and fetch.
+    /// One place that knows "the first photo of an article" (was inlined in the own-article
+    /// and community share paths).
+    static func firstPhotoKey(in body: String, photos: [String]) -> String? {
+        for seg in segments(body) {
+            if case .photo(let token) = seg, let relKey = resolvePhotoKey(token, photos: photos) { return relKey }
+        }
+        return nil
+    }
+
+    /// Plain-text share body for one or more sections: markers stripped, multi-section
+    /// titles bracketed, sections joined by a divider. The ONE share-text format every
+    /// surface uses (own-article + community).
+    static func shareText(_ articles: [MinedArticle]) -> String {
+        let multi = articles.count > 1
+        return articles.map { multi ? "【\($0.title)】\n\n\(stripMarkers($0.body))" : "\($0.title)\n\n\(stripMarkers($0.body))" }
+            .joined(separator: "\n\n---\n\n")
+    }
 }
 
 /// Which phase of mining a recording is in (pushed live by the Worker miner over
@@ -212,7 +232,7 @@ final class LibraryStore {
     var loading = false
     var error: String?
 
-    private let base = URL(string: "https://jianshuo.dev/files/api")!
+    private let base = API.filesBase
     private var token: String { AuthStore.shared.bearer }
     private var titleCache: [String: String] = [:]   // articleKey -> first article title
     private var processingPhase: [String: MiningPhase] = [:]   // stem -> current mining phase (WebSocket)
@@ -502,20 +522,9 @@ final class LibraryStore {
 
     /// Upload a square JPEG to the user's photo folder and return the relative key.
     func uploadPhoto(data: Data, sessionTs: String, offset: Int) async -> String? {
-        guard !token.isEmpty else { return nil }
-        let relKey = RecordingName.photoKey(sessionTs: sessionTs, offset: offset)
-        let enc = relKey.urlPathEncoded
-        guard let url = URL(string: "\(base.absoluteString)/upload/\(enc)") else { return nil }
-        var req = URLRequest(url: url)
-        req.httpMethod = "PUT"
-        req.setBearer(token)
-        req.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
-        req.httpBody = data
-        do {
-            let (_, resp) = try await URLSession.shared.data(for: req)
-            let code = resp.httpStatusCode
-            return (200..<300).contains(code) ? relKey : nil
-        } catch { return nil }
+        await PhotoService.upload(data: data,
+                                  relKey: RecordingName.photoKey(sessionTs: sessionTs, offset: offset),
+                                  bearer: token)
     }
 
     struct VersionHistory {
@@ -579,16 +588,7 @@ final class LibraryStore {
 
     /// Download a photo by its full R2 key via the public `/photo/<key>` endpoint
     /// (no auth — the one photo URL shared by the community + web pages).
-    func photoData(fullKey: String) async -> Data? {
-        guard !fullKey.isEmpty else { return nil }
-        let enc = fullKey.urlPathEncoded
-        guard let url = URL(string: "\(base.absoluteString)/photo/\(enc)") else { return nil }
-        do {
-            let (data, resp) = try await URLSession.shared.data(from: url)
-            guard resp.isOK else { return nil }
-            return data
-        } catch { return nil }
-    }
+    func photoData(fullKey: String) async -> Data? { await PhotoService.data(fullKey: fullKey) }
 
     /// Download the audio to a temp file for local playback.
     func downloadAudio(_ rec: Recording) async -> URL? {

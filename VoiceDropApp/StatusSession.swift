@@ -17,7 +17,7 @@ final class StatusSession {
     private var urlSession: URLSession?
     private var closed = false
 
-    private let base = "wss://jianshuo.dev/agent/status"
+    private let base = API.agentWS + "/status"
 
     func connect() {
         guard task == nil else { return }   // already connected or connecting

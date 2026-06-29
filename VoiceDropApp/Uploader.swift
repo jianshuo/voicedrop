@@ -27,8 +27,7 @@ final class Uploader {
     private(set) var justUploaded: [String] = []  // uploaded, awaiting server confirmation
     private(set) var lastError: String?
 
-    /// Base URL is public (not a secret), so it's hardcoded.
-    private let baseURL = URL(string: "https://jianshuo.dev/files/api")!
+    private let baseURL = API.filesBase
 
     /// Per-user bearer: the Sign-in-with-Apple session if present, else the
     /// anonymous iCloud-Keychain token. Uploads land in this user's own

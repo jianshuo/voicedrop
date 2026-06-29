@@ -43,7 +43,7 @@ final class ArticleAgentSession {
     private var rec: Recording?
     private var closed = false
 
-    private let base = "wss://jianshuo.dev/agent/edit"
+    private let base = API.agentWS + "/edit"
     private var token: String { AuthStore.shared.bearer }
     private var stem: String { rec?.stem ?? "" }
 

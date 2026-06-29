@@ -35,7 +35,7 @@ final class SettingsStore {
     var wechatError: String?
     private(set) var wechatThumbMediaId = ""
 
-    private let base = URL(string: "https://jianshuo.dev/files/api")!
+    private let base = API.filesBase
     private var token: String { AuthStore.shared.bearer }
 
     func compose() -> String {

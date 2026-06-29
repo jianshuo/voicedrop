@@ -40,8 +40,8 @@ final class AuthStore {
         return "anon-" + String(hex.prefix(32))
     }
 
-    /// Where the session is exchanged. Public URL, not a secret.
-    private let authURL = URL(string: "https://jianshuo.dev/files/api/auth/apple")!
+    /// Where the session is exchanged.
+    private let authURL = API.filesBase.appendingPathComponent("auth/apple")
 
     private var appleCoordinator: AppleSignInCoordinator?
 

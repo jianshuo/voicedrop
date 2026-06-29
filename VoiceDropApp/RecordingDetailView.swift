@@ -360,11 +360,7 @@ struct RecordingDetailView: View {
     }
 
     private func share() async {
-        // Build full text from ALL articles (all sections), strip photo markers
-        let allText = articles.enumerated().map { i, a in
-            let body = ArticleBody.stripMarkers(a.body)
-            return articles.count > 1 ? "【\(a.title)】\n\n\(body)" : "\(a.title)\n\n\(body)"
-        }.joined(separator: "\n\n---\n\n")
+        let allText = ArticleBody.shareText(articles)
 
         // Append the short link if we can get one. When we have a URL we hand it to
         // the share sheet as a real link (with the article title + first photo as
@@ -386,16 +382,11 @@ struct RecordingDetailView: View {
     /// thumbnail. Best-effort: nil when the article has no photo or the fetch fails —
     /// WeChat then falls back to the page's og:image.
     private func firstPhotoImage() async -> UIImage? {
-        guard let body = articles[safe: articleIndex]?.body else { return nil }
-        let photos = doc?.photos ?? []
-        guard let scope = await store.ownerScope() else { return nil }
-        for seg in ArticleBody.segments(body) {
-            guard case .photo(let token) = seg,
-                  let relKey = ArticleBody.resolvePhotoKey(token, photos: photos) else { continue }
-            if let data = await store.photoData(fullKey: scope + relKey),
-               let img = UIImage(data: data) { return img }
-        }
-        return nil
+        guard let body = articles[safe: articleIndex]?.body,
+              let relKey = ArticleBody.firstPhotoKey(in: body, photos: doc?.photos ?? []),
+              let scope = await store.ownerScope(),
+              let data = await store.photoData(fullKey: scope + relKey) else { return nil }
+        return UIImage(data: data)
     }
 
     private func toggleCommunity(_ visible: Bool) async {

@@ -65,8 +65,8 @@ struct UsageView: View {
     }
 
     private func load() async {
-        async let b: Balance? = fetch("https://jianshuo.dev/agent/usage/balance")
-        async let l: LedgerResp? = fetch("https://jianshuo.dev/agent/usage/ledger?limit=50")
+        async let b: Balance? = fetch("\(API.agentBase.absoluteString)/usage/balance")
+        async let l: LedgerResp? = fetch("\(API.agentBase.absoluteString)/usage/ledger?limit=50")
         if let b = await b { balance = b.suanli; spent = b.spent_suanli }
         if let l = await l { entries = l.entries }
     }

@@ -66,7 +66,7 @@ final class DeviceLinkResponder {
     var pending: Pending?
     var status: String = ""   // transient toast text after release/cancel
 
-    private let base = URL(string: "https://jianshuo.dev/agent/link")!
+    private let base = API.agentLink
 
     func present(pairingId: String, code: String, pubkey: String) {
         pending = Pending(pairingId: pairingId, code: code, pubkey: pubkey)
@@ -136,7 +136,7 @@ final class DeviceLinkStore: NSObject, URLSessionWebSocketDelegate {
     var phase: Phase = .enterId
     var message: String = ""
 
-    private let httpBase = URL(string: "https://jianshuo.dev/agent/link")!
+    private let httpBase = API.agentLink
     private var priv: Curve25519.KeyAgreement.PrivateKey?
     private var pairingId: String?
     private var ws: URLSessionWebSocketTask?
@@ -192,7 +192,7 @@ final class DeviceLinkStore: NSObject, URLSessionWebSocketDelegate {
     }
 
     private func openSocket(pairingId: String) {
-        var comps = URLComponents(string: "wss://jianshuo.dev/agent/link/socket")!
+        var comps = URLComponents(string: API.agentWS + "/link/socket")!
         comps.queryItems = [URLQueryItem(name: "pairingId", value: pairingId)]
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
         wsSession = session

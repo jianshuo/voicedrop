@@ -34,8 +34,8 @@ final class CommunityStore {
     var loading = false
     var error: String?
 
-    private let base = URL(string: "https://jianshuo.dev/files/api")!
-    private let recoBase = URL(string: "https://jianshuo.dev/reco")!
+    private let base = API.filesBase
+    private let recoBase = API.recoBase
     private var token: String { AuthStore.shared.bearer }
 
     /// Community WRITES (share / unshare) need an Apple-verified identity — the server
@@ -98,15 +98,8 @@ final class CommunityStore {
     /// Share (or re-share) one of the user's articles. Returns shareId on success, nil on failure.
     /// `replyTo` links this post to another post's shareId.
     func share(_ rec: Recording, replyTo: String? = nil) async -> String? {
-        needsAppleSignIn = false
         guard !token.isEmpty, rec.hasArticles else { return nil }
-        if let id = await postShare(rec, replyTo: replyTo) { return id }
-        if needsAppleSignIn {
-            await AuthStore.shared.signInWithApple()
-            guard AuthStore.shared.isAuthenticated else { return nil }
-            return await postShare(rec, replyTo: replyTo)
-        }
-        return nil
+        return await withAppleRetry({ await postShare(rec, replyTo: replyTo) }, isSuccess: { $0 != nil })
     }
 
     /// Returns shareId if this recording is currently shared to the community, nil otherwise.
@@ -125,6 +118,24 @@ final class CommunityStore {
 
     private var needsAppleSignIn = false
 
+    /// Set `needsAppleSignIn` from a gated 403 — the ONE place that knows the
+    /// `needs_apple_signin` contract (was inlined in postShare + postUnshare).
+    private func markNeedsAppleSignin(code: Int, data: Data) {
+        needsAppleSignIn = code == 403 &&
+            (try? JSONDecoder().decode([String: String].self, from: data))?["error"] == "needs_apple_signin"
+    }
+
+    /// Run a community write once; if it failed with a gated 403, prompt Apple
+    /// sign-in and retry exactly once. The single share/unshare retry handshake.
+    private func withAppleRetry<T>(_ op: () async -> T, isSuccess: (T) -> Bool) async -> T {
+        needsAppleSignIn = false
+        let first = await op()
+        guard !isSuccess(first), needsAppleSignIn else { return first }
+        await AuthStore.shared.signInWithApple()
+        guard AuthStore.shared.isAuthenticated else { return first }
+        return await op()
+    }
+
     private func postShare(_ rec: Recording, replyTo: String?) async -> String? {
         var req = URLRequest(url: base.appending(path: "community").appending(path: "share").appending(path: rec.articleKey))
         req.httpMethod = "POST"
@@ -141,24 +152,18 @@ final class CommunityStore {
                 struct R: Decodable { let shareId: String? }
                 return (try? JSONDecoder().decode(R.self, from: data))?.shareId
             }
-            needsAppleSignIn = (code == 403) &&
-                ((try? JSONDecoder().decode([String: String].self, from: data))?["error"] == "needs_apple_signin")
+            markNeedsAppleSignin(code: code, data: data)
             return nil
         } catch { return nil }
     }
 
     @discardableResult
     func unshare(_ shareId: String) async -> Bool {
-        needsAppleSignIn = false
         guard !token.isEmpty else { return false }
-        posts.removeAll { $0.shareId == shareId }
-        if await postUnshare(shareId) { return true }
-        if needsAppleSignIn {
-            await AuthStore.shared.signInWithApple()
-            if AuthStore.shared.isAuthenticated { if await postUnshare(shareId) { return true } }
-            await load(); return false
-        }
-        await load(); return false
+        posts.removeAll { $0.shareId == shareId }                 // optimistic
+        let ok = await withAppleRetry({ await postUnshare(shareId) }, isSuccess: { $0 })
+        if !ok { await load() }                                   // failed → resync the optimistic removal
+        return ok
     }
 
     private func postUnshare(_ shareId: String) async -> Bool {
@@ -169,8 +174,7 @@ final class CommunityStore {
             let (data, resp) = try await URLSession.shared.data(for: req)
             let code = resp.httpStatusCode
             if (200..<300).contains(code) { needsAppleSignIn = false; return true }
-            needsAppleSignIn = (code == 403) &&
-                ((try? JSONDecoder().decode([String: String].self, from: data))?["error"] == "needs_apple_signin")
+            markNeedsAppleSignin(code: code, data: data)
             return false
         } catch { return false }
     }
@@ -201,16 +205,7 @@ final class CommunityStore {
     /// Download a photo by its full R2 key (`users/<sub>/photos/…`) via the public
     /// `/photo/<key>` endpoint — no auth, the same URL the web pages use. One photo
     /// logic everywhere: read straight from the photo's original location.
-    func photoData(fullKey: String) async -> Data? {
-        guard !fullKey.isEmpty else { return nil }
-        let enc = fullKey.urlPathEncoded
-        guard let url = URL(string: "\(base.absoluteString)/photo/\(enc)") else { return nil }
-        do {
-            let (data, resp) = try await URLSession.shared.data(from: url)
-            guard resp.isOK else { return nil }
-            return data
-        } catch { return nil }
-    }
+    func photoData(fullKey: String) async -> Data? { await PhotoService.data(fullKey: fullKey) }
 
     /// Report one engagement. Failures are silently ignored — when reco is down the
     /// core experience is unaffected.
@@ -616,24 +611,9 @@ struct CommunityPostView: View {
     }
 
     private func promote(_ take: AudioRecorder.Recording) async {
-        let place = await location.placeTag()
-        let finalName = RecordingName.make(start: take.start, duration: take.duration, place: place)
-        var finalURL = AudioRecorder.documentsDir.appending(path: finalName)
-        do {
-            try FileManager.default.moveItem(at: take.url, to: finalURL)
-        } catch {
-            let fallback = "VoiceDrop-\(RecordingName.timestamp(take.start)).m4a"
-            let fallbackURL = AudioRecorder.documentsDir.appending(path: fallback)
-            if (try? FileManager.default.moveItem(at: take.url, to: fallbackURL)) != nil {
-                finalURL = fallbackURL
-            }
-        }
+        let finalURL = await RecordingPromoter.promote(take, place: await location.placeTag())
         // LibraryView.onChange picks this up when the article is mined and auto-shares with replyTo.
         UserDefaults.standard.set(post.shareId, forKey: "vd.pendingReply.\(finalURL.lastPathComponent)")
-        if Prefs.shared.iCloudBackup {
-            let toArchive = finalURL
-            await Task.detached { ICloudArchive.save(toArchive) }.value
-        }
     }
 
     // MARK: Share this post
@@ -649,9 +629,8 @@ struct CommunityPostView: View {
         let arts = full?.articles ?? []
         let allText = arts.isEmpty
             ? "《\(title)》— \(author)\n来自 VoiceDrop 社区"
-            : arts.map { "\($0.title)\n\n\(ArticleBody.stripMarkers($0.body))" }
-                  .joined(separator: "\n\n---\n\n")
-        guard var comps = URLComponents(string: "https://jianshuo.dev/voicedrop/\(post.shareId)") else {
+            : ArticleBody.shareText(arts)
+        guard var comps = URLComponents(url: API.sharePage(post.shareId), resolvingAgainstBaseURL: false) else {
             sharePayload = SharePayload(text: allText); return
         }
         comps.queryItems = [URLQueryItem(name: "s", value: String(articleIndex))]
@@ -666,14 +645,10 @@ struct CommunityPostView: View {
     /// to the page's og:image). Loads cross-user via the public `/photo/<key>` endpoint.
     private func firstPhotoImage() async -> UIImage? {
         guard let owner = full?.owner,
-              let body = full?.articles?[safe: articleIndex]?.body else { return nil }
-        for seg in ArticleBody.segments(body) {
-            guard case .photo(let token) = seg,
-                  let relKey = ArticleBody.resolvePhotoKey(token, photos: full?.photos ?? []) else { continue }
-            if let data = await store.photoData(fullKey: owner + relKey),
-               let img = UIImage(data: data) { return img }
-        }
-        return nil
+              let body = full?.articles?[safe: articleIndex]?.body,
+              let relKey = ArticleBody.firstPhotoKey(in: body, photos: full?.photos ?? []),
+              let data = await store.photoData(fullKey: owner + relKey) else { return nil }
+        return UIImage(data: data)
     }
 
     // MARK: Toast
