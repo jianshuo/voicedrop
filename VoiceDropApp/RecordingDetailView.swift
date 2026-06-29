@@ -181,9 +181,7 @@ struct RecordingDetailView: View {
         guard !captured.isEmpty else { return }
         showToast("正在上传图片…")
         Task {
-            let parts = recording.stem.components(separatedBy: "-")
-            guard parts.count >= 5, parts[0] == "VoiceDrop" else { showToast("无法插入图片"); return }
-            let sessionTs = "\(parts[1])-\(parts[2])-\(parts[3])-\(parts[4])"
+            guard let sessionTs = RecordingName.parse(recording.stem)?.sessionTs else { showToast("无法插入图片"); return }
             // Offset = seconds from the recording start to this photo. For editor-
             // inserted photos that's "how long after recording it was added" (can be
             // large) — still unique & harmless; the offset semantics are only "录音内第几秒"

@@ -17,6 +17,33 @@ enum RecordingName {
         return parts.joined(separator: "-") + ".m4a"
     }
 
+    /// The decoded fields of a recording filename — the inverse of `make`. This is the
+    /// SINGLE place that knows the token layout; every reader pulls fields off `Parsed`
+    /// instead of re-splitting on "-" and hard-coding positional indices (which silently
+    /// break the moment `make` adds/reorders a field).
+    struct Parsed {
+        let sessionTs: String   // "yyyy-MM-dd-HHmmss" (== make's timestamp)
+        let month: Int?
+        let day: Int?
+        let hhmm: String?       // "HH:mm"
+        let duration: String?   // "0m33s"
+        let place: String?      // district if present, else city
+    }
+
+    /// Parse a `VoiceDrop-…` stem (filename without `.m4a`). Returns nil if it doesn't
+    /// match the convention. Mirrors `make`: parts = VoiceDrop, yyyy, MM, dd, HHmmss,
+    /// dur, weekday, period, [city, [district]].
+    static func parse(_ stem: String) -> Parsed? {
+        let p = stem.components(separatedBy: "-")
+        guard p.count >= 5, p[0] == "VoiceDrop", p[1].count == 4 else { return nil }
+        let sessionTs = p[1...4].joined(separator: "-")
+        var hhmm: String?
+        if p[4].count == 6 { hhmm = "\(p[4].prefix(2)):\(p[4].dropFirst(2).prefix(2))" }
+        let duration = p.first { $0.range(of: #"^\d+m\d+s$"#, options: .regularExpression) != nil }
+        let place = p.count >= 10 ? p[9] : (p.count >= 9 ? p[8] : nil)
+        return Parsed(sessionTs: sessionTs, month: Int(p[2]), day: Int(p[3]), hhmm: hhmm, duration: duration, place: place)
+    }
+
     static func timestamp(_ d: Date) -> String {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")

@@ -131,9 +131,17 @@ struct Recording: Identifiable, Hashable {
 
     var id: String { audioName }
     var stem: String { String(audioName.dropLast(4)) }          // strip .m4a
-    var articleKey: String { "articles/\(stem).json" }
-    var emptyKey: String { "articles/\(stem).empty" }
-    var srtKey: String { "articles/\(stem).srt" }
+    var articleKey: String { Recording.articleKey(forStem: stem) }
+    var emptyKey: String { Recording.emptyKey(forStem: stem) }
+    var srtKey: String { Recording.srtKey(forStem: stem) }
+    var blockedKey: String { Recording.blockedKey(forStem: stem) }
+
+    // The article-sidecar key layout, defined ONCE. LibraryStore.load checks these
+    // before a Recording exists, so they're static; the instance vars above delegate here.
+    static func articleKey(forStem s: String) -> String { "articles/\(s).json" }
+    static func emptyKey(forStem s: String)   -> String { "articles/\(s).empty" }
+    static func srtKey(forStem s: String)     -> String { "articles/\(s).srt" }
+    static func blockedKey(forStem s: String) -> String { "articles/\(s).blocked" }
 
     /// "6月18日 14:30 · Xuhui" style label — kept for detail views and export.
     var displayTitle: String {
@@ -144,10 +152,7 @@ struct Recording: Identifiable, Hashable {
     /// First line of a list row: article title when 已成文, place name otherwise, stem as fallback.
     var rowTitle: String {
         if let t = articleTitle, !t.isEmpty { return t }
-        let p = stem.components(separatedBy: "-")
-        guard p.count >= 5, p[0] == "VoiceDrop", p[1].count == 4 else { return stem }
-        let place = p.count >= 10 ? p[9] : (p.count >= 9 ? p[8] : "")
-        return place.isEmpty ? stem : place
+        return RecordingName.parse(stem)?.place ?? stem
     }
 
     /// Second line of a list row: "6月18日 14:30" from the R2 upload time, shown in
@@ -162,16 +167,12 @@ struct Recording: Identifiable, Hashable {
         return out.string(from: d)
     }
 
-    /// Legacy fallback: parse "6月18日 14:30" out of the VoiceDrop-<ts>… filename.
+    /// Legacy fallback: "6月18日 14:30" from the VoiceDrop-<ts>… filename (via RecordingName.parse).
     private var nameDateTimeLabel: String? {
-        let p = stem.components(separatedBy: "-")
-        guard p.count >= 5, p[0] == "VoiceDrop", p[1].count == 4 else { return nil }
+        guard let p = RecordingName.parse(stem) else { return nil }
         var bits: [String] = []
-        if let mo = Int(p[2]), let da = Int(p[3]) { bits.append("\(mo)月\(da)日") }
-        if p[4].count == 6 {
-            let t = p[4]
-            bits.append("\(t.prefix(2)):\(t.dropFirst(2).prefix(2))")
-        }
+        if let mo = p.month, let da = p.day { bits.append("\(mo)月\(da)日") }
+        if let hhmm = p.hhmm { bits.append(hhmm) }
         return bits.isEmpty ? nil : bits.joined(separator: " ")
     }
 
@@ -199,9 +200,7 @@ struct Recording: Identifiable, Hashable {
     }
 
     /// "0m33s"-style duration field if present.
-    var durationLabel: String? {
-        stem.components(separatedBy: "-").first { $0.range(of: #"^\d+m\d+s$"#, options: .regularExpression) != nil }
-    }
+    var durationLabel: String? { RecordingName.parse(stem)?.duration }
 }
 
 // MARK: - Store
@@ -259,8 +258,8 @@ final class LibraryStore {
                 let stem = String($0.name.dropLast(4))
                 return Recording(audioName: $0.name,
                                  uploaded: $0.uploaded ?? "",
-                                 hasArticles: names.contains("articles/\(stem).json"),
-                                 isEmpty: names.contains("articles/\(stem).empty"))
+                                 hasArticles: names.contains(Recording.articleKey(forStem: stem)),
+                                 isEmpty: names.contains(Recording.emptyKey(forStem: stem)))
             }
             // The ONE place recordings get ordered — newest first. Every consumer
             // (LibraryView, ExportSheet) reads this order; nobody re-sorts. See Recording.newestFirst.
@@ -270,7 +269,7 @@ final class LibraryStore {
             // .json / .empty take precedence — only fetch when neither is present.
             for i in recordings.indices {
                 guard !recordings[i].hasArticles, !recordings[i].isEmpty,
-                      names.contains("articles/\(recordings[i].stem).blocked") else { continue }
+                      names.contains(recordings[i].blockedKey) else { continue }
                 recordings[i].blockReason = await fetchBlockReason(recordings[i].stem)
             }
 
@@ -366,7 +365,7 @@ final class LibraryStore {
     /// Fetch the reason from a `.blocked` marker (no-credit / too-long). Defaults to
     /// "no-credit" on any fetch or parse failure so callers always get a non-nil String.
     private func fetchBlockReason(_ stem: String) async -> String {
-        guard let data = try? await get("articles/\(stem).blocked"),
+        guard let data = try? await get(Recording.blockedKey(forStem: stem)),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return "no-credit" }
         return obj["reason"] as? String ?? "no-credit"
     }
