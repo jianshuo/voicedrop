@@ -566,13 +566,13 @@ struct WritingStyleSheet: View {
     private var saveJustMovesHead: Bool { textUnchangedFromLoaded && currentV != store.styleHead }
 
     // 多风格对比（设置侧 UI；选择存 Prefs。挖矿/阅读页暂未接入——本版只做选择）。
-    private var compareOn: Bool { prefs.compareStyles }
-    private var selectedVersions: [Int] { prefs.compareStyleVersions.sorted(by: >) }
+    private var compareOn: Bool { prefs.multiStyle }
+    private var selectedVersions: [Int] { prefs.styles.sorted(by: >) }
     private func toggleCompareSelect(_ v: Int) {
-        if let idx = prefs.compareStyleVersions.firstIndex(of: v) {
-            prefs.compareStyleVersions.remove(at: idx)
-        } else if prefs.compareStyleVersions.count < 3 {
-            prefs.compareStyleVersions.append(v)
+        if let idx = prefs.styles.firstIndex(of: v) {
+            prefs.styles.remove(at: idx)
+        } else if prefs.styles.count < 3 {
+            prefs.styles.append(v)
         }
     }
     private var compareFooter: String {
@@ -665,7 +665,7 @@ struct WritingStyleSheet: View {
                     Text(selectedVersions.isEmpty ? "未选版本" : "已选 " + selectedVersions.map { "v\($0)" }.joined(separator: "、"))
                         .font(.system(size: 13)).foregroundStyle(Theme.secondary).lineLimit(1)
                     Spacer(minLength: 8)
-                    Text("\(prefs.compareStyleVersions.count) / 3").font(.system(size: 13)).foregroundStyle(Theme.faint)
+                    Text("\(prefs.styles.count) / 3").font(.system(size: 13)).foregroundStyle(Theme.faint)
                 } else {
                     HStack(spacing: 6) {
                         Text("v\(currentV)").font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
@@ -698,14 +698,14 @@ struct WritingStyleSheet: View {
                     Text("勾选多个版本，成文时各生成一篇并排挑").font(.system(size: 12)).foregroundStyle(Theme.faint)
                 }
                 Spacer(minLength: 8)
-                Toggle("", isOn: Binding(get: { prefs.compareStyles }, set: { prefs.compareStyles = $0 }))
+                Toggle("", isOn: Binding(get: { prefs.multiStyle }, set: { prefs.multiStyle = $0 }))
                     .labelsHidden().tint(Theme.accent)
             }
             .padding(.horizontal, 15).padding(.vertical, 11).background(Theme.appBG)
             Rectangle().fill(Theme.dividerInCard).frame(height: 1)
 
             ForEach(Array(versionsDesc.enumerated()), id: \.element.id) { i, ver in
-                let sel = compareOn ? prefs.compareStyleVersions.contains(ver.v) : (ver.v == currentV)
+                let sel = compareOn ? prefs.styles.contains(ver.v) : (ver.v == currentV)
                 Button {
                     if compareOn { toggleCompareSelect(ver.v) }
                     else {

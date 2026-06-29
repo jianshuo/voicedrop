@@ -76,7 +76,9 @@ enum ArticleBody {
     }
 
     /// Split a body into text + photo segments at `[[photo:<token>]]` markers.
+    /// The leading origin comment (`<!--风格vN-->`) is stripped first — it's a label, not content.
     static func segments(_ body: String) -> [ArticleSegment] {
+        let body = stripOriginComment(body)
         let ns = body as NSString
         let matches = marker.matches(in: body, range: NSRange(location: 0, length: ns.length))
         guard !matches.isEmpty else { return [.text(body)] }
@@ -98,13 +100,34 @@ enum ArticleBody {
         return out
     }
 
-    /// Body with all `[[photo:N]]` markers removed — for places that can't render
-    /// the session photos (WeChat, the cross-user community, share excerpts).
+    /// Body with all `[[photo:N]]` markers AND the origin comment removed — for places
+    /// that can't render the session photos (WeChat, the cross-user community, share excerpts).
     static func stripMarkers(_ body: String) -> String {
-        let ns = body as NSString
+        let ns = stripOriginComment(body) as NSString
         let stripped = marker.stringByReplacingMatches(
-            in: body, range: NSRange(location: 0, length: ns.length), withTemplate: "")
+            in: ns as String, range: NSRange(location: 0, length: ns.length), withTemplate: "")
         return stripped.replacingOccurrences(of: "\n\n\n", with: "\n\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // A leading version-origin comment, e.g. `<!--风格v7-->`. A GENERAL per-version label:
+    // any version can self-describe its origin in this comment; the reader shows it on the
+    // undo/redo chip and strips it from every rendered surface.
+    private static let originComment = try! NSRegularExpression(pattern: #"<!--\s*(.*?)\s*-->"#)
+
+    /// The origin label from a body's `<!--…-->` comment (e.g. "风格v7"), or nil.
+    static func versionLabel(_ body: String) -> String? {
+        let ns = body as NSString
+        guard let m = originComment.firstMatch(in: body, range: NSRange(location: 0, length: ns.length)) else { return nil }
+        let s = ns.substring(with: m.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
+        return s.isEmpty ? nil : s
+    }
+
+    /// Body with the origin `<!--…-->` comment(s) removed (label is metadata, never shown).
+    static func stripOriginComment(_ body: String) -> String {
+        let ns = body as NSString
+        return originComment.stringByReplacingMatches(
+            in: body, range: NSRange(location: 0, length: ns.length), withTemplate: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
