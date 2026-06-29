@@ -563,6 +563,16 @@ struct WritingStyleSheet: View {
                         .foregroundStyle(Theme.ink).font(.system(size: 15.5)).lineSpacing(5)
                         .padding(.horizontal, 14).padding(.top, 12)
                         .background(Theme.appBG)
+                        .overlay(alignment: .topLeading) {
+                            // TextEditor has no placeholder — show an empty-state hint so a
+                            // first-time account (no CLAUDE.json yet) isn't a blank page.
+                            if store.style.isEmpty && !store.loading {
+                                Text("还没有写作风格。\n\n把蒸馏好的文风贴进来，挖文章时会带上它、让文章更像你；或者让 Claude 用「蒸馏文风」从你已发的文章里提炼一份。")
+                                    .font(.system(size: 15.5)).foregroundStyle(Theme.faint).lineSpacing(5)
+                                    .padding(.horizontal, 19).padding(.top, 20)
+                                    .allowsHitTesting(false)
+                            }
+                        }
                     if showVersions {
                         Color.black.opacity(0.04).ignoresSafeArea()
                             .onTapGesture { withAnimation(.easeOut(duration: 0.15)) { showVersions = false } }
