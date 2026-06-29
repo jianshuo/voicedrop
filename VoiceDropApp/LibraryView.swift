@@ -35,7 +35,12 @@ struct LibraryView: View {
         let optimistic = uploader.justUploaded
             .filter { !busy.contains($0) }
             .map { Recording(audioName: $0, uploaded: "", hasArticles: false, isEmpty: false, uploading: false) }
-        return (uploading + optimistic + store.recordings).sorted { $0.audioName > $1.audioName }
+        // Newest first by R2 upload time (the filename isn't a reliable clock). In-flight
+        // rows (uploading / just-uploaded — no `uploaded` yet) are the newest → keep on top.
+        return (uploading + optimistic + store.recordings).sorted { a, b in
+            if a.uploaded.isEmpty != b.uploaded.isEmpty { return a.uploaded.isEmpty }
+            return (a.uploaded, a.audioName) > (b.uploaded, b.audioName)
+        }
     }
 
     var body: some View {
