@@ -709,14 +709,26 @@ struct RecordingDetailView: View {
     }
 
     private var emptyState: some View {
-        statusScreen(icon: "speaker.slash", title: "没检测到语音", subtitle: emptyReasonText)
+        let e = emptyDisplay
+        return statusScreen(icon: e.icon, title: e.title, subtitle: e.subtitle)
     }
 
-    private var emptyReasonText: String {
+    /// Reason-aware empty state. The server marks a recording empty for several distinct
+    /// reasons (miner.js writeEmpty): `no-article` means ASR DID hear speech but the model
+    /// found nothing worth publishing — NOT「没检测到语音」. Only no-speech/silent is真没声。
+    private var emptyDisplay: (icon: String, title: String, subtitle: String) {
         switch emptyReason {
-        case "corrupt": return "这条录音的文件损坏了，没法转写。"
-        case "silent":  return "这条录音太短或几乎是静音，没有可转写的内容。"
-        default:        return "这条录音里没有识别到说话声，已标记为无语音。"
+        case "no-article":
+            return ("text.badge.xmark", "没挖出文章",
+                    "这段录音听到了，只是没找到能单独成篇的内容——可能太零碎，或者还没说成一件事。把想法讲完整一点、重录一段试试。")
+        case "too-short":
+            return ("timer", "录得太短", "这段录音太短，没攒够能成文的内容。")
+        case "corrupt":
+            return ("exclamationmark.triangle", "文件损坏", "这条录音的文件损坏了，没法转写。")
+        case let r? where r.hasPrefix("asr-error"):
+            return ("exclamationmark.triangle", "转写没成", "这段录音转写时出错了，过会儿再试或重录一段。")
+        default:   // no-speech / silent / empty-text / 未知
+            return ("speaker.slash", "没检测到语音", "这条录音里没有识别到说话声。")
         }
     }
 
