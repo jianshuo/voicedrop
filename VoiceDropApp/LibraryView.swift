@@ -191,6 +191,11 @@ struct LibraryView: View {
                         if !rec.uploading {
                             Button(role: .destructive) { confirmDelete = rec } label: { Label("删除", systemImage: "trash") }
                                 .tint(.red)
+                            // 「重写」在删除左边：复用已有 ASR、按原逻辑重挖（仅对已成文的录音）
+                            if rec.hasArticles {
+                                Button { Task { await store.remine(rec) } } label: { Label("重写", systemImage: "arrow.clockwise") }
+                                    .tint(Theme.accent)
+                            }
                         }
                     }
                 }
@@ -289,7 +294,12 @@ struct LibraryView: View {
     }
 
     @ViewBuilder private func statusBadge(_ rec: Recording) -> some View {
-        if rec.uploading {
+        if store.reminingStems.contains(rec.stem) {
+            HStack(spacing: 5) {
+                ProgressView().controlSize(.mini).tint(Theme.accent)
+                Text("重写中").font(.system(size: 12.5)).foregroundStyle(Theme.accent)
+            }
+        } else if rec.uploading {
             HStack(spacing: 5) {
                 ProgressView().controlSize(.mini).tint(Theme.recordRed)
                 Text("正在上传").font(.system(size: 12.5)).foregroundStyle(Theme.recordRed)

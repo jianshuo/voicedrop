@@ -275,6 +275,7 @@ final class LibraryStore {
     var recordings: [Recording] = []
     var loading = false
     var error: String?
+    var reminingStems: Set<String> = []   // stem 正在"重写"（复用已有 ASR、按原逻辑重挖）
 
     private let base = API.filesBase
     private var token: String { AuthStore.shared.bearer }
@@ -580,6 +581,30 @@ final class LibraryStore {
         guard let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
               let r = try? JSONDecoder().decode(Resp.self, from: data), r.ok else { return nil }
         return r.head
+    }
+
+    /// 重写：复用已有 ASR，按原挖矿逻辑用当前文风重挖（POST /agent/restyle {stem}，不带 styleV →
+    /// 服务端用文风 head，可重新拆多篇）。写文章新版本、转写不动。期间标记 reminingStems，成功后刷新。
+    func remine(_ rec: Recording) async {
+        guard !token.isEmpty, rec.hasArticles,
+              let url = URL(string: "\(API.agentBase.absoluteString)/restyle") else { return }
+        struct Req: Encodable { let stem: String }
+        struct Resp: Decodable { let ok: Bool; let head: Int? }
+        reminingStems.insert(rec.stem)
+        defer { reminingStems.remove(rec.stem) }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setBearer(token)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONEncoder().encode(Req(stem: rec.stem))
+        req.timeoutInterval = 120   // opus 重挖可能要几十秒
+        guard let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
+              let r = try? JSONDecoder().decode(Resp.self, from: data), r.ok else {
+            error = "重写失败"
+            return
+        }
+        titleCache[rec.articleKey] = nil   // 标题可能变
+        await load()
     }
 
     /// Upload a square JPEG to the user's photo folder and return the relative key.
