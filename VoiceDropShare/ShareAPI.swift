@@ -82,4 +82,17 @@ enum ShareAPI {
     static func triggerMine() async {
         _ = try? await URLSession.shared.data(for: authed(API.agentBase.appendingPathComponent("mine/trigger"), "POST"))
     }
+
+    /// The user's current 写作风格 text (`GET /style`, same route
+    /// `VoiceDropApp/SettingsView.swift`'s `SettingsStore.load()` reads — this
+    /// mirrors it, not shared since that store pulls in app-only dependencies).
+    /// Returns nil on failure or when no style has been saved yet, so callers can
+    /// fall back to a neutral label instead of a stale/fake one.
+    static func fetchStyleText() async -> String? {
+        guard let (d, resp) = try? await URLSession.shared.data(for: authed(API.filesBase.appendingPathComponent("style"), "GET")),
+              resp.isOK else { return nil }
+        struct R: Decodable { let style: String? }
+        guard let style = (try? JSONDecoder().decode(R.self, from: d))?.style, !style.isEmpty else { return nil }
+        return style
+    }
 }

@@ -17,6 +17,9 @@ struct AudioComposeView: View {
     @State private var fileSize: Int = 0
     @State private var uploading = false
     @State private var uploadFailed = false
+    /// 写作风格 row value — starts neutral, replaced by `loadStyle()` once the
+    /// user's actual style loads (never a fake placeholder; see that func).
+    @State private var styleLabel = "未设置"
 
     /// A filename-derived title — the design's "来自 备忘录" source-app label
     /// isn't reliably available from a Share Extension, so this stands in for it.
@@ -57,7 +60,10 @@ struct AudioComposeView: View {
         .clipShape(UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 18, style: .continuous))
         .shadow(color: Color(hex: "3C301E").opacity(0.16), radius: 20, x: 0, y: -6)
         .ignoresSafeArea(edges: .bottom)
-        .task { load() }
+        .task {
+            load()
+            await loadStyle()
+        }
         .onDisappear { player.stop() }
     }
 
@@ -98,7 +104,10 @@ struct AudioComposeView: View {
     // MARK: - Audio card
 
     private var audioCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        // Explicit per-gap top padding rather than a uniform VStack spacing:
+        // the design (Share Collect.dc.html:148/151) wants icon-row→waveform
+        // at 16pt but waveform→play-row at 12pt, not the same value twice.
+        VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 13) {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Color(hex: "E8E4EF"))
@@ -122,6 +131,7 @@ struct AudioComposeView: View {
             }
 
             waveform
+                .padding(.top, 16)
 
             HStack(spacing: 12) {
                 Button(action: { player.toggle() }) {
@@ -151,6 +161,7 @@ struct AudioComposeView: View {
                     .foregroundStyle(Color(hex: "8A8175"))
                     .fixedSize()
             }
+            .padding(.top, 12)
         }
         .padding(18)
         .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white))
@@ -176,11 +187,12 @@ struct AudioComposeView: View {
         0.45, 0.65, 0.55, 0.85, 0.40, 0.60, 0.30, 0.70,
     ]
 
-    /// Elapsed time while playing, total duration otherwise — a single label
-    /// (matches the design's one duration readout) that ticks forward on the
-    /// player's 0.2s progress timer.
+    /// Elapsed time whenever there's progress to show — playing OR paused
+    /// mid-track (so the label stays consistent with the progress bar, which
+    /// also freezes at the paused position rather than resetting). Total
+    /// duration only at the very start, before playback has begun.
     private var durationLabel: String {
-        player.isPlaying ? formatDuration(player.progress * player.duration) : formatDuration(player.duration)
+        player.progress > 0 ? formatDuration(player.progress * player.duration) : formatDuration(player.duration)
     }
 
     // MARK: - 生成设置
@@ -196,7 +208,7 @@ struct AudioComposeView: View {
                 .padding(.horizontal, 6)
 
             VStack(spacing: 0) {
-                settingsRow(title: "写作风格", value: "我的写作风格")
+                settingsRow(title: "写作风格", value: styleLabel)
                 Rectangle().fill(Color(hex: "F0E8DA")).frame(height: 1)
                 settingsRow(title: "识别语言", value: "中文（自动）")
             }
@@ -206,8 +218,8 @@ struct AudioComposeView: View {
     }
 
     /// Read-only display row — a static label + chevron, no picker (v1; see
-    /// task brief). 写作风格 always shows the same placeholder label since the
-    /// extension has no cheap way to fetch+summarize the user's actual style text.
+    /// task brief). 写作风格's `value` is the user's real style label, fetched by
+    /// `loadStyle()`; 识别语言 stays a fixed literal.
     private func settingsRow(title: String, value: String) -> some View {
         HStack(spacing: 12) {
             Text(title)
@@ -299,6 +311,19 @@ struct AudioComposeView: View {
         if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path), let size = attrs[.size] as? Int {
             fileSize = size
         }
+    }
+
+    /// Fetch the user's current 写作风格 and derive the 写作风格 row's label: the
+    /// first non-empty line, truncated to ~12 characters + `…` (mirrors
+    /// `VoiceDropApp/SettingsView.swift`'s `StyleNaming.name`, not shared into
+    /// this target). Leaves `styleLabel` at its neutral "未设置" default — never
+    /// a fake placeholder — when there's no style yet or the fetch fails.
+    private func loadStyle() async {
+        guard let text = await ShareAPI.fetchStyleText() else { return }
+        let line = text.split(whereSeparator: \.isNewline).first
+            .map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        guard !line.isEmpty else { return }
+        styleLabel = line.count > 12 ? String(line.prefix(12)) + "…" : line
     }
 
     /// 「开始生成文章」— upload the shared file as a recording-style take, kick
