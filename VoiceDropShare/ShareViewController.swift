@@ -13,9 +13,22 @@ final class ShareViewController: UIViewController {
         let items = (extensionContext?.inputItems as? [NSExtensionItem]) ?? []
         let kind = ShareRouter.classify(items)
         let ctx = extensionContext
-        let root = ShareRootView(items: items, kind: kind, close: {
+        let finish: () -> Void = {
             ctx?.completeRequest(returningItems: [], completionHandler: nil)
-        })
+        }
+        // After 生成文章 (audio / image sheets), open the host app to 我的录音 so the
+        // user can watch mining progress. Uses the official NSExtensionContext.open
+        // (voicedrop:// scheme); whether iOS actually foregrounds the app from a
+        // share extension varies by version, so we always completeRequest too.
+        let openApp: () -> Void = {
+            guard let ctx, let url = URL(string: "voicedrop://recordings") else {
+                ctx?.completeRequest(returningItems: [], completionHandler: nil); return
+            }
+            ctx.open(url) { _ in
+                ctx.completeRequest(returningItems: [], completionHandler: nil)
+            }
+        }
+        let root = ShareRootView(items: items, kind: kind, close: finish, openApp: openApp)
         let host = UIHostingController(rootView: root)
         host.view.backgroundColor = .clear
         addChild(host)

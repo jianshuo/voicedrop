@@ -35,6 +35,9 @@ struct ShareRootView: View {
     let items: [NSExtensionItem]
     let kind: ShareKind
     let close: () -> Void
+    /// Called instead of `close` after a successful 生成文章 on the audio/image
+    /// sheets — completes the extension AND opens the host app to 我的录音.
+    var openApp: () -> Void = {}
     @State private var payload: SharePayload?
 
     var body: some View {
@@ -46,9 +49,9 @@ struct ShareRootView: View {
                 } else if let p = payload {
                     switch kind {
                     case .audio:
-                        AudioComposeView(payload: p, close: close)
+                        AudioComposeView(payload: p, close: close, openApp: openApp)
                     case .image:
-                        PhotoComposeView(payload: p, close: close)
+                        PhotoComposeView(payload: p, close: close, openApp: openApp)
                     default:
                         StyleDatasetView(payload: p, close: close)   // web/document/text
                     }

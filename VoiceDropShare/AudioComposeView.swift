@@ -12,6 +12,8 @@ import AVFoundation
 struct AudioComposeView: View {
     let payload: SharePayload
     let close: () -> Void
+    /// Called after a successful 生成文章 — opens the host app to 我的录音.
+    var openApp: () -> Void = {}
 
     @State private var player = SharePlaybackController()
     @State private var fileSize: Int = 0
@@ -341,7 +343,7 @@ struct AudioComposeView: View {
             return
         }
         await ShareAPI.triggerMine()
-        close()
+        openApp()   // finish + jump to 我的录音 to watch progress
     }
 }
 

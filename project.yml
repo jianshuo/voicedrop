@@ -18,6 +18,10 @@ targets:
       path: VoiceDropApp/Info.plist
       properties:
         CFBundleDisplayName: VoiceDrop
+        CFBundleURLTypes:
+          - CFBundleURLName: com.wangjianshuo.VoiceDrop
+            CFBundleURLSchemes:
+              - voicedrop
         NSMicrophoneUsageDescription: "VoiceDrop 录下你的口述，并上传到你的文件中转站。"
         NSCameraUsageDescription: "VoiceDrop 可在录音过程中拍摄场景照片，随录音一起保存。"
         NSPhotoLibraryAddUsageDescription: "VoiceDrop 把你拍的场景照片在系统相册里也存一份。"

@@ -14,6 +14,8 @@ import UIKit
 struct PhotoComposeView: View {
     let payload: SharePayload
     let close: () -> Void
+    /// Called after a successful 生成文章 — opens the host app to 我的录音.
+    var openApp: () -> Void = {}
 
     @State private var uploading = false
     @State private var uploadFailed = false
@@ -294,7 +296,7 @@ struct PhotoComposeView: View {
         }
 
         await ShareAPI.triggerMine()
-        close()
+        openApp()   // finish + jump to 我的录音 to watch progress
     }
 }
 
@@ -346,7 +348,10 @@ private struct ThumbnailCell: View {
 /// helper. A plain stateless `enum`, so it can run freely inside `Task.detached`
 /// off the main actor.
 enum SquareCrop {
-    static func jpeg(_ image: UIImage, maxSide: CGFloat = 1080, maxBytes: Int = 900_000) -> Data? {
+    // maxSide 640 (was 1080): the shared photo is used BOTH for inline article
+    // display and as Claude-vision input; a 640² square is plenty for a phone-width
+    // article image and cuts vision cost from ~1500 to ~545 tokens/photo.
+    static func jpeg(_ image: UIImage, maxSide: CGFloat = 640, maxBytes: Int = 900_000) -> Data? {
         autoreleasepool {
             let s = image.size
             guard s.width > 0, s.height > 0 else { return nil }

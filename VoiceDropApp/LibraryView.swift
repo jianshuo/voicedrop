@@ -101,6 +101,12 @@ struct LibraryView: View {
             statusSession.connect()
             Task { await refresh() }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .vdOpenRecordings)) { _ in
+            // Opened from the Share Extension after 生成文章 — land on 我的录音 and
+            // refresh so the just-uploaded 待处理 row shows with live progress.
+            tab = .recordings
+            Task { await refresh() }
+        }
     }
 
     private func checkPendingReplies(_ recs: [Recording]) {
