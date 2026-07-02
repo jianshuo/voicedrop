@@ -341,11 +341,13 @@ struct LibraryView: View {
     private func rowCard(_ rec: Recording) -> some View {
         let empty = rec.isEmpty
         return HStack(spacing: 13) {
-            RoundedRectangle(cornerRadius: Theme.R.card)
-                .fill(empty ? Color(hex: "F1ECE3") : Theme.recordRedSoft)
-                .frame(width: 42, height: 42)
-                .overlay(WaveformBars(color: empty ? Color(hex: "C3B9A8") : Theme.recordRed,
-                                      heights: [11, 19, 14], barWidth: 3, spacing: 2.5))
+            // The article's first photo as the row icon when it has one; otherwise
+            // the waveform tile (also the fallback while the photo loads / on fail).
+            if let cover = rec.coverPhotoKey {
+                RowCoverIcon(store: store, relKey: cover)
+            } else {
+                waveTile(empty: empty)
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(rec.rowTitle).font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.ink)
@@ -386,6 +388,16 @@ struct LibraryView: View {
             .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).stroke(Color(hex: "E4DBCB"), lineWidth: 1))
             .shadow(color: Color(hex: "3C2D1E").opacity(0.10), radius: 4, x: 0, y: 1)
             .offset(x: 13, y: 10)
+    }
+
+    /// The default row icon: a soft rounded tile with a 3-bar waveform. Unchanged
+    /// visual — used for rows without a cover photo, and as `RowCoverIcon`'s fallback.
+    private func waveTile(empty: Bool) -> some View {
+        RoundedRectangle(cornerRadius: Theme.R.card)
+            .fill(empty ? Color(hex: "F1ECE3") : Theme.recordRedSoft)
+            .frame(width: 42, height: 42)
+            .overlay(WaveformBars(color: empty ? Color(hex: "C3B9A8") : Theme.recordRed,
+                                  heights: [11, 19, 14], barWidth: 3, spacing: 2.5))
     }
 
     @ViewBuilder private func statusBadge(_ rec: Recording) -> some View {
@@ -523,5 +535,38 @@ struct LibraryView: View {
     private func commandNumber(for rec: Recording) -> Int? {
         guard let idx = store.recordings.firstIndex(where: { $0.id == rec.id }) else { return nil }
         return idx + 1
+    }
+}
+
+/// A 42×42 row icon showing the article's first photo. Loads it once (own scope +
+/// rel key, same public `/photo/<key>` path as PhotoTile); shows the waveform tile
+/// until the image lands and if it can't load — so a row never looks broken.
+private struct RowCoverIcon: View {
+    let store: LibraryStore
+    let relKey: String
+    @State private var image: UIImage?
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: Theme.R.card)
+            .fill(Theme.recordRedSoft)
+            .frame(width: 42, height: 42)
+            .overlay {
+                if let image {
+                    Image(uiImage: image).resizable().scaledToFill()
+                } else {
+                    WaveformBars(color: Theme.recordRed, heights: [11, 19, 14], barWidth: 3, spacing: 2.5)
+                }
+            }
+            .frame(width: 42, height: 42)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.R.card))
+            .task(id: relKey) { await load() }
+    }
+
+    private func load() async {
+        image = nil
+        guard let scope = await store.ownerScope() else { return }
+        if let data = await store.photoData(fullKey: scope + relKey), let ui = UIImage(data: data) {
+            image = ui
+        }
     }
 }

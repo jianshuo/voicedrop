@@ -189,6 +189,7 @@ struct Recording: Identifiable, Hashable {
     let hasArticles: Bool
     let isEmpty: Bool            // a `articles/<stem>.empty` marker exists (no usable speech)
     var articleTitle: String?    // first mined article's title; fills the place slot once 已成文
+    var coverPhotoKey: String?   // rel R2 key of the article's FIRST photo; shown as the row's left icon (nil → waveform)
     var uploading: Bool = false  // a local take still in the upload queue (not yet on the server)
     var phase: MiningPhase? = nil // server is actively mining this right now (WebSocket push); nil = not in-flight
     var blockReason: String? = nil   // "no-credit" | "too-long"; nil = not blocked
@@ -280,6 +281,7 @@ final class LibraryStore {
     private let base = API.filesBase
     private var token: String { AuthStore.shared.bearer }
     private var titleCache: [String: String] = [:]   // articleKey -> first article title
+    private var coverCache: [String: String] = [:]   // articleKey -> first-photo rel key ("" = article has none)
     private var processingPhase: [String: MiningPhase] = [:]   // stem -> current mining phase (WebSocket)
 
     private struct ListResponse: Decodable {
@@ -350,10 +352,11 @@ final class LibraryStore {
                 }
             }
 
-            // Apply cached titles immediately, then fetch any missing ones so the
-            // 已成文 rows show the article title instead of the place.
+            // Apply cached titles + cover-photo keys immediately, then fetch any
+            // missing ones so 已成文 rows show the article title and its first photo.
             for i in recordings.indices where recordings[i].hasArticles {
                 recordings[i].articleTitle = titleCache[recordings[i].articleKey]
+                recordings[i].coverPhotoKey = coverCache[recordings[i].articleKey].flatMap { $0.isEmpty ? nil : $0 }
             }
             await fetchMissingTitles()
         } catch {
@@ -367,21 +370,26 @@ final class LibraryStore {
     private func fetchMissingTitles() async {
         let pending = recordings.filter { $0.hasArticles && $0.articleTitle == nil }
         guard !pending.isEmpty else { return }
-        let found = await withTaskGroup(of: (String, String).self) { group -> [(String, String)] in
+        // One doc fetch fills BOTH the title and the first-photo cover icon.
+        // cover "" = the article has no photo (cache it so we don't refetch).
+        let found = await withTaskGroup(of: (String, String, String).self) { group -> [(String, String, String)] in
             for rec in pending {
                 group.addTask {
-                    let title = await self.fetchDoc(rec)?.resolvedArticles.first?.title ?? ""
-                    return (rec.id, title)
+                    guard let doc = await self.fetchDoc(rec), let art = doc.resolvedArticles.first else { return (rec.id, "", "") }
+                    let cover = ArticleBody.firstPhotoKey(in: art.body, photos: doc.photos ?? []) ?? ""
+                    return (rec.id, art.title, cover)
                 }
             }
-            var out: [(String, String)] = []
-            for await pair in group where !pair.1.isEmpty { out.append(pair) }
+            var out: [(String, String, String)] = []
+            for await t in group where !t.1.isEmpty { out.append(t) }
             return out
         }
-        for (id, title) in found {
+        for (id, title, cover) in found {
             if let idx = recordings.firstIndex(where: { $0.id == id }) {
                 recordings[idx].articleTitle = title
                 titleCache[recordings[idx].articleKey] = title
+                recordings[idx].coverPhotoKey = cover.isEmpty ? nil : cover
+                coverCache[recordings[idx].articleKey] = cover
             }
         }
     }
@@ -469,6 +477,7 @@ final class LibraryStore {
         _ = await del(rec.srtKey)
         _ = await del(rec.emptyKey)
         titleCache[rec.articleKey] = nil   // re-mined article may have a new title
+        coverCache[rec.articleKey] = nil   // …and a different (or no) first photo
         await dispatchMine()               // trigger a fresh mine cycle now
         await load()
         return true
@@ -604,6 +613,7 @@ final class LibraryStore {
             return
         }
         titleCache[rec.articleKey] = nil   // 标题可能变
+        coverCache[rec.articleKey] = nil   // 首图也可能变
         await load()
     }
 
