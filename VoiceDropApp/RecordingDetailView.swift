@@ -63,9 +63,12 @@ struct RecordingDetailView: View {
         guard let a = articles.first else { return nil }
         return a.style ?? ArticleBody.styleVersion(a.body)
     }
-    /// The chip label, e.g. "风格 v8".
+    /// The chip label: "v8 风格", or "v8 王建硕风格" when the version's name is known
+    /// (styleVersions loads async — the label upgrades once history arrives).
     private var currentStyleLabel: String? {
-        currentStyleV.map(ArticleBody.styleLabel(forVersion:))
+        currentStyleV.map { v in
+            StyleNaming.chipLabel(v: v, style: settings.styleVersions.first { $0.v == v }?.style)
+        }
     }
     /// A version already tagged with 文风 vN (the latest such) → reuse via patchHead, free.
     private func existingVersion(forStyle v: Int) -> ArticleVersionEntry? {

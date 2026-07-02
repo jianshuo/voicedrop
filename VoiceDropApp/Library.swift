@@ -131,10 +131,9 @@ enum ArticleBody {
         return out
     }
 
-    /// The `style` comment value (chip label, e.g. "风格 v8"), or nil.
+    /// The `style` comment value (e.g. "风格 v8"), or nil. Legacy fallback only —
+    /// the chip label itself is built by StyleNaming.chipLabel from the version number.
     static func styleLabel(_ body: String) -> String? { meta(body)["style"] }
-    /// The canonical chip label for a 文风 version number — single source the matcher uses too.
-    static func styleLabel(forVersion v: Int) -> String { "风格 v\(v)" }
     /// The 文风 version number tagged on a body's `style` comment (e.g. "风格 v8" → 8), or nil.
     static func styleVersion(_ body: String) -> Int? {
         guard let s = styleLabel(body), let r = s.range(of: #"\d+"#, options: .regularExpression) else { return nil }
