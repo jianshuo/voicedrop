@@ -3,13 +3,6 @@ import UIKit
 import PhotosUI
 import LinkPresentation
 
-/// A transient one-line reply from the editing agent.
-struct AgentReply: Identifiable, Equatable {
-    let id = UUID()
-    let text: String
-    let ok: Bool
-}
-
 /// 成文阅读：听录音 + 读挖出的文章 + 一键发布。暖灰阅读底（#F0EDE7）。
 /// 右上角 ⋯ 菜单（发布公众号草稿 / 分享）；底部常驻一条微信式按住说话 bar。
 struct RecordingDetailView: View {
@@ -41,7 +34,6 @@ struct RecordingDetailView: View {
     @State private var agentReply: AgentReply?
     @State private var agent = ArticleAgentSession()
     @State private var dictation = SpeechDictation()
-    @State private var willCancel = false           // slid finger up past threshold
     @State private var connected = false
     @State private var confirmDeleteFromDetail = false
     @State private var showingInsertPhoto = false
@@ -144,7 +136,12 @@ struct RecordingDetailView: View {
         }
         .background(Theme.readBG.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .overlay(alignment: .bottom) { if !articles.isEmpty { voiceBar } }
+        .overlay(alignment: .bottom) {
+            if !articles.isEmpty {
+                PushToTalkBar(dictation: dictation, session: agent, highlightLocators: true,
+                              articleIndex: { articleIndex }, agentReply: agentReply)
+            }
+        }
         .overlay(alignment: .bottom) { toastView }
         .overlay { if restyling { restylingOverlay } }
         .sheet(isPresented: $showRestyle) {
@@ -733,155 +730,6 @@ struct RecordingDetailView: View {
         }
     }
 
-    // MARK: Push-to-talk bar (按住说话，仿微信)
-
-    private var voiceBar: some View {
-        let recording = dictation.isRecording
-        let working = agent.state == .working
-        let firstId = agent.queue.first?.id
-        return VStack(spacing: 8) {
-            if let reply = agentReply { replyBubble(reply) }
-            // Pending edits pile up here — newest on top, the one in flight sits
-            // just above the button and drains first; each builds on the last.
-            ForEach(agent.queue.reversed()) { req in
-                queueRow(req, inFlight: req.id == firstId)
-            }
-            if recording { darkBubble(dictation.transcript) }
-            pill(recording: recording, working: working)
-                .shadow(color: .black.opacity(0.10), radius: 12, x: 0, y: 5)   // float over the body
-        }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 10)
-        .frame(maxWidth: .infinity)
-        .animation(.easeInOut(duration: 0.22), value: agent.queue)
-        .animation(.easeInOut(duration: 0.18), value: recording)
-        .animation(.easeInOut(duration: 0.22), value: agentReply)
-    }
-
-    /// One queued instruction. The in-flight head is highlighted; the rest wait.
-    private func queueRow(_ req: ArticleAgentSession.EditRequest, inFlight: Bool) -> some View {
-        HStack(spacing: 8) {
-            if inFlight {
-                Image(systemName: "pencil").font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.accent)
-                    .symbolEffect(.pulse, options: .repeating)
-            } else {
-                Image(systemName: "clock").font(.system(size: 12)).foregroundStyle(Theme.faint)
-            }
-            Text(req.text).font(.system(size: 15))
-                .foregroundStyle(inFlight ? Theme.ink : Theme.secondary)
-                .lineLimit(2)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 12).padding(.vertical, 9)
-        .background(inFlight ? Theme.accentSoft : Theme.card, in: RoundedRectangle(cornerRadius: 13))
-        .overlay(RoundedRectangle(cornerRadius: 13)
-            .stroke(inFlight ? Theme.accent.opacity(0.5) : Theme.borderRead, lineWidth: 1))
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-    }
-
-    private func pill(recording: Bool, working: Bool) -> some View {
-        HStack(spacing: 8) {
-            if recording {
-                Text(willCancel ? "上滑取消 · 松开放弃" : "松开 发送 · 上滑取消")
-                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.accent)
-            } else if working {
-                Image(systemName: "pencil.line").font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Theme.accent)
-                    .symbolEffect(.pulse, options: .repeating)
-                Text("正在改…按住继续说").font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.ink)
-            } else {
-                Image(systemName: "mic").font(.system(size: 16)).foregroundStyle(Theme.ink)
-                Text("按住 说话 修改").font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.ink)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 15)
-        .background(RoundedRectangle(cornerRadius: Theme.R.primary).fill(Theme.card))
-        .overlay(RoundedRectangle(cornerRadius: Theme.R.primary).stroke(Theme.borderRead, lineWidth: 1))
-        .shadow(color: .clear, radius: 7, x: 0, y: 4)
-        .contentShape(RoundedRectangle(cornerRadius: Theme.R.primary))
-        .gesture(holdGesture())
-    }
-
-    /// The agent's one-line reply. Success: neutral light card. Error: muted-red
-    /// border + warning glyph. It is NOT transient — it stays put until a newer
-    /// reply replaces it or the user taps elsewhere on the page (see articlePane).
-    private func replyBubble(_ reply: AgentReply) -> some View {
-        let warn = Color(hex: "C0392B")
-        return HStack(spacing: 8) {
-            Image(systemName: reply.ok ? "sparkles" : "exclamationmark.triangle.fill")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(reply.ok ? Theme.accent : warn)
-            Text(reply.text)
-                .font(.system(size: 15))
-                .foregroundStyle(Theme.ink)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 12).padding(.vertical, 9)
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 13))
-        .overlay(RoundedRectangle(cornerRadius: 13)
-            .stroke(reply.ok ? Theme.borderRead : warn.opacity(0.7), lineWidth: 1))
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-    }
-
-    /// Dark bubble above the bar showing the live transcript. Locator references
-    /// the user speaks — 第N行 / 图N — are highlighted in accent so it's clear the
-    /// app understood which line/image is meant.
-    private func darkBubble(_ text: String) -> some View {
-        VStack(spacing: 0) {
-            Group {
-                if text.isEmpty { Text("在听…").foregroundStyle(Color(hex: "B6AD9E")) }
-                else { highlightedTranscript(text) }
-            }
-            .font(.system(size: 16))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .background(Color(hex: "2E2823"), in: RoundedRectangle(cornerRadius: 16))
-            DownTriangle().fill(Color(hex: "2E2823")).frame(width: 18, height: 9)
-                .padding(.leading, 24).frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    /// Transcript text with every 第N行 / 图N locator tinted accent (#F0B59B).
-    private func highlightedTranscript(_ s: String) -> Text {
-        var att = AttributedString(s)
-        att.foregroundColor = Color(hex: "FBF6EE")
-        if let re = try? NSRegularExpression(pattern: "第[0-9]+行|图[0-9]+") {
-            let ns = s as NSString
-            for m in re.matches(in: s, range: NSRange(location: 0, length: ns.length)) {
-                guard let sr = Range(m.range, in: s),
-                      let lo = AttributedString.Index(sr.lowerBound, within: att),
-                      let hi = AttributedString.Index(sr.upperBound, within: att) else { continue }
-                att[lo..<hi].foregroundColor = Color(hex: "F0B59B")
-                att[lo..<hi].font = .system(size: 16, weight: .semibold)
-            }
-        }
-        return Text(att)
-    }
-
-    /// Press-and-hold drives dictation; release sends (unless slid up to cancel).
-    private func holdGesture() -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { v in
-                // No working-state gate: speak the next sentence while the last rewrites.
-                guard dictation.authorized == true else { return }
-                if !dictation.isRecording { dictation.start() }
-                willCancel = v.translation.height < -60
-            }
-            .onEnded { v in
-                guard dictation.isRecording else { willCancel = false; return }
-                let cancel = v.translation.height < -60
-                willCancel = false
-                if cancel { dictation.stop(); return }
-                Task {
-                    let text = (await dictation.stopAndGetFinal()).trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !text.isEmpty { agent.enqueue(text, articleIndex: articleIndex) }
-                }
-            }
-    }
-
     // MARK: Publish (WeChat)
 
     private func publishWechatTapped() async {
@@ -934,18 +782,6 @@ struct RecordingDetailView: View {
 
 private extension Array {
     subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
-}
-
-/// Small downward tail for the transcript bubble.
-struct DownTriangle: Shape {
-    func path(in r: CGRect) -> Path {
-        var p = Path()
-        p.move(to: CGPoint(x: r.minX, y: r.minY))
-        p.addLine(to: CGPoint(x: r.maxX, y: r.minY))
-        p.addLine(to: CGPoint(x: r.midX, y: r.maxY))
-        p.closeSubpath()
-        return p
-    }
 }
 
 /// A ready-to-share payload. `text` = "标题+正文 + 链接" (used by X / 复制 / 备忘录 等);
