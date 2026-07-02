@@ -20,6 +20,15 @@ struct LibraryView: View {
     @State private var selectedRec: Recording?
     @State private var selectedPost: CommunityPost?
     @State private var confirmUnshare: CommunityPost?
+
+    // Voice-command mode (长按红键): a library-wide "按住说话" bar that can act on
+    // any recording by its on-screen number ("删掉第二条"). Separate dictation +
+    // session instances from RecordingDetailView's article-level editing.
+    @State private var commandMode = false
+    @State private var dictation = SpeechDictation()
+    @State private var command = LibraryCommandSession()
+    @State private var commandReply: AgentReply?
+    @State private var confirmPrompt: (id: String, summary: String)?
     @EnvironmentObject private var router: AppRouter
     @Environment(\.scenePhase) private var scenePhase
 
@@ -63,6 +72,14 @@ struct LibraryView: View {
                 Button("移除", role: .destructive) { Task { await community.unshare(post.shareId) } }
                 Button("取消", role: .cancel) {}
             } message: { _ in Text("社区里将看不到这篇；你的原文章不受影响，以后还能再分享。") }
+            // 语音指令 destructive confirm (e.g. "删掉第二条") — the server asks
+            // before acting; summary is its plain-language description of the action.
+            .alert(confirmPrompt?.summary ?? "确认操作", isPresented: .init(
+                get: { confirmPrompt != nil }, set: { if !$0 { confirmPrompt = nil } }
+            ), presenting: confirmPrompt) { p in
+                Button("删除", role: .destructive) { command.confirm(p.id); confirmPrompt = nil }
+                Button("取消", role: .cancel) { command.cancel(p.id); confirmPrompt = nil }
+            }
     }
 
     private var mainContent: some View {
@@ -72,7 +89,13 @@ struct LibraryView: View {
             if tab == .recordings { recordingsContent } else { communityContent }
         }
         .background(Theme.appBG.ignoresSafeArea())
-        .overlay(alignment: .bottom) { if tab == .recordings { recordButton } else { EmptyView() } }
+        .overlay(alignment: .bottom) {
+            if tab == .recordings {
+                if commandMode { commandBar } else { recordButton }
+            } else {
+                EmptyView()
+            }
+        }
         .toolbar(.hidden, for: .navigationBar)
         .navigationDestination(item: $selectedRec) { rec in RecordingDetailView(store: store, recording: rec) }
         .navigationDestination(item: $selectedPost) { post in
@@ -89,6 +112,15 @@ struct LibraryView: View {
             statusSession.onLinkRelease = { pid in linkResponder.release(pairingId: pid) }
             statusSession.connect()
             await refresh()
+        }
+        .task {
+            // Library-wide voice-command session: reply bubble + list refresh after
+            // an edit lands + a destructive-action confirm prompt.
+            command.onReply = { text, ok in commandReply = AgentReply(text: text, ok: ok) }
+            command.onUpdate = { _ in Task { await refresh() } }
+            command.onConfirm = { id, summary in confirmPrompt = (id: id, summary: summary) }
+            command.connect()
+            await dictation.requestAuth()
         }
         .sheet(item: $linkResponder.pending) { p in
             DeviceLinkApprovalSheet(responder: linkResponder, pending: p)
@@ -316,6 +348,21 @@ struct LibraryView: View {
         .overlay(RoundedRectangle(cornerRadius: Theme.R.card).stroke(Theme.borderChrome, lineWidth: 1))
         .cardChromeShadow()
         .opacity(empty ? 0.72 : 1)
+        .overlay(alignment: .topLeading) {
+            if commandMode, let n = commandNumber(for: rec) { numberBadge(n) }
+        }
+    }
+
+    /// Small circled number ("2") pinned to a row's leading corner in command
+    /// mode — the number the user speaks to target that recording ("删掉第二条").
+    private func numberBadge(_ n: Int) -> some View {
+        Text("\(n)")
+            .font(.system(size: 12, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: 22, height: 22)
+            .background(Circle().fill(Theme.recordRed))
+            .overlay(Circle().stroke(Theme.card, lineWidth: 2))
+            .offset(x: -6, y: -6)
     }
 
     @ViewBuilder private func statusBadge(_ rec: Recording) -> some View {
@@ -377,8 +424,50 @@ struct LibraryView: View {
                     .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 5)   // lift off the list
             }
             .buttonStyle(.plain).accessibilityLabel("录音")
-            Text("轻点录音").font(.system(size: 12)).tracking(1).foregroundStyle(Theme.secondary)
+            // Long-press the red key to switch the list into 语音指令 mode instead
+            // of starting a recording — tap still records (unchanged).
+            .simultaneousGesture(LongPressGesture(minimumDuration: 0.3).onEnded { _ in commandMode = true })
+            Text("轻点录音 · 长按语音指令").font(.system(size: 12)).tracking(1).foregroundStyle(Theme.secondary)
         }
         .padding(.bottom, 8)
+    }
+
+    // MARK: Voice-command mode (长按红键)
+
+    /// Numbered refs for the command agent, matching the on-screen circled numbers
+    /// in `rowCard` 1:1 — both are absolute positions in `store.recordings`
+    /// (newest-first). In-flight uploads/optimistic rows aren't real articles yet,
+    /// so they're not numbered and can't be targeted by a spoken command.
+    private func currentRefs() -> [LibraryCommandSession.CommandRef] {
+        store.recordings.enumerated().map { i, rec in
+            .init(n: i + 1, stem: rec.stem, title: rec.rowTitle)
+        }
+    }
+
+    /// The circled number to show on `rec`'s row while in command mode, or nil if
+    /// `rec` isn't a numbered target (still uploading / not yet on the server).
+    private func commandNumber(for rec: Recording) -> Int? {
+        guard let idx = store.recordings.firstIndex(where: { $0.id == rec.id }) else { return nil }
+        return idx + 1
+    }
+
+    /// Floating "按住说话" bar + a small 完成 affordance to leave command mode.
+    /// Refs are refreshed right before each send (`onWillSend`) so a list change
+    /// mid-session (e.g. a new article lands) doesn't go stale.
+    private var commandBar: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Spacer()
+                Button("完成") { commandMode = false; commandReply = nil; dictation.stop() }
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.accent)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(Theme.card, in: Capsule())
+                    .overlay(Capsule().stroke(Theme.borderRead, lineWidth: 1))
+            }
+            .padding(.horizontal, 16)
+            PushToTalkBar(dictation: dictation, session: command, agentReply: commandReply,
+                          onWillSend: { command.setRefs(currentRefs()) })
+        }
     }
 }
