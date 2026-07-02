@@ -26,6 +26,11 @@ struct StyleDatasetView: View {
     @State private var clearAfter = true
     @State private var extracting = false
     @State private var extractFailed = false
+    /// 前置拦截：语料有效字数低于这个数就不让提取——与服务端 MIN_CORPUS_CHARS
+    /// (jianshuo.dev agent/src/style-extract.js) 同口径。只有书名/链接的数据集
+    /// 蒸不出真风格，服务端同样会以 insufficient-corpus / 「样本不足」文章拒绝。
+    private let minExtractChars = 300
+    private var corpusTooThin: Bool { collectedCount > 0 && collectedChars < minExtractChars }
 
     private var collectedCount: Int {
         existing.count + newItems.filter { $0.state == .done }.count
@@ -143,7 +148,12 @@ struct StyleDatasetView: View {
             .padding(.horizontal, 4)
             .padding(.bottom, 12)
 
-            if extractFailed {
+            if corpusTooThin {
+                Text("素材还太少（共 \(collectedChars) 字）——分享几篇带正文的文章，攒到 \(minExtractChars) 字以上再提取")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Color(hex: "C0682E"))
+                    .padding(.bottom, 8)
+            } else if extractFailed {
                 Text("提取失败，请稍后重试")
                     .font(.system(size: 12.5))
                     .foregroundStyle(Color(hex: "C0682E"))
@@ -182,8 +192,8 @@ struct StyleDatasetView: View {
                     .shadow(color: Color(hex: "D8593B").opacity(0.28), radius: 10, x: 0, y: 4)
                 }
                 .buttonStyle(.plain)
-                .disabled(collectedCount == 0 || extracting)
-                .opacity((collectedCount == 0 || extracting) ? 0.6 : 1)
+                .disabled(collectedCount == 0 || corpusTooThin || extracting)
+                .opacity((collectedCount == 0 || corpusTooThin || extracting) ? 0.6 : 1)
             }
         }
         .padding(.horizontal, 16)
@@ -302,7 +312,7 @@ struct StyleDatasetView: View {
     }
 
     private func extract() async {
-        guard collectedCount > 0, !extracting else { return }
+        guard collectedCount > 0, collectedChars >= minExtractChars, !extracting else { return }
         extracting = true
         // 走挖矿任务流（和录音/图片同一套）：上传一个静音占位 .m4a，文件名尾 token 打
         // `TaskStyleExtract`（clearAfter 时不带 Keep），触发 miner → 服务端 classifyKey 认出这是
