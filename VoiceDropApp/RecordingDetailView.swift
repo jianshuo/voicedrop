@@ -499,7 +499,9 @@ struct RecordingDetailView: View {
                         if let dt = recording.dateTimeLabel {
                             Text(dt).font(.system(size: 13)).foregroundStyle(Theme.metaRead)
                         }
-                        if currentStyleLabel != nil { styleChip }
+                        // 无风格版本（老文章/合并文章）也显示 chip（「选风格」），
+                        // 否则这些文章没有入口打开换风格重写。
+                        styleChip
                     }
                     .padding(.top, 8)
 
