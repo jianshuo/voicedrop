@@ -158,3 +158,14 @@ app 本地再校验 → 重建 node 树 → 首页当场重渲染（即时生效
 - iOS：`LibraryView.swift`（改造为外壳+渲染器）、`Theme.swift`（token 白名单来源）、`RecordSession.swift`/`Community.swift`（embed 桥接复用）、新增四个 `Page*.swift`。
 - Worker：`~/code/jianshuo.dev/agent/src/`（新 `PageEditor` DO，与 `ArticleEditor` 并列）、`agent/test/`（新测试）。
 - 存储契约：新增 `users/<sub>/page.json`（见 STATE.md「R2 layout」需补一条）。
+
+## Phase 1 落地说明（2026-07-03）
+
+- 默认首页采用「`tree == nil` → 原生首页」而非内置一份默认 page.json 树——等价结果、更低风险，
+  且词表不需要 `tabs` 节点。没有自定义页的用户走的代码路径与改造前完全相同（零回归）。
+- 实现偏差（相对本 spec 附的示意代码，均为编译/运行时发现的必要修正）：
+  1. `PageDocument.decode` 区分「root type 不在词表」（→ nil，整份作废回退）与「type 认识但必填字段
+     非法」（→ 该节点降级 `.unknown` 渲染为空，文档保留）——原示意两者混同，与自身测试矛盾。
+  2. 外壳在树含 `articleList`/`communityFeed` embed 时不套 ScrollView（SwiftUI List 在 ScrollView 里
+     塌成零高），`PageNode.containsListEmbed` 自适应；纯静态页仍套 ScrollView 以便超屏滚动。
+  3. `resolveTree` 标 `nonisolated`（Swift 6 严格并发下 @MainActor 类内纯函数需显式脱离隔离才能单测）。
