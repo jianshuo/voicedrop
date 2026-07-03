@@ -411,8 +411,12 @@ gear → **设置** (redesign "方案二"; the old `ContentView` 3-tab `TabView`
   坏 JSON/瞬时错→保上一份好的）、`PageRenderer.swift`（递归渲染 + `PageContext` embed 桥）、`HomeLists.swift`
   （从 LibraryView 抽出的 `RecordingsList`/`CommunityFeedList`，原生首页与 `embed:articleList/communityFeed`
   共用同一实现与闭包）。⚠️ 树里含列表 embed 时外壳**不套 ScrollView**（List 在 ScrollView 里塌成零高，
-  `containsListEmbed` 自适应）。page.json 在启动与回前台时重拉。测试 target `VoiceDropTests`（跑法：
-  `xcodebuild -project VoiceDrop.xcodeproj -scheme VoiceDrop -destination 'platform=iOS Simulator,name=<某台>' test`）。
+  `containsListEmbed` 自适应）。page.json 在启动与回前台时重拉。**跳转语义（2026-07-03）**：卡片 `tap` 的
+  `openArticles`/`openCommunity` = 「跳过去看，随时回来」——置 `browsingNative` 临时收起自定义页露出原生
+  tab，tabHeader 右侧「我的首页」胶囊返回；深链接 recordings/community/article 同样置 browsingNative。
+  测试 target `VoiceDropTests`（单测）+ `VoiceDropUITests`（XCUITest 端到端点按验证跳转往返；页面树用
+  launch args `-sduiFixedPage '<json>'` 注入，PageStore.load 的 UI 测试钩子，不依赖云端）。跑法：
+  `xcodebuild -project VoiceDrop.xcodeproj -scheme VoiceDrop -destination 'platform=iOS Simulator,name=<某台>' test`。
 - **我的录音** `LibraryView` + `Library.swift` (`LibraryStore`) — recording list with live badges
   **待处理 / 听录音 / 挖文章 / 已成文 / 无语音** (the two in-flight phases 听录音→挖文章 replace the old single
   处理中, both animated spinners). Phases are pushed via `StatusSession` (no polling); a just-uploaded

@@ -22,6 +22,12 @@ final class PageStore {
     }
 
     func load() async {
+        // UI 测试钩子：launch args 传 -sduiFixedPage '<json>' 时直接渲染固定页，
+        // 不走网络也不依赖云端 page.json（XCUITest 用，见 VoiceDropUITests）。
+        if let fixed = UserDefaults.standard.string(forKey: "sduiFixedPage") {
+            tree = PageDocument.decode(Data(fixed.utf8))?.root
+            return
+        }
         guard !token.isEmpty else { tree = nil; return }
         loading = true; defer { loading = false }
         guard let url = URL(string: "\(base.absoluteString)/download/page.json") else { return }

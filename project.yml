@@ -54,6 +54,7 @@ targets:
     scheme:
       testTargets:
         - VoiceDropTests
+        - VoiceDropUITests
     settings:
       base:
         SWIFT_VERSION: "6.0"
@@ -126,3 +127,19 @@ targets:
         GENERATE_INFOPLIST_FILE: "YES"
         PRODUCT_BUNDLE_IDENTIFIER: com.wangjianshuo.VoiceDropTests
         TARGETED_DEVICE_FAMILY: "1"
+
+  VoiceDropUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: VoiceDropUITests
+    dependencies:
+      - target: VoiceDrop
+    settings:
+      base:
+        SWIFT_VERSION: "6.0"
+        GENERATE_INFOPLIST_FILE: "YES"
+        PRODUCT_BUNDLE_IDENTIFIER: com.wangjianshuo.VoiceDropUITests
+        TARGETED_DEVICE_FAMILY: "1"
+        TEST_TARGET_NAME: VoiceDrop

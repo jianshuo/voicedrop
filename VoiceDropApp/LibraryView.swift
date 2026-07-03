@@ -33,6 +33,7 @@ struct LibraryView: View {
     @State private var commandReply: AgentReply?
     @State private var confirmPrompt: (id: String, summary: String)?
     @State private var pageStore = PageStore()   // 自定义首页 page.json；tree==nil → 原生首页
+    @State private var browsingNative = false    // 自定义页态下点「写文章/看社区」→ 临时切去原生 tab，「我的首页」胶囊返回
     @EnvironmentObject private var router: AppRouter
     @Environment(\.scenePhase) private var scenePhase
 
@@ -81,7 +82,7 @@ struct LibraryView: View {
     private var mainContent: some View {
         VStack(spacing: 0) {
             topBar
-            if let tree = pageStore.tree {
+            if let tree = pageStore.tree, !browsingNative {
                 // 有自滚动的列表 embed 时不能再套 ScrollView（List 在 ScrollView 里塌成零高）；
                 // 纯静态页则套上，超屏可滚。
                 if tree.containsListEmbed {
@@ -96,7 +97,7 @@ struct LibraryView: View {
         }
         .background(Theme.appBG.ignoresSafeArea())
         .overlay(alignment: .bottom) {
-            if pageStore.tree == nil && tab == .recordings {
+            if (pageStore.tree == nil || browsingNative) && tab == .recordings {
                 recordButton
             } else {
                 EmptyView()
@@ -153,16 +154,16 @@ struct LibraryView: View {
             showRecord = false
             switch link {
             case .recordings:
-                tab = .recordings; selectedRec = nil; selectedPost = nil; showSettings = false
+                tab = .recordings; browsingNative = true; selectedRec = nil; selectedPost = nil; showSettings = false
                 Task { await refresh() }
             case .community:
-                tab = .community; selectedRec = nil; selectedPost = nil; showSettings = false
+                tab = .community; browsingNative = true; selectedRec = nil; selectedPost = nil; showSettings = false
             case .settings:
                 selectedRec = nil; selectedPost = nil; showSettings = true
             case .record:
                 selectedRec = nil; selectedPost = nil; showSettings = false; showRecord = true
             case .article(let stem):
-                tab = .recordings; selectedPost = nil; showSettings = false
+                tab = .recordings; browsingNative = true; selectedPost = nil; showSettings = false
                 if let rec = store.recordings.first(where: { $0.stem == stem }) {
                     selectedRec = rec
                 } else {
@@ -213,6 +214,20 @@ struct LibraryView: View {
             tabLabel("我的录音", .recordings)
             tabLabel("VD社区", .community)
             Spacer()
+            // 从自定义首页跳过来看列表时，给一条回去的路。
+            if pageStore.tree != nil && browsingNative {
+                Button { browsingNative = false } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "house").font(.system(size: 12, weight: .semibold))
+                        Text("我的首页").font(.system(size: 13, weight: .semibold))
+                    }
+                    .foregroundStyle(Theme.ink)
+                    .padding(.horizontal, 11).padding(.vertical, 6)
+                    .background(Theme.card, in: Capsule())
+                    .overlay(Capsule().stroke(Theme.borderChrome, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.horizontal, 22).padding(.bottom, 10)
     }
@@ -250,11 +265,13 @@ struct LibraryView: View {
         )
     }
 
+    /// 自定义页上的跳转语义：「跳过去看，随时回来」。openArticles/openCommunity 临时收起
+    /// 自定义页露出原生 tab（browsingNative），tabHeader 的「我的首页」胶囊是回程票。
     private func handlePageAction(_ action: PageAction) {
         switch action {
         case .record: showRecord = true
-        case .openArticles: tab = .recordings
-        case .openCommunity: tab = .community; Task { await community.load() }
+        case .openArticles: tab = .recordings; browsingNative = true
+        case .openCommunity: tab = .community; browsingNative = true; Task { await community.load() }
         case .openSettings: showSettings = true
         case .openNote: break   // 占位：Phase 1 无动作
         }
