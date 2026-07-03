@@ -1,9 +1,23 @@
 import Foundation
 import Observation
+import Network
+import UIKit
 
 /// Uploads recordings to jianshuo.dev/files via the R2-backed PUT API.
 /// The Documents directory IS the pending queue: a `VoiceDrop-*.m4a` file that
 /// still exists has not been uploaded. On success the file is deleted.
+///
+/// Resilience — why a finalized take never gets stuck on 正在上传 anymore:
+/// - each PUT holds a short **background-task assertion**, so an upload kicked
+///   off in the foreground (e.g. right after recording) can finish even if the
+///   user immediately locks the screen or switches apps — iOS no longer kills
+///   the request the instant we leave the foreground;
+/// - transient failures (network blip, timeout, task-cancelled-on-suspend, 5xx)
+///   are **retried with backoff** in-call; a take that still fails is left on
+///   disk for the next drain — it is never lost;
+/// - `drainPending` no longer aborts the queue on the first failure, so one
+///   stubborn take can't wedge everything queued behind it;
+/// - an `NWPathMonitor` re-drains the queue the moment connectivity returns.
 @MainActor
 @Observable
 final class Uploader {
@@ -13,8 +27,7 @@ final class Uploader {
     private(set) var justUploaded: [String] = []  // uploaded, awaiting server confirmation
     private(set) var lastError: String?
 
-    /// Base URL is public (not a secret), so it's hardcoded.
-    private let baseURL = URL(string: "https://jianshuo.dev/files/api")!
+    private let baseURL = API.filesBase
 
     /// Per-user bearer: the Sign-in-with-Apple session if present, else the
     /// anonymous iCloud-Keychain token. Uploads land in this user's own
@@ -23,7 +36,42 @@ final class Uploader {
 
     var hasValidToken: Bool { !token.isEmpty }
 
-    init() { refreshPending() }
+    // Serialise drains: the foreground refresh, the reachability monitor and the
+    // post-record refresh can all call drainPending — without this they raced,
+    // and a slow/failing head-of-queue take could let later small takes jump it
+    // while never resolving itself. `drainAgain` runs one more pass if a new
+    // trigger arrived mid-drain.
+    private var isDraining = false
+    private var drainAgain = false
+
+    // Reachability — retry the queue when the network comes back after an outage.
+    private let pathMonitor = NWPathMonitor()
+    private var isOnline = true
+
+    // Keeps a just-started upload alive briefly after the app leaves the
+    // foreground, so short voice memos still finish instead of being cancelled.
+    private var bgTask: UIBackgroundTaskIdentifier = .invalid
+
+    init() {
+        refreshPending()
+        startNetworkMonitor()
+    }
+
+    // MARK: - Reachability
+
+    /// Re-drain when connectivity transitions from down → up (not on every tick).
+    private func startNetworkMonitor() {
+        pathMonitor.pathUpdateHandler = { path in
+            let online = path.status == .satisfied
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let cameBackOnline = online && !self.isOnline
+                self.isOnline = online
+                if cameBackOnline, self.pendingCount > 0 { await self.drainPending() }
+            }
+        }
+        pathMonitor.start(queue: DispatchQueue(label: "vd.uploader.netmon"))
+    }
 
     // MARK: - Queue
 
@@ -32,7 +80,7 @@ final class Uploader {
         let files = (try? FileManager.default.contentsOfDirectory(
             at: dir, includingPropertiesForKeys: nil)) ?? []
         return files
-            .filter { $0.lastPathComponent.hasPrefix("VoiceDrop-") && $0.pathExtension == "m4a" }
+            .filter { RecordingName.isRecordingFile($0.lastPathComponent) }
             .filter { Self.isUploadable($0) }   // skip 0-byte / moov-less junk so it can't block the queue
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
@@ -65,9 +113,26 @@ final class Uploader {
 
     private static var documentsDir: URL { AudioRecorder.documentsDir }
 
+    // MARK: - Background-task assertion
+
+    private func beginBG() {
+        guard bgTask == .invalid else { return }
+        bgTask = UIApplication.shared.beginBackgroundTask(withName: "vd.upload") { [weak self] in
+            self?.endBG()
+        }
+    }
+
+    private func endBG() {
+        guard bgTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(bgTask)
+        bgTask = .invalid
+    }
+
     // MARK: - Upload
 
-    /// Uploads one file. Returns true and deletes the file on success.
+    /// Uploads one file, retrying transient failures with backoff. Returns true
+    /// and removes the local file on success; on persistent failure the file is
+    /// left on disk (still 正在上传) for the next drain — it is never lost.
     @discardableResult
     func upload(_ url: URL) async -> Bool {
         guard hasValidToken else {
@@ -85,49 +150,77 @@ final class Uploader {
         req.httpMethod = "PUT"
         req.setBearer(token)
         req.setValue("audio/mp4", forHTTPHeaderField: "Content-Type")
+        req.timeoutInterval = 120
 
-        do {
-            let (_, resp) = try await URLSession.shared.upload(for: req, fromFile: url)
-            guard let http = resp as? HTTPURLResponse else {
-                lastError = "无响应"
-                return false
+        beginBG()
+        defer { endBG() }
+
+        let maxAttempts = 3
+        for attempt in 1...maxAttempts {
+            do {
+                let (_, resp) = try await URLSession.shared.upload(for: req, fromFile: url)
+                let code = resp.httpStatusCode
+                if (200..<300).contains(code) {
+                    // Drop from the queue. If the user wants a local copy kept,
+                    // move it into an `uploaded/` subdir (outside the VoiceDrop-*
+                    // scan) instead.
+                    if Prefs.shared.deleteLocalAfterUpload {
+                        try? FileManager.default.removeItem(at: url)
+                    } else {
+                        Self.keepLocal(url)
+                    }
+                    // Keep showing this take — now as 待处理 — until the server
+                    // list lists it, so the row changes badge in place instead of
+                    // vanishing then re-appearing half a second later.
+                    if !justUploaded.contains(url.lastPathComponent) {
+                        justUploaded.append(url.lastPathComponent)
+                    }
+                    lastError = nil
+                    refreshPending()
+                    return true
+                }
+                // Auth / other 4xx is the server rejecting THIS request — a retry
+                // won't change the outcome, so stop immediately.
+                if code == 401 || code == 403 {
+                    lastError = "token 失效（HTTP \(code)）"
+                    return false
+                }
+                if (400..<500).contains(code) {
+                    lastError = "上传失败 HTTP \(code)"
+                    return false
+                }
+                // 5xx, or 0 (no HTTP response) — transient; fall through to retry.
+                lastError = "上传失败 HTTP \(code)"
+            } catch {
+                // Network blip / timeout / task cancelled on app suspension.
+                lastError = error.localizedDescription
             }
-            guard (200..<300).contains(http.statusCode) else {
-                lastError = http.statusCode == 401 || http.statusCode == 403
-                    ? "token 失效（HTTP \(http.statusCode)）"
-                    : "上传失败 HTTP \(http.statusCode)"
-                return false
+            if attempt < maxAttempts {
+                // 1.5s, then 3s.
+                try? await Task.sleep(nanoseconds: UInt64(attempt) * 1_500_000_000)
             }
-            // Drop from the queue. If the user wants a local copy kept, move it
-            // into an `uploaded/` subdir (outside the VoiceDrop-* scan) instead.
-            if Prefs.shared.deleteLocalAfterUpload {
-                try? FileManager.default.removeItem(at: url)
-            } else {
-                Self.keepLocal(url)
-            }
-            // Keep showing this take — now as 待处理 — until the server list lists
-            // it, so the row changes badge in place instead of vanishing then
-            // re-appearing half a second later.
-            if !justUploaded.contains(url.lastPathComponent) {
-                justUploaded.append(url.lastPathComponent)
-            }
-            lastError = nil
-            refreshPending()
-            return true
-        } catch {
-            lastError = error.localizedDescription
-            return false
         }
+        return false
     }
 
-    /// Uploads every pending file in order. Returns true if the queue is empty
-    /// afterwards (everything uploaded).
+    /// Uploads every pending file. A failure no longer aborts the queue — we skip
+    /// the stuck take and keep going, so one bad file can't wedge the rest; the
+    /// skipped file stays on disk and is retried on the next drain. Serialised so
+    /// concurrent triggers can't race.
     @discardableResult
     func drainPending() async -> Bool {
-        for file in pendingFiles() {
-            if await upload(file) == false { break }
-        }
-        refreshPending()
+        if isDraining { drainAgain = true; return pendingCount == 0 }
+        isDraining = true
+        defer { isDraining = false }
+
+        repeat {
+            drainAgain = false
+            for file in pendingFiles() {
+                _ = await upload(file)
+            }
+            refreshPending()
+        } while drainAgain && pendingCount > 0
+
         return pendingCount == 0
     }
 }

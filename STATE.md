@@ -1,6 +1,6 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-06-25
+Last updated: 2026-07-03
 
 ## What it is
 
@@ -14,7 +14,7 @@ public web preview of any article.
 | Repo | Path | What | Deploy |
 |---|---|---|---|
 | voicedrop | `~/code/voicedrop` | iOS app (SwiftUI) + WeChat publish relay (`mining/relay_server.py`) + CI | push `main` → GitHub Actions `Build & Deploy` → **TestFlight** (fastlane). App Store submit = manual `appstore` workflow_dispatch → `fastlane release skip_build:true`. |
-| jianshuo.dev | `~/code/jianshuo.dev` | Cloudflare **Pages** project `jianshuo-dev`: files API + public article page, backed by R2 bucket `jianshuo-dev-files` (binding `FILES`) | **manual** `npx wrangler pages deploy . --project-name jianshuo-dev` (not git-triggered) |
+| jianshuo.dev | `~/code/jianshuo.dev` | Cloudflare **Pages** project `jianshuo-dev`: files API + public article page, backed by R2 bucket `jianshuo-dev-files` (binding `FILES`) | **manual** `npx wrangler pages deploy . --project-name jianshuo-dev --branch main` (not git-triggered; **must pass `--branch main`** or a detached-HEAD deploy silently lands in a Preview, not production — see 部署坑 2) |
 | voicedrop-agent | `~/code/jianshuo.dev/agent` | Cloudflare **Worker** (Durable Objects; Pages can't host them) on route `jianshuo.dev/agent/*`: live article editing + real-time status. Same R2 `FILES` + `SESSION_SECRET` as Pages. | **manual** `cd ~/code/jianshuo.dev/agent && npx wrangler deploy` |
 | claude-skills | `~/code/claude-skills/wjs-mining-voicedrop` | the Mac-side mining skill (WeChat drafts) | commit on `main`; publish hook syncs `wjs-*` to public repo |
 
@@ -38,6 +38,8 @@ iOS app `文章` tab ──list+download──> renders articles, share, delete
 public web  jianshuo.dev/voicedrop/<token> ──> renders one article set (light theme)
 ```
 
+**Upload resilience (`Uploader.swift`, 2026-06-28):** the Documents dir IS the pending queue — a `VoiceDrop-*.m4a` still on disk = not yet uploaded (shows 正在上传). A PUT now (1) holds a `UIApplication` background-task assertion so an upload kicked off in the foreground finishes even if the user locks/switches right after recording (the old foreground-only `URLSession.shared` task was cancelled on suspend → takes stuck on 正在上传 forever); (2) retries transient failures (5xx / network / timeout) with 1.5s→3s backoff, 4xx/auth stop immediately, a still-failing take stays on disk for the next drain (never lost); (3) `drainPending` no longer `break`s on the first failure — it skips the stuck take so one bad file can't wedge the queue; (4) drains are serialised (`isDraining`/`drainAgain`) to kill the foreground-refresh / post-record / scene-change race; (5) an `NWPathMonitor` re-drains when connectivity returns.
+
 ⚠️ **CF same-zone fetch gotcha (2026-06-25):** Pages Functions cannot `fetch('https://jianshuo.dev/agent/...')` to call the Worker zone route — CF routes same-zone internal fetches through Pages routing first, which returns 405 for POST on static paths (Worker never sees the request). **Fix**: `dispatchMine` uses `https://voicedrop-agent.jianshuo.workers.dev/agent/mine/trigger` (the Worker's `workers_dev` subdomain), bypassing Pages routing entirely. `wrangler.jsonc` must have `"workers_dev": true`.
 
 Auth: per-user. App holds an anonymous capability token (`anon_…`, iCloud
@@ -52,11 +54,12 @@ scopes every request to `users/<sub>/`.
 ## R2 layout & marker conventions (the contract everyone shares)
 
 - `users/<sub>/VoiceDrop-<ts>-<dur>-<weekday>-<period>[-<city>-<district>].m4a` — audio (ASCII names).
-- `users/<sub>/articles/<stem>.json` — mined article(s), v2 schema `{schema,id,sourceAudio,createdAt,transcript,srt,articles:[{title,body}],status,model}`. **Presence = 已成文.** (Photo references live in the body as `[[photo:<key>]]` markers — see below. **`photos` is no longer written** as of 2026-06-26; old articles may still carry a legacy `photos` array, read only to resolve their `[[photo:N]]` indices.)
+- `users/<sub>/articles/<stem>.json` — mined article(s), v2 schema `{schema,id,sourceAudio,createdAt,transcript,srt,articles:[{title,body,style?,wechatMediaId?}],status,model}` (`style` = 文风版本 per-article 字段，见「文风版本 = per-article 字段」节). **Presence = 已成文.** (Photo references live in the body as `[[photo:<key>]]` markers — see below. **`photos` is no longer written** as of 2026-06-26; old articles may still carry a legacy `photos` array, read only to resolve their `[[photo:N]]` indices.)
 - `users/<sub>/articles/<stem>.empty` — `{status:"empty",reason:"corrupt|silent|no-speech|too-short|no-article|asr-error:<code>"}`. **Presence = 无语音.** (`asr-error:<code>` = Volcano returned a deterministic business error in the query phase, e.g. `asr-error:45000151` — re-running gets the same code, so the recording is marked processed instead of retried forever. The app ignores `reason` and just shows 无语音.)
 - `users/<sub>/articles/<stem>.srt` — subtitle sidecar.
 - `users/<sub>/photos/<sessionTs>/<offset>-<rand>.jpg` — **场景照片**（录音时一边说一边拍，隐藏功能）. `sessionTs` = the recording's `yyyy-MM-dd-HHmmss` (correlates photo↔recording). **`<offset>` = 整数秒, the photo's offset from the recording start** — this IS "第几秒加进来"; absolute capture time is recoverable as `sessionTs + offset`, so the old absolute capture stamp was redundant. `<rand>` = a 3-char base36 tail. **Why offset+rand, not a capture timestamp (changed 2026-06-26):** the prior `<captureTs>` (`yyyy-MM-dd-HHmmss`) had **two bugs** — (1) seconds-only resolution **collided** when several photos landed in the same second (a 9-photo album import fires its `loadObject` callbacks near-simultaneously → same key → silent overwrite, lost photos); (2) it was 17 chars when 2–4 would do. The `<rand>` tail makes the key unique even within one offset-second (3 base36 = 46,656 combos → ~0.08% collision for 9 same-second photos). Helper is the single source of truth: `RecordingName.photoKey(sessionTs:offset:)` (iOS); both upload paths use it — editor insert (`RecordingDetailView.insertPhotos`, offset via `RecordingName.date(fromTimestamp:)`) and during-recording capture (`RecordSession.uploadPhoto`, offset = `date − sessionStart`). **Note** offset is only真·"录音内第几秒" for the during-recording path; for editor-inserted / album-imported photos it's "how long after recording it was added" (large but unique & harmless). **iOS-only change** — worker/web treat the marker token as an opaque key, so the renamed `<offset>-<rand>` segment is transparent to them. Square ≤1200px JPEG. Uploaded by the app via the normal `PUT upload/<key>` (lands in user scope). **Inline display:** the miner (`miner.js`) and the voice-edit agent (`index.js`) feed photos to Claude as vision input and insert **`[[photo:<relkey>]]`** markers — **the token IS the photo's relative R2 key** (e.g. `[[photo:photos/<sessionTs>/<offset>-<rand>.jpg]]`) — into the body at the spot the scene is described; the app/web resolve each marker's key directly and render the photo inline. **Why keys, not indices (changed 2026-06-26):** the old `[[photo:N]]` used a 1-based index into the `photos` array, which coupled every marker to that array's order — inserting/reordering a photo during voice-edit misnumbered the rest and showed "different marker, same image". A self-contained key has zero coupling: insert/delete a marker without touching any other. **The `photos` array is no longer written (2026-06-26):** the miner (`miner.js`) and the voice-edit agent (`index.js`) stopped writing it — consumers extract referenced keys straight from the body instead (web via `photoRefsInBodies`→`buildPhotoURLs`; iOS export via `ArticleBody.segments`; iOS detail view's `PhotoTile` already downloaded by marker key). **Legacy `[[photo:N]]` is still parsed for old articles** — resolver is `ArticleBody.resolvePhotoKey` (iOS, numeric→`photos[N-1]` else token-is-key) and `photoRefsInBodies`'s `/^\d+$/` branch, both mapping the index through the old article's surviving `photos` array. New writes from all paths use keys only; an old article's `photos` array is read-only legacy. Markers are **stripped** wherever photos can't be shown — WeChat HTML (`md_to_wechat_html`), exports, and share excerpts (all marker regexes widened to `[[photo:[^\]]+]]`). **Photos now load from ONE universal endpoint** (changed 2026-06-26): `GET /files/api/photo/<full R2 key>` — public, no auth, no per-post gating, serves any `users/*/photos/*.(jpg|png)` straight from its original location. Used everywhere: the public `/voicedrop/<token>` page emits `<img src="/files/api/photo/…">` (`buildPhotoURLs`, no more base64), and the community (`CommunityPostView` renders `ArticleBody.segments` with inline `CommunityPhotoTile`s, no longer `stripMarkers`). The editing agent is told to preserve markers (and their keys) verbatim.
-- `users/<sub>/CLAUDE.md` — the user's name + style (Settings tab). Appended to the mining prompt.
+- `users/<sub>/CLAUDE.json` — the user's **写作文风 (style only)**, schema-3 **versioned** envelope identical to articles (`{schema:3,head,versions:[{v,savedAt,source,style}],createdAt,updatedAt}`). Single source of truth = `functions/lib/style-store.js` (mirror of `article-store.js`), imported by the Pages Function, the agent worker (`tools.js`) and the miner (`miner.js`). Read/written via the dedicated **`/files/api/style`** route (GET read · PUT versioned write `{style[,source]}` · GET `style/history` · PATCH `style/head`). The 文风 is appended to the mining prompt. **The name is NOT here** — it stays in the legacy `CLAUDE.md` for now (見下), to be relocated later. **Backward compat (2026-06-29):** writers only ever write `CLAUDE.json`; every reader (`readStyleText`/`/style` GET) prefers `CLAUDE.json` and **falls back to parsing the old `CLAUDE.md`'s「# 我的文风」section** when no `CLAUDE.json` exists yet — so an old `CLAUDE.md` is retired the first time the user saves. iOS `SettingsView.swift` reads `GET /style` + saves `PUT /style` (empty style is skipped, since the route rejects blank writes). `read_style`/`write_style` agent tools speak the 文风 text and route writes through `/style`.
+- `users/<sub>/CLAUDE.md` — **legacy; now holds the NAME only** (`# 我的名字\n<name>`). iOS still reads/writes it for the name; the author-extraction paths (community share endpoint + miner `community/<id>.json`) still pull the author from its `# 我的名字` regex — **unchanged**. Its「# 我的文风」section is read only as a fallback for users not yet migrated to `CLAUDE.json`. The name's permanent home is TBD.
 - `users/<sub>/WECHAT.json` — `{appid, secret, enabled, thumb_media_id?, coverMediaIds:{<coverName>:<wechatMediaId>}}` (Settings tab). Drives WeChat draft publishing; `coverMediaIds` caches the per-cover WeChat material ids.
 - `assets/wechat-covers/<style>.png` — **shared** cover image set (10: `style01`–`style10`), global (not per-user). One is picked per article by hash. Public via `/files/api/asset/wechat-covers`.
 - `shares/<id>` — value is a full article key; backs the short public share link. `id = HMAC(key)[:10]`.
@@ -66,6 +69,42 @@ scopes every request to `users/<sub>/`.
 - `minelogs/<YYYY-MM-DD>/<epochms>-<stem>.json` — **每次 Miner DO 处理**一条录音的事件日志 `{ts,stem,audioKey,result:"mined|empty|error",elapsed_ms,events:[{ts,msg,data}]}`. Admin-only. Viewer: `voicedrop/admin/mine.html`. Best-effort —`result:"skip"`（已处理跳过）时不写。
 
 
+## 文风版本 = per-article 字段（2026-07-03，迁移已完成）
+
+- **`articles[i].style = N`（整数）= 这篇文章的文风版本**，per-article、随版本走（undo/redo 后
+  chip 正确）。写入方：miner 正常挖矿 + restyle（`agent/src/miner.js` 两处 `{...a, style: v}`）。
+  风格介绍文（style-intro）无 style 字段（历来如此）。
+- **正文里不再有 `<!-- style: 风格 vN -->` 注释。** 隐形注释行曾让 iOS（渲染/编号前
+  `stripOriginComment` 剥注释）与 agent `linenum.js`（不剥）的 第N行 错位 +1 → 语音编辑
+  「改第3行」改错行。存量已由 `agent/scripts/migrate-style-field`（经 `wrangler dev --remote`
+  直连生产 R2，走 wrangler OAuth，无需 FILES_TOKEN；游标分页防 504）一次性迁移：382 docs
+  扫描、50 迁移（注释→字段、body 去注释、含全部 versions/history）、二次 dry-run 0、线上
+  `<!--` 残留 0。迁移前全量备份 `~/Downloads/voicedrop-articles-backup-2026-07-03.ndjson`
+  （另有每晚 R2 自动备份兜底）。
+- ⚠️ **per-article 可扩展契约（以后加字段必读）**：tools.js 所有重建 `doc.articles` 的写路径
+  一律「继承+覆盖」`{...a, title, body}` —— 未知字段（style / wechatMediaId / 未来任何字段）
+  自动存活；**绝不要回退成 `{title, body}` 白名单重建**（会在每次编辑时静默丢字段，
+  wechatMediaId 曾靠每处手搬才活着）。doc 顶层字段由 `writeArticleDoc` 的 `...rest` 保留；
+  version 条目层固定 `{v,savedAt,source,articles}`（要加得改 article-store.js）。整篇重写
+  （write_article）按 index 从旧文章继承，拆/并文章时字段可能错位（既有语义，chip 显错无害）。
+  模型进不来未知字段（工具 input_schema 均 `additionalProperties:false`）。
+- **linenum.js 防御性剥注释**：编号前剥一切 `<!--…-->`（镜像 iOS），残留注释在编辑回写时
+  自动消失（自清洁）。测试：`agent/test/style-field.test.js`（编号 / 字段存活 / 迁移 transform）。
+- **iOS**：`MinedArticle.style: Int?`；chip 与 `existingVersion(forStyle:)`（换风格「复用已有
+  版本」匹配）先读字段、回退读 body 注释；`stripOriginComment` 保留当保险。老 build 读不到
+  注释 → chip 显「选风格」，装新 build 恢复。
+- 已知遗留：① 3 个 doc 曾带更老格式 `<!--风格vN-->`（无 `style:` 键），解析器历来读不出，
+  迁移只剥注释未提字段——显示零回归；② legacy 数字图片标记（`[[photo:N]]`）越界时 iOS 跳行
+  不计数而 linenum.js 计数——罕见旧数据的编号分歧，未修。
+- Spec：`docs/superpowers/specs/2026-07-03-style-field-schema-design.md`。
+- **无转写文章可重写（2026-07-03）**：合并（`merge_articles`→`writeStandaloneArticle`）、图片分享
+  （看图挖矿）、style-intro 等文章 `transcript:""`，重写/换风格曾在 `restyleArticle`
+  （`agent/src/miner.js`）开头 `no-transcript` 硬失败（422）。现在 transcript 为空时回退用
+  **head 文章正文**当挖矿来源（正文即事实来源；新 doc 的 `transcript` 保持 ""，不伪造）；
+  正文也空才仍报 no-transcript。同时**看图挖矿分支落盘打 `articles[i].style` = 文风 head 版本号**
+  （此前文风文本进了 prompt 但没打字段 → iOS chip 显「选风格」）。测试
+  `agent/test/restyle-body-fallback.test.js` + `mine-image.test.js` 的 style 标记用例。
+
 ## Files API (`jianshuo.dev/files/api/<path>`, Cloudflare Pages Function)
 
 `functions/files/api/[[path]].js` — routes (all but `auth/apple` require a token):
@@ -74,12 +113,18 @@ scopes every request to `users/<sub>/`.
 - `GET  whoami` — returns the caller's resolved data scope `{scope:"users/<sub>/"}`. The app caches it (`LibraryStore.ownerScope()`) and joins `scope + relKey` to load its OWN photos from the public `photo/<key>` endpoint — so even the owner's detail view uses the one photo URL, not the scoped download.
 - `GET  share/<articleKey>` → `{url:"https://jianshuo.dev/voicedrop/<id>"}` (signs + stores `shares/<id>`).
 - `POST mine` → dispatches `mine.yml` (token = `GH_DISPATCH_TOKEN` Pages secret). Dormant — the app's 加急处理 button was removed; kept for manual/debug use.
+- **`POST style/collect`** `{type,title,text,source}` → writes a 风格数据集 corpus sample `users/<sub>/style/<id>.json`; blank text → 400. **`GET style/dataset`** → `{items:[{id,type,title,chars,source,collectedAt}],count,totalChars}` (newest-first, no `text`; tolerates legacy miner `collectStyle` samples). **`DELETE style/dataset`** → clears all `style/*.json`. Backs the Share Extension「风格数据集」sheet (接受分享, see below). `title`/`type` are string-guarded.
 - `POST wechat/<articleKey>` → publish/update a WeChat draft **synchronously** via the VPS relay (see next section). 409 = not configured; 502 relays the real WeChat `{errcode,errmsg}`.
 - `GET asset/wechat-covers` (list) / `GET asset/wechat-covers/<name>` (image bytes) — **public, no auth**; the cover set in the FILES bucket, read by the relay + miner to pick a per-article cover.
 - `GET photo/<full R2 key>` — **public, no auth (2026-06-26).** The ONE photo endpoint used by every display surface (community, public share page, exported HTML). Serves any `users/*/photos/*.(jpg|jpeg|png)` straight from its original R2 location as a plain `<img src>` (CORS `*`, public cache). File-type allowlist + `..` block are the only guard — it can never serve articles/credentials. Full keys are unguessable (hashed sub + ts + rand). Replaced the short-lived gated `community/photo/<shareId>/<token>` design. Even the owner's own detail view (`PhotoTile`) loads through this (full key = `whoami` scope + relKey), so ALL photo display goes through this single endpoint.
 
 `functions/voicedrop/[token].js` — public, unauth. Resolves `shares/<id>` → renders
-that one article as a light-theme HTML page. **`?s=<index>`** (optional) renders/previews
+that one article as a light-theme HTML page. **It ALSO resolves a VD社区 `shareId`
+(2026-06-28):** if `shares/<id>` misses, it falls back to `community/<id>.json` (schema-2
+live pointer) → renders THAT post's `articleKey` through the SAME downstream + og tags, so a
+社区 post shares to WeChat exactly like an article (first photo + description) — **no separate
+page** (公用，不造轮子). A reported post (`community/reports/<id>.json` present) returns 404
+「已不可用」(Apple 1.2). Pinned by `og-tags.test.js`. **`?s=<index>`** (optional) renders/previews
 only that one section of a multi-section doc — the app appends it (`shareURL(_:section:)`
 from `articleIndex`) so a shared link reflects the section the user had selected; absent or
 out-of-range falls back to the full set (old links unchanged). Non-token segment (e.g. `privacy`) →
@@ -134,11 +179,39 @@ runs ON that VPS and calls `api.weixin.qq.com` directly.
   relay. See `mining/REMOVED.md` for the tombstone + git-restore commands. **Nothing runs `python mine.py`
   anymore** — there is no `mine.yml`, and `POST /files/api/mine` dispatches the Worker DO, not a workflow.
 
-**Per-article covers:** `resolve_cover_thumb(token, doc_id, wechat_cfg)` (in `relay_server.py`) picks one
-of `assets/wechat-covers/style01–10.png` by `hash(doc.id)`, uploads it to WeChat once, and caches the
-material id per cover name in `WECHAT.json.coverMediaIds` (reused across docs sharing a cover); the
-Function passes the cache in and persists what the relay returns. Gray placeholder = fallback when the
-cover set is empty/unreachable.
+**Per-article 题图 (cover) — article's OWN first photo (2026-06-28):** the WeChat draft cover now uses
+**the article body's FIRST `[[photo:<relkey>]]`** as `thumb_media_id`, so a photo article shares with its
+real picture, not a generic style cover. `make_cover_resolver(token, owner, doc_id, cfg)` (in
+`relay_server.py`) → `cover_for(a, force=False)`: fetch that article's first photo from the public
+`/files/api/photo/<owner+relkey>` endpoint, upload ONCE as a permanent image material
+(`_upload_cover_material`, `material/add_material type=image` — usable as a thumb), cache the media_id in
+`WECHAT.json.coverMediaIds` under key `photo:<fullkey>` (the Function persists it, so re-publishing reuses
+it). **Fallback chain (cover is always something):** no body photo / legacy numeric `[[photo:N]]` / fetch
+fails → the per-doc style cover `resolve_cover_thumb` (one of `assets/wechat-covers/style01–10.png` by
+`hash(doc.id)`, cached per cover NAME in `coverMediaIds`) → gray placeholder if the cover set is empty.
+A photo-cover failure is caught and degrades to the style cover — it never fails the publish. On a create
+40007 (cover material wiped) the cover is re-uploaded `force=True` and the create retried once.
+**Note:** each unique photo cover consumes one permanent image material (huge quota; cached so each photo
+uploads once) — inline body photos still use `media/uploadimg` (no quota).
+
+**摘要 (digest) — generated (2026-06-28):** `create/update_wechat_draft` now set the draft `digest` from
+`_digest_from_body(body)` (strip `[[photo:…]]` markers + markdown image/link/inline marks, collapse
+whitespace, cap ~110 chars + `…`), so the WeChat share card shows a real summary instead of WeChat's raw
+first-54-chars fallback. Empty body → no `digest` field (WeChat's auto-grab, as before).
+
+> Public **link card** (系统分享 a `/voicedrop/<token>` URL into WeChat chat) is a SEPARATE path —
+> `functions/voicedrop/[token].js` `metaTags()` already emits `og:image` = the section's first photo
+> (absolute URL) + `<meta name=description>` summary + `<link rel=image_src>` for old WeChat.
+> **iOS share-payload fix (2026-06-28):** the page og tags only matter if the app hands WeChat a **URL**, not
+> text. `RecordingDetailView.share()` used to share ONE combined string (`正文 + 链接`) → WeChat posted it as a
+> **plain text message with NO card** (this was why "依然没有图/description"). Now the share goes through
+> **`ArticleShareItem: UIActivityItemSource`** (in `RecordingDetailView.swift`): for WeChat
+> (`com.tencent.xin.*`, 发送给朋友 + 朋友圈) it returns the **bare URL** so WeChat builds the rich card from the
+> page og tags, and it also supplies **`LPLinkMetadata`** (article title + first photo) so the card shows a
+> thumbnail without waiting on WeChat's crawl; for **X / 其它** it still returns the combined inline-URL text (X
+> drops a separately-attached URL item). Requires a **new TestFlight build** to take effect. If a shared link
+> STILL shows no image after a new build, it's WeChat's per-URL link-card **cache** — test with a fresh share.
+> (relay + Pages already redeployed 2026-06-28.)
 
 **Inline body photos in WeChat drafts (2026-06-26):** the body's `[[photo:<relkey>]]` markers used to be
 **stripped** from WeChat drafts (the markers never carried the actual image). Now the relay embeds them:
@@ -184,6 +257,23 @@ app's existing tokens) + `CLAUDE_API_KEY`. Two Durable Objects (`agent/src/index
   verbatim — no whitelist) to that user's app sockets, so rows flip **待处理 → 听录音 → 挖文章 → 已成文**
   (or → 无语音) with no polling (`StatusSession.swift` `onPhase/onDone`, `LibraryStore.markPhase/markDone`).
   Phases map to badges in `MiningPhase` (`asr`=听录音, `mining`=挖文章).
+- **`/agent/asr` — 语音编辑听写的火山流式 ASR 代理（2026-06-28，token 安全）.** 语音编辑听写从 Apple 本地
+  `SFSpeechRecognizer` 改走火山引擎 bigmodel **流式** ASR（对齐「ASR 用火山」；zh-CN 更准）。**服务端 = 哑中继**
+  `agent/src/asr-proxy.js`：`resolveScope(bearer)` 验 app token（401 拦）→ 注入 worker 已有的
+  `VOLC_ASR_APPID`/`VOLC_ASR_ACCESS_TOKEN`、**剥掉客户端 `Authorization`**（不外泄）→ `fetch` 出站到
+  **`https://openspeech.bytedance.com/api/v3/sauc/bigmodel`**（资源 `volc.bigasr.sauc.duration`，**流式**，区别于
+  挖矿的文件 `volc.bigasr.auc`）→ 双向 pipe。**客户端持全部协议、服务端持密钥**——app 永不接触火山凭证。**iOS 端**
+  `VoiceDropApp/VolcASRProtocol.swift`（火山二进制协议：gzip 分帧+序列号）+ `VoiceEdit.swift` 的 `SpeechDictation`
+  （`AVAudioEngine` 取麦克风→重采样 mono 16k→WebSocket 流到 `/agent/asr` 带 `AuthStore.bearer`），`project.yml` 加
+  `-lz` 链 zlib。⚠️ **两个坑（都已修）：(1) CF Workers 出站 WebSocket 必须 `https://` 不能 `wss://`（否则
+  `Fetch API cannot load`→500）；(2) 代理不能直接 `target.send(event.data)`——CF 把二进制帧的 `event.data` 给成
+  Blob，`send(Blob)` 会强转成字符串 `"[object Blob]"`（13 字节），两个方向的二进制全毁：音频以文字 "[object Blob]"
+  到火山→火山不转写→「说话和没说一样」。修法：两 socket 设 `binaryType="arraybuffer"` + `toSendablePayload()`
+  把 Blob 转回 ArrayBuffer，经保序 promise 链转发。纯服务端修复，iOS build 107 无需重打。** ⚠️ **冒烟测必须
+  「发真实音频 + 解码回包断言转写文字」**——之前只发配置帧、把强转的 "[object Blob]" 误当 13 字节有效帧（假阳性），
+  导致坑 (2) 两次上线都没真正工作过。**iOS 与 worker 必须一起上**（先部署 worker、后发 build）。
+  canonical spec：`docs/superpowers/specs/2026-06-28-voice-edit-volc-asr-proxy.md`。
+  **历史**：先由 houleixx 两 PR 落地→验证可用→应要求回滚→再以一方提交按同设计重新引入（git 史含 merge→revert→re-add）。测试 `agent/test/asr-proxy.test.js`。
 
 Secrets (`wrangler secret put`): `SESSION_SECRET` (same value as Pages — verifies Apple JWTs;
 anon tokens work without it), `CLAUDE_API_KEY`, **`FILES_TOKEN`** (= Pages FILES_TOKEN; authenticates
@@ -191,6 +281,33 @@ anon tokens work without it), `CLAUDE_API_KEY`, **`FILES_TOKEN`** (= Pages FILES
 Deploy: `cd ~/code/jianshuo.dev/agent && npx wrangler deploy`.
 
 ## Community (VD社区)
+
+### Apple App Store Guideline 1.2 — UGC compliance (2026-06-28)
+
+VD社区 is cross-user UGC, so all four 1.2 pillars are implemented (and described in the App Review
+notes `fastlane/metadata/review_information/notes.txt`):
+- **① Filter (proactive, at share time):** `functions/lib/moderation.js` `checkArticlesShareable` scans
+  the article's title+body for unambiguous objectionable keywords (CJK substring, ASCII word-boundary)
+  when a user shares; `community/share` returns 403 `content_flagged` on a hit. **Zero-cost / zero-LLM** —
+  runs only on share, not on every generation. Tunable without deploy via R2 `config/community-blocklist.json`
+  (merged with the built-in list). Tests: `agent/test/moderation.test.js`. **History:** an earlier design did a
+  Claude-haiku moderation pass at *generation* time (`miner.js moderateArticles`, stamped `doc.moderation`),
+  but that was removed (judged every article incl. private ones); the function stays defined-but-dormant and
+  `community/share` still honors a legacy `doc.moderation.flagged` defensively.
+- **② Report → immediate takedown + review:** `POST community/report/<shareId>` (any signed-in user) writes
+  `community/reports/<shareId>.json`, which `community/list` filters out **immediately** (hidden pending
+  review). Admin reviews at **`/voicedrop/admin/reports`** (`GET community/reports` + `POST community/resolve/<id>`
+  `{action:remove|restore}`). iOS ⋯「举报」calls report + removes locally + dismisses. 24h SLA (in the copy).
+- **③ Block users:** ⋯「屏蔽此用户」→ `BlockStore` (`CommunityModeration.swift`) — **local UserDefaults only,
+  never sent to the server**; the feed filters blocked authors client-side. Managed in 设置 → 已屏蔽用户.
+- **④ EULA + contact:** first time a user toggles 「VD社区可见」, `CommunityTermsSheet` (社区公约, zero-tolerance)
+  must be agreed (`CommunityTerms.agreed`). 设置 has 社区公约 + 联系我们/内容投诉 (mailto `jianshuo@hotmail.com`).
+
+App Store status: 1.0 / **build 101** submitted `WAITING_FOR_REVIEW` (2026-06-28, the UGC-compliant build).
+Resubmit playbook = ASC API delete `appStoreVersionSubmission` (or cancel reviewSubmission) → PATCH version
+`build` relationship to the target build → dispatch `appstore` workflow (`fastlane release skip_build:true`
+uploads metadata incl. review notes + submits the attached build; `guard_not_in_review` needs the version
+NOT in WAITING_FOR_REVIEW/IN_REVIEW first, hence the cancel).
 
 The home has two tabs — **我的录音** + **VD社区** (`LibraryView.swift`). A user shares one of their
 articles to a public community from the detail-view ⋯ menu (分享到 VD社区). Files API routes
@@ -223,7 +340,10 @@ articles to a public community from the detail-view ⋯ menu (分享到 VD社区
   Pages-function fix; existing orphans vanish the next time anyone loads VD社区.
 
 App side: `Community.swift` (`CommunityStore`, read-only `CommunityPostView`). Owners get swipe-to-remove
-on their own posts.
+on their own posts. **⋯「分享」(2026-06-28)** now shares the public `/voicedrop/<shareId>?s=<i>` link via the
+SAME `ArticleShareItem` as 我的录音 (full text + first-photo `LPLinkMetadata`), so a 社区 post gets a WeChat
+link card with image + description (was plain text only, no card). Relies on `[token].js` resolving the
+community shareId (above) — **needs a Pages deploy + a new app build**.
 
 ### 推荐排序 sidecar — voicedrop-reco（2026-06-26）
 
@@ -274,9 +394,9 @@ Spec/计划：`docs/superpowers/specs/2026-06-27-voicedrop-usage-billing-design.
 - **iOS**：`UsageView.swift`（算力余额 + 明细 + "无现金价值"说明，从 `/agent/usage/balance|ledger` 读）；入口在 `AccountView.swift` 账户卡；
   `Library.swift`/`LibraryView.swift` 加 `.blocked` 检测 → 徽标 **余额不足 / 录音过长**（`.json/.empty` 优先）；`AgentSession.swift` 把编辑错误送进 `replyBubble`。
 - **admin 账本页**：`voicedrop/admin/usage.html`（贴 admin token 看全量余额/消费，仿 `mine.html`）。
-- **部署**：worker `cd ~/code/jianshuo.dev/agent && npx wrangler deploy`；Pages `cd ~/code/jianshuo.dev && npx wrangler pages deploy . --project-name jianshuo-dev`。
-  ⚠️ **Pages 部署坑**：根目录有 `.claude/worktrees/*/node_modules`(>25MiB) 会让 `pages deploy .` 报错，且 `.assetsignore` 当前匹配不到深层 node_modules。
-  解法：从 main 的**干净临时 worktree** 部署（`git worktree add --detach <tmp> main` → 在里面 `pages deploy .`），只传已提交内容。`.assetsignore`（排除 `reco/`+`node_modules`）**必须存在**，别误删。
+- **部署**：worker `cd ~/code/jianshuo.dev/agent && npx wrangler deploy`；Pages `cd ~/code/jianshuo.dev && npx wrangler pages deploy . --project-name jianshuo-dev --branch main`。
+  ⚠️ **Pages 部署坑 1（node_modules）**：根目录有 `.claude/worktrees/*/node_modules`(>25MiB) 会让 `pages deploy .` 报错，且 `.assetsignore` 当前匹配不到深层 node_modules。解法：从 main 的**干净临时 worktree** 部署（`git worktree add --detach <tmp> main` → 在里面 `pages deploy .`），只传已提交内容。`.assetsignore`（排除 `reco/`+`node_modules`）**必须存在**，别误删。
+  ⚠️ **Pages 部署坑 2（PREVIEW 而非 PRODUCTION，2026-07-01 踩过）**：`jianshuo-dev` 是 direct-upload 项目，生产分支 = `main`。`wrangler pages deploy` 按**当前 git 分支名**决定环境——从 `--detach` 的**游离 HEAD** worktree 部署，分支名是 `HEAD` → **静默部到 Preview（别名 head.jianshuo-dev.pages.dev）**，`jianshuo.dev` 生产不更新！症状：新 Function 路由带 token 返 **405**（落到老代码兜底），无 token 返 401（老代码也有鉴权，迷惑）。**必须显式加 `--branch main`**（或在非游离、真 checkout 到 main 的 worktree 里部）。验证：`npx wrangler pages deployment list --project-name jianshuo-dev | grep Production` 第一行 Source 应是你刚部的 commit；`curl` 生产带合成 anon token 应 200。
 - **后续可做的小优化（非阻断，已记 `.superpowers/sdd/progress.md`）**：iOS `Entry.id=ts` 同秒可撞（改用 ledger 自增 id）；`fetchBlockReason` 串行可并行；usage 路由测试可补全；负 grant 语义。
 
 ## iOS app (`VoiceDropApp/`)
@@ -296,7 +416,11 @@ gear → **设置** (redesign "方案二"; the old `ContentView` 3-tab `TabView`
 - **VD社区** — see the Community section above.
 - **录音 (takeover)** `RecordSession.swift` — full-screen, opens **idle** (tap-to-record). Records to a
   **staging name** `recording-<ts>.m4a`, promoted to the enriched `VoiceDrop-*` name only after finalize
-  → fixes the moov-less/0-byte corrupt-upload race; uploads on finish. **Faint 拍照 trigger** (spec =
+  → fixes the moov-less/0-byte corrupt-upload race; uploads on finish. **Encoder = speech-tuned AAC
+  (`Prefs.recorderSettings` in `Theme.swift`, 2026-06-28):** mono, **标准 16 kHz / 32 kbps · 高 24 kHz /
+  64 kbps** (was 44.1 kHz / 64k·96k). The audio only ever feeds in-app playback + Volcano ASR (16 kHz native),
+  so 44.1 kHz wasted bits — the new rate **halves the file size & upload time** (≈1.2 MB vs 2.4 MB per 5 min on
+  标准) with no ASR-accuracy loss. New recordings only; old files & the `.m4a`/moov contract unchanged. **Faint 拍照 trigger** (spec =
   `handoff_recording_camera/README.md`): a **very subtle thin `camera` icon** (`#A89E8E` @ 0.45 opacity, no
   container) in the blank area right of the 停止 key, at that area's **horizontal midpoint (≈75% of screen
   width)**, with a 「拍照」label (11pt `#C2B8A8`) below it. Implemented as an `.overlay(alignment:.center)` on the
@@ -358,12 +482,16 @@ gear → **设置** (redesign "方案二"; the old `ContentView` 3-tab `TabView`
   transcript bubble tints spoken 第N行/图N references accent (`highlightedTranscript`, regex `第[0-9]+行|图[0-9]+`).
   ⋯ menu: **发布/更新公众号草稿** ·
   **分享/更新 VD社区** · 系统分享 (labels flip once published/shared) · **编辑 = hold-to-talk voice editing**
-  (serial queue, mic-as-indicator — see the agent Worker section). Share text = `composeShareText()`: ONE
-  string (标题 + 正文开头 cut at a sentence boundary, sized to X's 280 weighted cap minus the 23-weight URL)
-  + the short link (single string, not String+URL — X drops one otherwise).
+  (serial queue, mic-as-indicator — see the agent Worker section). 系统分享 = `share()`: builds the full
+  text (所有 section 标题+正文, markers stripped) + the `?s=<section>` short link, wrapped in
+  **`ArticleShareItem`** which adapts per target — WeChat gets the bare URL (rich link card from page og
+  tags + `LPLinkMetadata` title/首图), X / 其它 get the combined inline-URL string (X drops a separate URL
+  item). See the WeChat link-card note above.
 - **设置** `SettingsView.swift` (`SettingsStore`) — **名字** + **文风** (→ full-screen editor sheet) →
   `users/<sub>/CLAUDE.md`; **微信公众号** AppID/AppSecret (format- + live-validated before save) →
-  `WECHAT.json`; **账户** anon ID + copy ID / access token.
+  `WECHAT.json`; **账户** anon ID + copy ID / access token. **「其他」card (2026-06-28)** now holds just
+  **关于**（NavigationLink → `AboutView`）+ **版本**; the four secondary items（隐私说明 / 社区公约 / 已屏蔽用户
+  / 联系我们·内容投诉）moved one level down into `AboutView` (in `SettingsView.swift`), shown only after tapping 关于.
 
 ## Server miner — now the Worker DO (`agent/src/miner.js`)
 
@@ -377,7 +505,7 @@ gear → **设置** (redesign "方案二"; the old `ContentView` 3-tab `TabView`
 - Per recording: presign R2 key → Volcano **async file ASR** (empty→`.empty no-speech`) → Claude API (`MINE_MODEL`, default claude-sonnet-4-6) → write `.json`. (No local download/ffprobe — the file API takes a URL.)
 - **JSON is forced**: `_articles_from` strips ``` / ```json fences + stray leading `json`, extracts the outermost `{…}`; if unparseable it **raises (retries next cycle)** — never stores raw model text as a body. (Assistant prefill is NOT used — sonnet-4-6 rejects it with 400.)
 - Reads the owner's `CLAUDE.md` and appends it after the system prompt.
-- ASR = `volc_asr_file.py` (火山 bigmodel `volc.bigasr.auc`): presign → submit URL → poll `query` until done, 600s deadline. **Done-detection keys off `audio_info` being populated** (the query body has no `code` field; `audio_info` is `{}` while processing, gains a `duration` once done — even for silent clips). Empty text → exit 3 → `.empty no-speech`. A deterministic Volcano business error in submit/query (e.g. 45000151) → exit 4 (code written to the out JSON) → miner marks `.empty asr-error:<code>` and stops retrying; transient errors (network/timeout) stay exit 1 and are retried next run. *(Fixed 2026-06-23: the prior `result.text`-non-empty check hung silent/short clips for the full 600s — every such run died "ASR timed out".)*
+- ASR = 火山 bigmodel `volc.bigasr.auc`, **resumable across alarm passes** (`miner.js` `transcribeResumable`, 2026-06-28). **Why (long-audio bug):** the old synchronous `asrPoll` blocked one Miner/DO invocation in a `while(deadline)` loop polling `query` to completion; a 60-min recording takes minutes → blows the per-invocation **subrequest limit** ("Too many subrequests") → errored ~90s in, left no marker, retried forever ("ASR timed out"). **Now:** submit once → persist `{taskId,logId,submittedAt}` to an R2 **sidecar `articles/<stem>.asr.json`** → `asrPollBounded` polls ≤`ASR_POLLS_PER_PASS`(3) per pass → not done returns `pending` (keep sidecar, recording stays unprocessed); the **Miner DO `alarm()` reschedules `setAlarm(+MINE_RESUME_MS=10s)` while `runMine` returns `moreWork`**, next pass reads the sidecar and **resumes the SAME task** (no re-submit) until done (delete sidecar) or `ASR_MAX_AGE_MS`(30min) aged-out guard → `.empty asr-error:timeout`. `runMine` spends a `MINE_SUBREQ_BUDGET`(30) per invocation across audio/text/style, deferring the rest (`truncated`→`moreWork`). Done-detection still keys off `audio_info.duration` (or `result.text`); empty → `.empty no-speech`; deterministic Volcano error (e.g. 45000151) → `.empty asr-error:<code>` (sidecar deleted), stops retrying; non-deterministic errors keep the sidecar → retry next pass. **Usage billing intact:** the `done` return still carries `asrDurMs`, charged once (pending passes return before any debit). Tests: `agent/test/asr-resumable.test.js`. *(The old `mining/volc_asr_file.py` Python helper is dead — ASR runs entirely in the JS Worker miner.)*
 - Timestamped profiling logs end with `DONE: N mined · M empty · Ts [ASR x% · LLM y% · net z%]` (ASR is the long pole).
 
 ## CI / CD & concurrency
@@ -448,7 +576,12 @@ canonical 设计/计划：`docs/superpowers/specs/2026-06-27-device-link-pairing
   `DeviceLinkApprovalSheet` 显码+「不是我」，收 `link_release` 加密 token→complete）/ `DeviceLinkStore`+`DeviceLinkView`
   （新设备：输 6 位→开 socket→输 4 位→`link_ready` 解密→`AuthStore.adoptToken`→发 `.vdDidAdoptAccount` 刷新列表）。
 - `AppleAuth.swift` 加 **`AuthStore.adoptToken(_:)`**（替换匿名身份、清 session）。`StatusSession.swift` 的 `handle` 在
-  `status_update` 前先分支 `link_request`/`link_release`。`AccountView` 加「登录已有账号」入口，`LibraryView` 接审批卡 + adopt 后刷新。
+  `status_update` 前先分支 `link_request`/`link_release`。`LibraryView` 接审批卡 + adopt 后刷新。
+- **「登录已有账号」入口已从 `AccountView` 移除（2026-07-03，用户要求）**：app 内不再有新设备侧发起配对的 UI，
+  `DeviceLinkView`/`DeviceLinkStore`（新设备侧）成为无入口的保留代码——**别删**：协议实现还在被 wjs-voicedrop skill 的
+  vd-login.mjs（CLI 扮演新设备）复用参考；老设备侧（`DeviceLinkResponder`/`DeviceLinkApprovalSheet`，挂在 LibraryView）
+  仍在服务 skill 登录的审批弹窗，是活代码。同日 `AccountView` 数据卡里的「查看全部文章」行也移除（含
+  `SettingsStore.articlesPageURL()` + `ArticlesLinkError`）；服务端 `GET /token/articles` 路由未动（web 文章页还在用）。
 
 **安全**：4 位码 5 次/2 分钟（暴力≈5/10000，且真主人在自己设备看得到登录尝试）；token 全程 E2E；complete 强制 scope 匹配。
 **已知延后**：/start 的 IP+token 限流（Worker 无 KV 计数基建，本期只做「必须带有效 bearer」最小闸门）。
@@ -459,6 +592,44 @@ canonical 设计/计划：`docs/superpowers/specs/2026-06-27-device-link-pairing
 **部署/测试状态（2026-06-28）**：代码完成、Worker 全量测试绿（vitest）、iOS BUILD SUCCEEDED。**Worker 部署 + 端到端两机手测
 DEFERRED 给用户**：`cd ~/code/jianshuo.dev/agent && npx wrangler deploy`（含 migration v4）+ iOS 推 main→TestFlight。
 两个特性分支 `device-link-pairing`（jianshuo.dev + voicedrop 各一），待合并。
+
+## 接受分享 (Share Collect) — iOS Share Extension 收件（2026-07-01，已合并 main + 已上线）
+
+VoiceDrop 是 iOS 系统分享目标。从别的 app 点「分享」→ 自定义 SwiftUI sheet（**替换了老的 `SLComposeServiceViewController`**）按内容类型分派：
+
+| 分享 | sheet | 去向 |
+|---|---|---|
+| **音频 / 图片** | 成文 sheet（`AudioComposeView` 波形版 / `PhotoComposeView` 缩略图版） | 挖文章 |
+| **文字 / 网页 URL / 文档(.pdf/.docx/.rtf)** | `StyleDatasetView`（风格数据集） | 风格语料 →「提取文章风格」蒸馏成写作风格新版本 |
+
+- **客户端提取一切文字**（`VoiceDropShare/ShareExtraction.swift`：PDFKit / `NSAttributedString` / readability——微信特判 `#js_content`），服务端不碰 docx/URL 解析。
+- **图片 = 静音占位 `.m4a` + 照片传 `photos/<sessionTs>/`**，复用 miner「无语音+有照片→vision 看图写短文」分支（`IMAGE_ONLY_SYSTEM`，`agent/src/prompts/mine.js`）。**关键不变量：`PhotoComposeView.generate()` 必须先传完所有照片、最后才传静音音频**——因为上传端点对任何 `VoiceDrop-*.m4a` 落地就 `waitUntil(dispatchMine)`，音频先到会让 miner ASR 空转→找不到照片→写 `.empty(no-speech)`→照片被孤儿化。`sessionTs`(照片路径) 与 `audioName` 时间戳同源于一个 `Date()`，miner `sessionTs(audioKey)=parts.slice(1,5).join("-")` 精确匹配。
+  - **静音音频内嵌代码，不用 bundle 资源（2026-07-01 修）**：`VoiceDropShare/SilentAudio.swift` = 960 字节静音 m4a 的 base64 常量（`putData`）。原来 `Bundle.main.url(forResource:"silent")` 在 release build 可能返 nil → 占位音频不上传 → 照片成孤儿、列表不显示。服务端同一份在 `agent/src/silent-m4a.js`（写风格 intro 用）。
+  - **图片解码用 ImageIO 降采样，防 OOM 崩溃（2026-07-01 修，关键）**：`SquareCrop.jpeg(fromFile:)` 用 `CGImageSourceCreateThumbnailAtIndex`（`kCGImageSourceThumbnailMaxPixelSize:640`）**在解码阶段就限到 ≤640**，永不加载全分辨率位图。原来 `UIImage(data:)+draw` 会全分辨率解码大相机照片 → 在 Share Extension ~120MB 限制里 OOM → 进程被杀 → 分享瞬间消失、零上传。顺带把 vision token 从 ~1500 降到 ~545/张。
+- **iOS 主 app 零改动**：占位录音是普通录音，天然进「我的录音」列表/详情/删除；图片经 `[[photo:key]]` 内联渲染。
+- **iOS 文件**（`VoiceDropShare/`）：`ShareViewController`(UIHostingController 入口)、`ShareRouter`(@MainActor,类型分派+loadPayload)、`ShareRootView`、`ShareExtraction`、`ShareAPI`(上传/语料/提取/mine 客户端,复用 `Networking.swift` 的 `API.filesBase/agentBase`/`setBearer`/`isOK`)、三个 sheet。`RecordingName.swift` 已加入扩展 target。
+- **服务端**：语料 `POST style/collect`·`GET style/dataset`·`DELETE style/dataset`（Pages,见上）；**`POST /agent/style/extract`** `{clearAfter}`（agent worker,`agent/src/style-extract.js` 蒸馏,读 `style/*.json`→Claude→`writeStyleDoc` 新版本,`clearAfter` 删语料,best-effort 扣算力,401/400 空数据集,语料总量 48000 字上限防 500;**2026-07-02 起降为 fallback**,主路径改走下面的挖矿任务流)；miner `mineOneAudio` 的「无语音+有照片→vision」（图片-only 用短提示词,不追加 `PHOTO_INSTR` 的口述话术）。
+- **文风蒸馏 = 一次调用（`agent/src/style-extract.js`，2026-07-02 从两步合回一次）**：`DISTILL_SYSTEM` = `wjs-distilling-style` 的 **Prompt B** + `# 输出格式` 要求 `风格名：<≤5 字>` 作首行，一把出「名字+Style Card」；`splitNameAndCard` 用正则 `/^\s*风格名\s*[:：]\s*(.+)$/` 抠名字拼到风格文本**第一行**（iOS 版本名 + intro 标题都取第一行）。**为什么合成一次**：原来大 prompt 把「样本少于 3 篇」提醒顶到第一行，改用 marker+正则一次调用就够，省一次 Claude。
+- **提取风格 = 挖矿任务流（2026-07-02 重构，去掉 sidecar，类型 tag 放文件名）**：客户端上传静音占位 `.m4a`，文件名尾 token 打 `TaskStyleExtract`（`clearAfter` 时不带 `Keep`）→ `triggerMine`。服务端 `classifyKey`→`"task"`，`runMine` 像扫 audio/style 一样扫出 → `mineOneAudio` 里 `taskSpec(key)`（读文件名尾 token → `{type,clearAfter}`）分派到 `TASK_HANDLERS["style-extract"]=mineStyleExtract`：`notifyStatus mining`→读 `style/*.json` 语料→`distillStyle`→`writeStyleDoc CLAUDE.json` 新版本→`buildStyleIntroArticle` 写成**该占位音频自己的** `articles/<stem>.json`（列表里像普通录音 待处理→处理中→已成文；**介绍文章正文列出这次蒸馏用到的素材清单**——每份「标题 — 来源」，标题缺失退回来源/文件名，`buildStyleIntroArticle(style, samples)` 收数组，2026-07-02 加）→`notifyStatus ready`→`clearAfter` 清 `style/`+`VoiceDrop-style-`→扣算力。空语料→写「风格数据集为空」文章。**类型 tag 就在文件名里，和 `VoiceDrop-style-`/`VoiceDrop-mine-` 同一机制，没有第二个文件**；以后新任务只加 `TASK_HANDLERS` 一项。**为什么不用原来的 `/agent/style/extract` 端点**：同步调用会让分享页空转等蒸馏、异步 `waitUntil` 又静默失败没进度；挖矿流稳、有进度、能重试、界面统一。
+- **deeplink（`voicedrop://`，2026-07-01 新增）**：集中式 `VoiceDropApp/AppRouter.swift`（`DeepLink` enum + URL 解析），`VoiceDropApp` `onOpenURL→router.handle`，`LibraryView` `onReceive(router.$pending)` 应用（**切 tab + 清 push/settings/record 再落地**——老实现只设 tab，栈上 push 的详情没弹→落错页）。scheme 在 `project.yml` `CFBundleURLTypes`。地址：`voicedrop://` + `recordings`/`community`/`settings`/`record`/`article/<stem>`。
+- **⚠️ Share Extension 不呼起主 app（2026-07-02 定论，`99da3bf` 删除跳转逻辑）**：iOS 不让分享扩展可靠呼起宿主 app——`NSExtensionContext.open` 官方只对 Today/widget 扩展生效，`openURL:`/`sharedApplication` selector walk 是私有 API 路径（真机没跳 + 有审核风险）。**试过 `ctx.open`（无效）和 responder-chain selector（真机仍没跳）后，`ShareViewController` 删掉全部呼起尝试**，分享/提取完成后直接 `completeRequest` 关闭分享页；任务在后台挖矿，用户自行开 app 看「我的录音」。`didFinish` 幂等防二次 completeRequest。app 侧 `voicedrop://` scheme/AppRouter/onOpenURL **保留未动**（标准 URL scheme，非审核风险，可留作内部深链）。**别再尝试从分享扩展自动呼起主 app**。
+- **规格/计划**：`docs/superpowers/specs/2026-07-01-voicedrop-share-receive-design.md` + `docs/superpowers/plans/2026-07-01-voicedrop-share-receive.md`；设计 `design_handoff_share_collect/Share Collect.dc.html`。测试：`agent/test/{mine-image,style-corpus,style-extract,style-extract-route,share-routing}.test.js`（`share-routing` 含 `classifyKey`/`taskSpec` 用例；`mine-image` 含 style-extract 任务用例；全套 384 绿）。
+- ✅ **静音片→干净空 已真机/线上验证**：给 3 个孤儿照片 session 补静音 `.m4a`+触发挖矿 → 全部 vision 挖成图文（火山对 960 字节静音片返回**干净空**、走 `if(!transcript)` vision 分支，不是 `AsrError`）。假设成立，图片路径放心。
+- **部署状态（SHIPPED 2026-07-01，2026-07-02 重构提取风格为任务流）**：两个 `feat/share-collect` 已合并 main。Worker 多次 `wrangler deploy`（含 vision 挖图 / 语料接口 / 一次起名 / **提取风格挖矿任务流 `taskSpec`+`TASK_HANDLERS`**，最新版 live，jianshuo.dev `8f0ceb2`）。Pages 已部署生产（**注意坑 2：必须 `--branch main`，游离 HEAD 会静默进 preview**）。iOS 提取风格改文件名 tag（`5d72482`）走 TestFlight 构建中。
+  - **⚠️ git 坑（2026-07-02）**：`~/code/jianshuo.dev` 工作目录当时停在 `feat/paint-service`（并行 paint 会话），直接 commit 会落错分支。做法：临时 `git worktree add` 一个 `main` worktree，改代码 / 跑测试 / `wrangler deploy` 全在里面，`git push origin main` 后再删 worktree——不碰 paint 会话。worktree 无 `node_modules`，`better-sqlite3` 是原生模块、软链会失败，得在 worktree 里真跑一次 `npm install`。
+
+## 语音指令 (Voice Command) — 长按红键对文章库下语音指令（2026-07-02，SDD 建成，待真机验证）
+
+「我的录音」首页**长按底部红键** → 列表每篇浮圈序号 → 说一句自然语言指令（「把③和④合并」「删掉第②篇」「把①换个更口语的标题」「②③④换风格重写」「这几篇归到『上海』」）→ Claude 理解意图并对文章库执行。规格/计划：`docs/superpowers/specs/2026-07-02-voicedrop-voice-command-design.md` + `docs/superpowers/plans/2026-07-02-voicedrop-voice-command.md`。
+
+- **复用语音编辑栈**：`SpeechDictation` + `/agent/asr` 火山代理 + `runAgentLoop` + `ArticleQueue` + 反馈气泡 原样复用；抽出共享 `PushToTalkBar`（`VoiceDropApp/PushToTalkBar.swift`，从 `RecordingDetailView` 抽）+ `VoiceAgentSession` 协议（`ArticleAgentSession` 与新 `LibraryCommandSession` 都 conform）。
+- **服务端（jianshuo.dev，已 live）**：新 `/agent/command` WS → **`LibraryAgent` DO（每用户一个**，区别于 `ArticleEditor` 每文章一个；wrangler migration **v5**）→ `runCommandTurn`（`src/command-turn.js`，编号 refs→stem + 命令工具子集 `toolDefsFor(COMMAND_TOOL_NAMES)`）→ 库级工具（`src/tools.js`）：`merge_articles`（Claude 揉成新一篇、**另存+留原文**、写静音 `.m4a` 锚点才进列表）、`delete_article`（**破坏性→暂存 pending，不在 loop 内删**）、`restyle_article`、`tag_article` + 复用 `list/read_article`、`read/write_style`。计费 `meteredCommandGate`（余额门，无每篇上限，reason `"command"`）。
+- **分级确认**：合并留原文=非破坏→直接执行；唯一破坏性=删除→ DO 发 `{type:"confirm"}`、客户端 `.alert` 确认 → `{type:"confirm",id}` 才真删（`deleteArticleFiles`）。**关键不变量**：暂存的破坏性动作在 `ArticleQueue._runRow` 里靠 `res._pending` **视为未完成**（不 markDone、不广播 updated/reply），否则会在确认前误报「已完成」并孤立 pending。
+- **编号→stem 防错位**：客户端把当前所见有序清单 `refs:[{n,stem,title}]` 随指令发，agent 按 refs 映射「第N篇」，不让服务端另排。
+- **计费 = Claude tool-use agent**，deploy：jianshuo.dev main（Phase1 T1–T9），Worker version `4dfe42fd`（含 LibraryAgent）。412+ 测试绿（`command-tools`/`command-turn`/`usage-command`/`queue` `_pending`/`share-routing`）。
+- **⚠️ 交互待真机调优（#1）**：当前是「长按红键进命令态 → 再按住 `PushToTalkBar` 说话」两次触摸，不是 Q2 定的单次连续对讲机（跨视图两个手势识别器无法共享一次触摸）。真机体验后决定要不要把红键本身做成 `LongPressGesture.sequenced(before: DragGesture)` 的一次性握持。
+- **范围外/后续**：两套 agent（ArticleEditor / LibraryAgent）**本期并存**，完全统一（单 `/agent` + scope 参数）留后续；`publish_wechat`/`share_to_community` 因单篇绑定 `ctx.articleKey`、库级无 stem，**已从命令集移除**（详情页仍可发/分享），要语音发布需 v2 给这俩加 stem 参数；命令态列表按住时不滚（引用可见项）。
+- **功能级 WS 冒烟**：服务端连通已验（`/agent/command` 返 426），端到端 merge/delete 冒烟推迟到真机（需真 WS 握手+token）。
 
 ## Known issues / TODO
 

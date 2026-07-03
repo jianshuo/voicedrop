@@ -170,8 +170,7 @@ private func writeZip(from srcDir: URL, to outURL: URL) throws {
 // MARK: - HTML generation
 
 private func indexHTMLData(recordings: [(rec: Recording, doc: ArticleDoc?)]) -> Data {
-    let df = DateFormatter(); df.locale = Locale(identifier: "zh_CN"); df.dateFormat = "yyyy年M月d日"
-    let dateStr = df.string(from: Date())
+    let dateStr = DateFormatter.zh("yyyy年M月d日").string(from: Date())
     let articleCount = recordings.filter { $0.doc != nil }.count
 
     var cards = ""

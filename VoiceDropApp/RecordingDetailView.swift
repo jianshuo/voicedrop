@@ -1,13 +1,7 @@
 import SwiftUI
 import UIKit
 import PhotosUI
-
-/// A transient one-line reply from the editing agent.
-struct AgentReply: Identifiable, Equatable {
-    let id = UUID()
-    let text: String
-    let ok: Bool
-}
+import LinkPresentation
 
 /// 成文阅读：听录音 + 读挖出的文章 + 一键发布。暖灰阅读底（#F0EDE7）。
 /// 右上角 ⋯ 菜单（发布公众号草稿 / 分享）；底部常驻一条微信式按住说话 bar。
@@ -34,16 +28,17 @@ struct RecordingDetailView: View {
     @State private var published = false            // already has a WeChat draft
     @State private var sharedToCommunity = false    // already shared to the community
     @State private var communityShareId: String?    // shareId when shared (needed for unshare)
+    @State private var showCommunityTerms = false   // 社区公约 agree-gate before first post
 
     // Live voice editing — persistent push-to-talk bar.
     @State private var agentReply: AgentReply?
     @State private var agent = ArticleAgentSession()
     @State private var dictation = SpeechDictation()
-    @State private var willCancel = false           // slid finger up past threshold
     @State private var connected = false
     @State private var confirmDeleteFromDetail = false
     @State private var showingInsertPhoto = false
-    @State private var hasSpokenOnce = false   // once set, editing toolbar stays visible until dismiss
+    @State private var showRestyle = false       // 换风格重写 sheet
+    @State private var restyling = false         // /agent/restyle in flight
 
     // Undo/redo: versions (oldest-first) + head loaded on open and refreshed after
     // each agent edit. Undo/redo move head locally for instant UI update, then
@@ -58,10 +53,80 @@ struct RecordingDetailView: View {
         guard let last = versions.last else { return false }
         return head < last.v
     }
-    // Editing toolbar shows once the user has ever spoken, and stays until the view is dismissed.
-    private var isEditing: Bool { hasSpokenOnce || dictation.isRecording || agent.state == .working }
 
     private var articles: [MinedArticle] { doc?.resolvedArticles ?? [] }
+
+    /// The 文风 version of the current article — the per-article `style` field;
+    /// legacy articles fall back to the body's `<!-- style: … -->` comment.
+    /// nil → no chip (no-style articles).
+    private var currentStyleV: Int? {
+        guard let a = articles.first else { return nil }
+        return a.style ?? ArticleBody.styleVersion(a.body)
+    }
+    /// The chip label: "v8 风格", or "v8 王建硕" when the version's name is known
+    /// (styleVersions loads async — the label upgrades once history arrives).
+    private var currentStyleLabel: String? {
+        currentStyleV.map { v in
+            StyleNaming.chipLabel(v: v, style: settings.styleVersions.first { $0.v == v }?.style)
+        }
+    }
+    /// A version already tagged with 文风 vN (the latest such) → reuse via patchHead, free.
+    private func existingVersion(forStyle v: Int) -> ArticleVersionEntry? {
+        versions.last { entry in
+            guard let a = entry.articles.first else { return false }
+            return (a.style ?? ArticleBody.styleVersion(a.body)) == v
+        }
+    }
+
+    /// Tappable chip on the meta line — opens 换风格重写. Shows the current 风格 vN.
+    /// 素样式：和左边的日期同色同号（13px metaRead），不做胶囊底，只靠铅笔+箭头示意可点。
+    private var styleChip: some View {
+        Button { showRestyle = true } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "pencil").font(.system(size: 11))
+                Text(currentStyleLabel ?? "选风格").font(.system(size: 13))
+                Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.chevron)
+            }
+            .foregroundStyle(Theme.metaRead)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Switch the article to 文风 vN: reuse an existing tagged version (free patchHead),
+    /// else re-mine via /agent/restyle (a new version). "原文不变，可随时换回."
+    private func applyStyle(_ v: Int) {
+        if let entry = existingVersion(forStyle: v) {
+            head = entry.v; applyVersion(entry)
+            Task { await store.patchHead(recording, head: entry.v) }
+            return
+        }
+        Task {
+            restyling = true
+            if let _ = await store.restyle(recording, styleV: v) {
+                doc = await store.fetchDoc(recording)
+                articleIndex = 0
+                await loadVersionHistory()
+            } else {
+                toast = "重写失败，稍后再试"
+            }
+            restyling = false
+        }
+    }
+
+    private var restylingOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.12).ignoresSafeArea()
+            VStack(spacing: 12) {
+                ProgressView().tint(Theme.accent)
+                Text("正在用新风格重写…").font(.system(size: 14, weight: .medium)).foregroundStyle(Theme.ink)
+            }
+            .padding(.horizontal, 26).padding(.vertical, 22)
+            .background(Theme.card, in: RoundedRectangle(cornerRadius: 16))
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Theme.borderChrome, lineWidth: 1))
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -78,8 +143,18 @@ struct RecordingDetailView: View {
         }
         .background(Theme.readBG.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .overlay(alignment: .bottom) { if !articles.isEmpty { voiceBar } }
+        .overlay(alignment: .bottom) {
+            if !articles.isEmpty {
+                PushToTalkBar(dictation: dictation, session: agent, highlightLocators: true,
+                              articleIndex: { articleIndex }, agentReply: agentReply)
+            }
+        }
         .overlay(alignment: .bottom) { toastView }
+        .overlay { if restyling { restylingOverlay } }
+        .sheet(isPresented: $showRestyle) {
+            RestyleSheet(versions: settings.styleVersions, currentStyleV: currentStyleV) { v in applyStyle(v) }
+                .presentationDetents([.medium, .large])
+        }
         .task {
             if recording.isEmpty {
                 emptyReason = await store.fetchEmptyReason(recording)
@@ -89,6 +164,7 @@ struct RecordingDetailView: View {
             loadingDoc = false
             published = doc?.hasWechatDraft ?? false
             await settings.loadWechat()
+            await settings.loadStyleHistory()   // for the 换风格 sheet
             await connectIfNeeded()
             if !articles.isEmpty {
                 communityShareId = await community.sharedShareId(recording)
@@ -102,7 +178,10 @@ struct RecordingDetailView: View {
                 if settings.wechatConfigured { Task { await sendWechat() } }
             }
         }) { WechatSettingsSheet(store: settings) }
-        .sheet(item: $sharePayload) { ShareSheet(items: [$0.text]) }
+        .sheet(item: $sharePayload) { ShareSheet(items: $0.activityItems) }
+        .sheet(isPresented: $showCommunityTerms) {
+            CommunityTermsSheet(onAgree: { Task { await toggleCommunity(true) } }, onCancel: {})
+        }
         .fullScreenCover(isPresented: $showingInsertPhoto) {
             PhotoCaptureView(recordingStart: nil) { photos in insertPhotos(photos) }
                 .ignoresSafeArea()
@@ -122,6 +201,7 @@ struct RecordingDetailView: View {
         guard !connected, !articles.isEmpty else { return }
         connected = true
         agent.onUpdate = { [self] newDoc in
+            guard let newDoc else { return }
             doc = newDoc
             articleIndex = min(articleIndex, max(0, newDoc.resolvedArticles.count - 1))
             // A new agent edit writes a new version; refresh history and reset to latest.
@@ -176,9 +256,7 @@ struct RecordingDetailView: View {
         guard !captured.isEmpty else { return }
         showToast("正在上传图片…")
         Task {
-            let parts = recording.stem.components(separatedBy: "-")
-            guard parts.count >= 5, parts[0] == "VoiceDrop" else { showToast("无法插入图片"); return }
-            let sessionTs = "\(parts[1])-\(parts[2])-\(parts[3])-\(parts[4])"
+            guard let sessionTs = RecordingName.parse(recording.stem)?.sessionTs else { showToast("无法插入图片"); return }
             // Offset = seconds from the recording start to this photo. For editor-
             // inserted photos that's "how long after recording it was added" (can be
             // large) — still unique & harmless; the offset semantics are only "录音内第几秒"
@@ -222,7 +300,8 @@ struct RecordingDetailView: View {
     // MARK: Nav bar
 
     /// 顶部导航：返回 … 播放键 [工具] ⋯。整条播放条收进右上角的播放键（外圈细圆环显示进度），
-    /// 播放键常驻在 ⋯ 左边；进入编辑态时在播放键与 ⋯ 之间插入「插入照片 + 撤销/重做」，⋯ 始终保留。
+    /// 工具栏常驻：播放键 + 插入照片 + 撤销/重做（有多版本时）+ ⋯，都一直显示，
+    /// 不再要求先 push-to-talk 才出现。
     private var navBar: some View {
         HStack {
             NavSquare(systemName: "chevron.left", stroke: Theme.inkRead, border: Theme.borderRead) { dismiss() }
@@ -231,20 +310,13 @@ struct RecordingDetailView: View {
             if !articles.isEmpty {
                 HStack(spacing: 10) {
                     navPlayButton
-                    if isEditing {
-                        insertPhotoButton
-                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                        if versions.count > 1 {
-                            undoRedoGroup
-                                .transition(.opacity.combined(with: .scale(scale: 0.95)))
-                        }
-                    }
-                    moreMenu   // ⋯ 常驻：平时态在播放键右边；编辑态退到工具组右边，始终保留
+                    insertPhotoButton
+                    if versions.count > 1 { undoRedoGroup }   // 直接出现，无动画
+                    moreMenu   // ⋯ 常驻
                 }
             }
         }
         .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 8)
-        .animation(.easeInOut(duration: 0.2), value: isEditing)
     }
 
     /// 播放键 + 外圈进度细圆环（取代整条播放条）。点一下播放/暂停；首次播放先下载音频。
@@ -327,7 +399,11 @@ struct RecordingDetailView: View {
             }
             Toggle(isOn: Binding(
                 get: { sharedToCommunity },
-                set: { newValue in Task { await toggleCommunity(newValue) } }
+                set: { newValue in
+                    // Apple 1.2: first community post requires agreeing to the 社区公约 (EULA).
+                    if newValue && !CommunityTerms.agreed { showCommunityTerms = true }
+                    else { Task { await toggleCommunity(newValue) } }
+                }
             )) {
                 Label("VD社区可见", systemImage: "person.2")
             }
@@ -353,19 +429,33 @@ struct RecordingDetailView: View {
     }
 
     private func share() async {
-        // Build full text from ALL articles (all sections), strip photo markers
-        let allText = articles.enumerated().map { i, a in
-            let body = ArticleBody.stripMarkers(a.body)
-            return articles.count > 1 ? "【\(a.title)】\n\n\(body)" : "\(a.title)\n\n\(body)"
-        }.joined(separator: "\n\n---\n\n")
+        let allText = ArticleBody.shareText(articles)
 
-        // Append the short link if we can get one
-        if let u = await store.shareURL(recording, section: articleIndex) {
-            sharePayload = SharePayload(text: allText + "\n\n" + u.absoluteString)
-        } else {
-            // Share text even without URL
-            sharePayload = SharePayload(text: allText)
+        // Append the short link if we can get one. When we have a URL we hand it to
+        // the share sheet as a real link (with the article title + first photo as
+        // LPLinkMetadata), so WeChat builds a rich link card — image + description —
+        // from the page's og tags. A combined text string would land in WeChat as a
+        // plain text message with NO card (the bug this fixes). X still gets the
+        // inline-URL text via ArticleShareItem's per-target branching.
+        guard let u = await store.shareURL(recording, section: articleIndex) else {
+            sharePayload = SharePayload(text: allText)        // no link → text only
+            return
         }
+        let title = articles[safe: articleIndex]?.title ?? "VoiceDrop"
+        let image = await firstPhotoImage()                  // best-effort card thumbnail
+        sharePayload = SharePayload(text: allText + "\n\n" + u.absoluteString,
+                                    url: u, title: title, image: image)
+    }
+
+    /// The first photo of the currently-shown article, used as the WeChat link-card
+    /// thumbnail. Best-effort: nil when the article has no photo or the fetch fails —
+    /// WeChat then falls back to the page's og:image.
+    private func firstPhotoImage() async -> UIImage? {
+        guard let body = articles[safe: articleIndex]?.body,
+              let relKey = ArticleBody.firstPhotoKey(in: body, photos: doc?.photos ?? []),
+              let scope = await store.ownerScope(),
+              let data = await store.photoData(fullKey: scope + relKey) else { return nil }
+        return UIImage(data: data)
     }
 
     private func toggleCommunity(_ visible: Bool) async {
@@ -404,9 +494,16 @@ struct RecordingDetailView: View {
                         .font(.system(size: 23, weight: .semibold)).foregroundStyle(Theme.inkRead)
                         .lineSpacing(5).fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 14)
-                    Text(recording.displayTitle)
-                        .font(.system(size: 13)).foregroundStyle(Theme.metaRead)
-                        .padding(.top, 8)
+                    // 时间 + 风格 chip 同一行（去掉了原来重复标题的内容）
+                    HStack(spacing: 10) {
+                        if let dt = recording.dateTimeLabel {
+                            Text(dt).font(.system(size: 13)).foregroundStyle(Theme.metaRead)
+                        }
+                        // 无风格版本（老文章/合并文章）也显示 chip（「选风格」），
+                        // 否则这些文章没有入口打开换风格重写。
+                        styleChip
+                    }
+                    .padding(.top, 8)
 
                     if articles.count > 1 { chipRow.padding(.top, 16) }
 
@@ -589,7 +686,7 @@ struct RecordingDetailView: View {
 
     private var currentTime: String { fmt(player.duration > 0 ? player.progress * player.duration : 0) }
     private var totalTime: String { player.duration > 0 ? fmt(player.duration) : (recording.durationLabel ?? "--:--") }
-    private func fmt(_ s: TimeInterval) -> String { let t = Int(s); return String(format: "%02d:%02d", t / 60, t % 60) }
+    private func fmt(_ s: TimeInterval) -> String { s.clockString }
 
     private func loadAndPlay() async {
         loadingAudio = true; defer { loadingAudio = false }
@@ -619,164 +716,27 @@ struct RecordingDetailView: View {
     }
 
     private var emptyState: some View {
-        statusScreen(icon: "speaker.slash", title: "没检测到语音", subtitle: emptyReasonText)
+        let e = emptyDisplay
+        return statusScreen(icon: e.icon, title: e.title, subtitle: e.subtitle)
     }
 
-    private var emptyReasonText: String {
+    /// Reason-aware empty state. The server marks a recording empty for several distinct
+    /// reasons (miner.js writeEmpty): `no-article` means ASR DID hear speech but the model
+    /// found nothing worth publishing — NOT「没检测到语音」. Only no-speech/silent is真没声。
+    private var emptyDisplay: (icon: String, title: String, subtitle: String) {
         switch emptyReason {
-        case "corrupt": return "这条录音的文件损坏了，没法转写。"
-        case "silent":  return "这条录音太短或几乎是静音，没有可转写的内容。"
-        default:        return "这条录音里没有识别到说话声，已标记为无语音。"
+        case "no-article":
+            return ("text.badge.xmark", "没挖出文章",
+                    "这段录音听到了，只是没找到能单独成篇的内容——可能太零碎，或者还没说成一件事。把想法讲完整一点、重录一段试试。")
+        case "too-short":
+            return ("timer", "录得太短", "这段录音太短，没攒够能成文的内容。")
+        case "corrupt":
+            return ("exclamationmark.triangle", "文件损坏", "这条录音的文件损坏了，没法转写。")
+        case let r? where r.hasPrefix("asr-error"):
+            return ("exclamationmark.triangle", "转写没成", "这段录音转写时出错了，过会儿再试或重录一段。")
+        default:   // no-speech / silent / empty-text / 未知
+            return ("speaker.slash", "没检测到语音", "这条录音里没有识别到说话声。")
         }
-    }
-
-    // MARK: Push-to-talk bar (按住说话，仿微信)
-
-    private var voiceBar: some View {
-        let recording = dictation.isRecording
-        let working = agent.state == .working
-        let firstId = agent.queue.first?.id
-        return VStack(spacing: 8) {
-            if let reply = agentReply { replyBubble(reply) }
-            // Pending edits pile up here — newest on top, the one in flight sits
-            // just above the button and drains first; each builds on the last.
-            ForEach(agent.queue.reversed()) { req in
-                queueRow(req, inFlight: req.id == firstId)
-            }
-            if recording { darkBubble(dictation.transcript) }
-            pill(recording: recording, working: working)
-                .shadow(color: .black.opacity(0.10), radius: 12, x: 0, y: 5)   // float over the body
-        }
-        .padding(.horizontal, 16)
-        .padding(.bottom, 10)
-        .frame(maxWidth: .infinity)
-        .animation(.easeInOut(duration: 0.22), value: agent.queue)
-        .animation(.easeInOut(duration: 0.18), value: recording)
-        .animation(.easeInOut(duration: 0.22), value: agentReply)
-    }
-
-    /// One queued instruction. The in-flight head is highlighted; the rest wait.
-    private func queueRow(_ req: ArticleAgentSession.EditRequest, inFlight: Bool) -> some View {
-        HStack(spacing: 8) {
-            if inFlight {
-                Image(systemName: "pencil").font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.accent)
-                    .symbolEffect(.pulse, options: .repeating)
-            } else {
-                Image(systemName: "clock").font(.system(size: 12)).foregroundStyle(Theme.faint)
-            }
-            Text(req.text).font(.system(size: 15))
-                .foregroundStyle(inFlight ? Theme.ink : Theme.secondary)
-                .lineLimit(2)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 12).padding(.vertical, 9)
-        .background(inFlight ? Theme.accentSoft : Theme.card, in: RoundedRectangle(cornerRadius: 13))
-        .overlay(RoundedRectangle(cornerRadius: 13)
-            .stroke(inFlight ? Theme.accent.opacity(0.5) : Theme.borderRead, lineWidth: 1))
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-    }
-
-    private func pill(recording: Bool, working: Bool) -> some View {
-        HStack(spacing: 8) {
-            if recording {
-                Text(willCancel ? "上滑取消 · 松开放弃" : "松开 发送 · 上滑取消")
-                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.accent)
-            } else if working {
-                Image(systemName: "pencil.line").font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(Theme.accent)
-                    .symbolEffect(.pulse, options: .repeating)
-                Text("正在改…按住继续说").font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.ink)
-            } else {
-                Image(systemName: "mic").font(.system(size: 16)).foregroundStyle(Theme.ink)
-                Text("按住 说话 修改").font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.ink)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 15)
-        .background(RoundedRectangle(cornerRadius: Theme.R.primary).fill(Theme.card))
-        .overlay(RoundedRectangle(cornerRadius: Theme.R.primary).stroke(Theme.borderRead, lineWidth: 1))
-        .shadow(color: .clear, radius: 7, x: 0, y: 4)
-        .contentShape(RoundedRectangle(cornerRadius: Theme.R.primary))
-        .gesture(holdGesture())
-    }
-
-    /// The agent's one-line reply. Success: neutral light card. Error: muted-red
-    /// border + warning glyph. It is NOT transient — it stays put until a newer
-    /// reply replaces it or the user taps elsewhere on the page (see articlePane).
-    private func replyBubble(_ reply: AgentReply) -> some View {
-        let warn = Color(hex: "C0392B")
-        return HStack(spacing: 8) {
-            Image(systemName: reply.ok ? "sparkles" : "exclamationmark.triangle.fill")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(reply.ok ? Theme.accent : warn)
-            Text(reply.text)
-                .font(.system(size: 15))
-                .foregroundStyle(Theme.ink)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 12).padding(.vertical, 9)
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: 13))
-        .overlay(RoundedRectangle(cornerRadius: 13)
-            .stroke(reply.ok ? Theme.borderRead : warn.opacity(0.7), lineWidth: 1))
-        .transition(.move(edge: .bottom).combined(with: .opacity))
-    }
-
-    /// Dark bubble above the bar showing the live transcript. Locator references
-    /// the user speaks — 第N行 / 图N — are highlighted in accent so it's clear the
-    /// app understood which line/image is meant.
-    private func darkBubble(_ text: String) -> some View {
-        VStack(spacing: 0) {
-            Group {
-                if text.isEmpty { Text("在听…").foregroundStyle(Color(hex: "B6AD9E")) }
-                else { highlightedTranscript(text) }
-            }
-            .font(.system(size: 16))
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(14)
-            .background(Color(hex: "2E2823"), in: RoundedRectangle(cornerRadius: 16))
-            DownTriangle().fill(Color(hex: "2E2823")).frame(width: 18, height: 9)
-                .padding(.leading, 24).frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
-
-    /// Transcript text with every 第N行 / 图N locator tinted accent (#F0B59B).
-    private func highlightedTranscript(_ s: String) -> Text {
-        var att = AttributedString(s)
-        att.foregroundColor = Color(hex: "FBF6EE")
-        if let re = try? NSRegularExpression(pattern: "第[0-9]+行|图[0-9]+") {
-            let ns = s as NSString
-            for m in re.matches(in: s, range: NSRange(location: 0, length: ns.length)) {
-                guard let sr = Range(m.range, in: s),
-                      let lo = AttributedString.Index(sr.lowerBound, within: att),
-                      let hi = AttributedString.Index(sr.upperBound, within: att) else { continue }
-                att[lo..<hi].foregroundColor = Color(hex: "F0B59B")
-                att[lo..<hi].font = .system(size: 16, weight: .semibold)
-            }
-        }
-        return Text(att)
-    }
-
-    /// Press-and-hold drives dictation; release sends (unless slid up to cancel).
-    private func holdGesture() -> some Gesture {
-        DragGesture(minimumDistance: 0)
-            .onChanged { v in
-                // No working-state gate: speak the next sentence while the last rewrites.
-                guard dictation.authorized == true else { return }
-                if !dictation.isRecording { dictation.start(); hasSpokenOnce = true }
-                willCancel = v.translation.height < -60
-            }
-            .onEnded { v in
-                guard dictation.isRecording else { willCancel = false; return }
-                let cancel = v.translation.height < -60
-                willCancel = false
-                if cancel { dictation.stop(); return }
-                Task {
-                    let text = (await dictation.stopAndGetFinal()).trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !text.isEmpty { agent.enqueue(text, articleIndex: articleIndex) }
-                }
-            }
     }
 
     // MARK: Publish (WeChat)
@@ -833,20 +793,72 @@ private extension Array {
     subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
 }
 
-/// Small downward tail for the transcript bubble.
-struct DownTriangle: Shape {
-    func path(in r: CGRect) -> Path {
-        var p = Path()
-        p.move(to: CGPoint(x: r.minX, y: r.minY))
-        p.addLine(to: CGPoint(x: r.maxX, y: r.minY))
-        p.addLine(to: CGPoint(x: r.midX, y: r.maxY))
-        p.closeSubpath()
-        return p
+/// A ready-to-share payload. `text` = "标题+正文 + 链接" (used by X / 复制 / 备忘录 等);
+/// when `url` is set, link-card targets (WeChat) get the bare URL instead so they
+/// render a rich card from the page's og:image / description.
+struct SharePayload: Identifiable {
+    let text: String
+    var url: URL? = nil
+    var title: String = "VoiceDrop"
+    var image: UIImage? = nil
+    var id: String { text }
+
+    /// The activity items handed to `UIActivityViewController`. With a URL we wrap
+    /// everything in `ArticleShareItem` (per-target adaptation); without one it's
+    /// plain text (no card possible anyway).
+    var activityItems: [Any] {
+        guard let url else { return [text] }
+        return [ArticleShareItem(text: text, url: url, title: title, image: image)]
     }
 }
 
-/// A ready-to-share payload (article excerpt + short link), one String.
-struct SharePayload: Identifiable { let text: String; var id: String { text } }
+/// Adapts one share per target app so each gets what it renders best:
+/// - WeChat (发送给朋友 + 朋友圈, `com.tencent.xin.*`) gets the bare URL → it builds a
+///   rich link card from the page's og:image + `<meta name=description>`. Handing it a
+///   combined text string would post a plain text message with NO card — the original bug.
+/// - X / 其它 get the combined "标题+正文 + 链接" text (X drops a separately-attached URL
+///   item, so the link must stay inline in that single string).
+/// LPLinkMetadata (article title + first photo) is also provided so the card shows a
+/// thumbnail immediately, without waiting on WeChat's server-side crawl.
+final class ArticleShareItem: NSObject, UIActivityItemSource {
+    private let text: String
+    private let url: URL
+    private let shareTitle: String
+    private let image: UIImage?
+
+    init(text: String, url: URL, title: String, image: UIImage?) {
+        self.text = text
+        self.url = url
+        self.shareTitle = title
+        self.image = image
+    }
+
+    private func wantsLinkCard(_ type: UIActivity.ActivityType?) -> Bool {
+        guard let raw = type?.rawValue else { return false }
+        return raw.hasPrefix("com.tencent.xin")
+    }
+
+    func activityViewControllerPlaceholderItem(_ c: UIActivityViewController) -> Any { text }
+
+    func activityViewController(_ c: UIActivityViewController,
+                                itemForActivityType type: UIActivity.ActivityType?) -> Any? {
+        wantsLinkCard(type) ? url : text
+    }
+
+    func activityViewController(_ c: UIActivityViewController,
+                                subjectForActivityType type: UIActivity.ActivityType?) -> String {
+        shareTitle
+    }
+
+    func activityViewControllerLinkMetadata(_ c: UIActivityViewController) -> LPLinkMetadata? {
+        let md = LPLinkMetadata()
+        md.originalURL = url
+        md.url = url
+        md.title = shareTitle
+        if let image { md.imageProvider = NSItemProvider(object: image) }
+        return md
+    }
+}
 
 /// Full-width square photo taken during a recording session, rendered inline in
 /// the article at its `[[photo:N]]` marker. Loads from the public `/photo/<full key>`
@@ -854,9 +866,24 @@ struct SharePayload: Identifiable { let text: String; var id: String { text } }
 /// share pages use.
 struct PhotoTile: View {
     let store: LibraryStore
-    let relKey: String   // relative key, e.g. "photos/<ts>/<ts>.jpg"
+    let relKey: String
 
     @State private var image: UIImage?
+    @State private var failed = false
+    @State private var reloadToken = 0
+    @State private var dim = false   // 呼吸点/扫光驱动
+    @State private var showMaking = false   // 0.9s 宽限期后才升级为「制作中」
+
+    // 设计稿 Image Placeholder.dc.html 的暖纸/金棕/灰配色
+    private let paperTop = Color(red: 0.953, green: 0.933, blue: 0.894)   // #F3EEE4
+    private let paperBot = Color(red: 0.925, green: 0.894, blue: 0.839)   // #ECE4D6
+    private let gold     = Color(red: 0.788, green: 0.541, blue: 0.180)   // #C98A2E
+    private let goldText = Color(red: 0.541, green: 0.482, blue: 0.376)   // #8A7B60
+    private let corner   = Color(red: 0.706, green: 0.663, blue: 0.561)   // #B4A98F
+    private let failBg   = Color(red: 0.957, green: 0.945, blue: 0.922)   // #F4F1EB
+    private let failIcon = Color(red: 0.690, green: 0.655, blue: 0.596)   // #B0A798
+    private let failText = Color(red: 0.604, green: 0.569, blue: 0.514)   // #9A9183
+    private let retryOra = Color(red: 0.753, green: 0.408, blue: 0.180)   // #C0682E
 
     var body: some View {
         RoundedRectangle(cornerRadius: 12)
@@ -865,27 +892,81 @@ struct PhotoTile: View {
             .frame(maxWidth: .infinity)
             .overlay {
                 if let img = image {
-                    Image(uiImage: img)
-                        .resizable().scaledToFill()
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    Image(uiImage: img).resizable().scaledToFill().clipShape(RoundedRectangle(cornerRadius: 12))
+                } else if failed {
+                    failedView
+                } else if showMaking {
+                    makingView
                 } else {
-                    ProgressView().tint(Theme.accent)
+                    graceView
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 12))
-            // Bind the download to `relKey`, NOT to the view's identity. In the body
-            // ForEach a row's identity is positional ("i\(n)"), so when a newly inserted
-            // photo shifts the numbering, an existing PhotoTile is reused with a *new*
-            // relKey while its identity stays the same. A plain `.task` would not re-run,
-            // leaving the stale (old) image on screen — two different markers showing the
-            // same photo. `.task(id: relKey)` re-runs whenever the key changes.
-            .task(id: relKey) {
-                image = nil
-                // One photo logic everywhere: resolve own scope → full key → public /photo endpoint.
-                guard let scope = await store.ownerScope(),
-                      let data = await store.photoData(fullKey: scope + relKey) else { return }
-                image = UIImage(data: data)
+            .task(id: "\(relKey)#\(reloadToken)") { await load() }
+    }
+
+    /// 加载前 ~0.9s 的宽限期：只露暖纸底色，不出「制作中」文案，避免正常图片一闪而过。
+    private var graceView: some View {
+        LinearGradient(colors: [paperTop, paperBot], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+
+    private var makingView: some View {
+        LinearGradient(colors: [paperTop, paperBot], startPoint: .topLeading, endPoint: .bottomTrailing)
+            .overlay {
+                VStack(spacing: 12) {
+                    Image(systemName: "photo").font(.system(size: 30, weight: .regular)).foregroundStyle(gold)
+                    Text("正在制作中").font(.system(size: 13, weight: .semibold)).foregroundStyle(goldText)
+                    HStack(spacing: 5) {
+                        ForEach(0..<3) { i in
+                            Circle().fill(gold).frame(width: 5, height: 5)
+                                .opacity(dim ? 0.25 : 1)
+                                .animation(.easeInOut(duration: 0.7).repeatForever().delay(Double(i) * 0.2), value: dim)
+                        }
+                    }
+                    Text("约 1 分钟完成").font(.system(size: 11)).foregroundStyle(corner)
+                }
             }
+            .onAppear { dim = true }
+    }
+
+    private var failedView: some View {
+        failBg.overlay {
+            VStack(spacing: 10) {
+                Image(systemName: "photo").font(.system(size: 30)).foregroundStyle(failIcon)
+                Text("暂时无法显示").font(.system(size: 12)).foregroundStyle(failText)
+                Button {
+                    failed = false; image = nil; reloadToken += 1
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .semibold))
+                        Text("重试").font(.system(size: 12, weight: .semibold))
+                    }
+                    .foregroundStyle(retryOra)
+                    .padding(.horizontal, 11).padding(.vertical, 4)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(retryOra.opacity(0.35)))
+                }
+            }
+        }
+    }
+
+    private func load() async {
+        image = nil; failed = false; showMaking = false
+        guard let scope = await store.ownerScope() else { failed = true; return }
+        // 0.9s 宽限期：正常已存在的图片多在此窗口内加载完成，不升级为「制作中」；
+        // 只有真的还没出图才翻牌。
+        let grace = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            if image == nil && !Task.isCancelled { showMaking = true }
+        }
+        defer { grace.cancel() }
+        let deadline = Date().addingTimeInterval(300)   // 5 分钟封顶
+        while !Task.isCancelled && Date() < deadline {
+            if let data = await store.photoData(fullKey: scope + relKey), let ui = UIImage(data: data) {
+                image = ui; showMaking = false; return
+            }
+            try? await Task.sleep(nanoseconds: 3_000_000_000)  // 3s 后重试（仅在图可见且未出时）
+        }
+        if image == nil && !Task.isCancelled { failed = true }
     }
 }
 
@@ -896,4 +977,98 @@ struct ShareSheet: UIViewControllerRepresentable {
         UIActivityViewController(activityItems: items, applicationActivities: nil)
     }
     func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
+}
+
+// MARK: - 换个风格重写 (per Player Edit Toolbar.dc.html, screen ③)
+
+/// Pick a 文风 version to rewrite the current article with. "原文不变，可随时换回."
+/// onUse(v): the detail view reuses an existing tagged version (free) or calls /agent/restyle.
+struct RestyleSheet: View {
+    let versions: [StyleVersion]      // 文风 versions, oldest-first
+    let currentStyleV: Int?           // the article's current style version (if tagged)
+    let onUse: (Int) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var selected: Int?
+
+    private var pick: Int? { selected ?? currentStyleV }
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("换个风格重写").font(.system(size: 19, weight: .semibold)).foregroundStyle(Theme.ink)
+                    Text("选一个范文版本，把本文重写一遍。原文不变，可随时换回。")
+                        .font(.system(size: 13)).foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.top, 6).padding(.bottom, 12)
+
+                if versions.isEmpty {
+                    Spacer()
+                    Text("还没有写作风格版本。\n先去设置 → 写作风格里保存一份。")
+                        .font(.system(size: 14)).foregroundStyle(Theme.faint).multilineTextAlignment(.center)
+                    Spacer()
+                } else {
+                    ScrollView {
+                        VStack(spacing: 8) {
+                            ForEach(versions.reversed()) { ver in row(ver) }
+                        }
+                        .padding(.horizontal, 16).padding(.top, 2).padding(.bottom, 8)
+                    }
+                    bottomButton.padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 10)
+                }
+            }
+            .background(Theme.appBG.ignoresSafeArea())
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarLeading) { Button("取消") { dismiss() } } }
+        }
+    }
+
+    private func row(_ ver: StyleVersion) -> some View {
+        let isPick = pick == ver.v
+        return Button { selected = ver.v } label: {
+            HStack(spacing: 12) {
+                Text("v\(ver.v)").font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(isPick ? Theme.accent : Theme.ink).frame(width: 38, alignment: .leading)
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(ver.displayName).font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(isPick ? Theme.accent : Theme.ink).lineLimit(1)
+                        if ver.v == currentStyleV {
+                            Text("当前").font(.system(size: 11, weight: .semibold)).foregroundStyle(Theme.accent)
+                                .padding(.horizontal, 6).padding(.vertical, 1).background(Theme.accentSoft, in: Capsule())
+                        }
+                    }
+                    Text("\(ver.charCount) 字 · \(DateFormatter.zh("M月d日").string(from: ver.date))")
+                        .font(.system(size: 12)).foregroundStyle(isPick ? Theme.accent.opacity(0.8) : Theme.secondary)
+                }
+                Spacer(minLength: 8)
+                ZStack {
+                    Circle().fill(isPick ? Theme.accent : .clear).frame(width: 21, height: 21)
+                    Circle().stroke(isPick ? Theme.accent : Theme.inputBorder, lineWidth: 1.6).frame(width: 21, height: 21)
+                    if isPick { Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(.white) }
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 13)
+            .background(isPick ? Theme.accentSoft : Theme.card, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(isPick ? Theme.accent : Theme.inputBorder, lineWidth: isPick ? 1.5 : 1))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var bottomButton: some View {
+        Button {
+            if let p = pick { onUse(p); dismiss() }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 15, weight: .semibold))
+                Text(pick.map { "用 v\($0) 重写本文" } ?? "选一个版本")
+                    .font(.system(size: 16, weight: .semibold))
+            }
+            .foregroundStyle(.white).frame(maxWidth: .infinity).padding(.vertical, 15)
+            .background(pick == nil ? Theme.accent.opacity(0.4) : Theme.accent, in: RoundedRectangle(cornerRadius: 10))
+        }
+        .buttonStyle(.plain).disabled(pick == nil)
+    }
 }

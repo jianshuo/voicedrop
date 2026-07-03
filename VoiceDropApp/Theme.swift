@@ -49,6 +49,10 @@ enum Theme {
     static let recordRedSoft  = Color(hex: "FBEAE7")   // 列表波形块底
     static let greenDone      = Color(hex: "5E8A6A")
     static let amberPending   = Color(hex: "C98A3C")
+    static let amber          = Color(hex: "C98A2E")   // 算力（lightning / 数字）
+    static let amberSoft      = Color(hex: "FBEAD2")   // 算力 tile / chip 底
+    static let inkHeroTop     = Color(hex: "2A2521")   // 算力余额 hero 渐变
+    static let inkHeroBot     = Color(hex: "3A332A")
 
     // WeChat connected banner
     static let okBannerBG     = Color(hex: "EAF1EC")
@@ -148,22 +152,33 @@ final class Prefs {
     var deleteLocalAfterUpload: Bool { didSet { d.set(deleteLocalAfterUpload, forKey: "pref.deleteLocal") } }
     var highQuality: Bool { didSet { d.set(highQuality, forKey: "pref.highQuality") } }
 
+    // 多风格对比：multiStyle = 开关（本地 UI）；styles = 选中的文风版本号（最多 3 个，
+    // 同步进 profile.styles 供 miner 读）。
+    var multiStyle: Bool { didSet { d.set(multiStyle, forKey: "pref.multiStyle") } }
+    var styles: [Int] { didSet { d.set(styles, forKey: "pref.styles") } }
+
     private init() {
         iCloudBackup = d.object(forKey: "pref.iCloudBackup") as? Bool ?? true
         deleteLocalAfterUpload = d.object(forKey: "pref.deleteLocal") as? Bool ?? true
         highQuality = d.object(forKey: "pref.highQuality") as? Bool ?? false
+        multiStyle = d.object(forKey: "pref.multiStyle") as? Bool ?? false
+        styles = (d.array(forKey: "pref.styles") as? [Int]) ?? []
     }
 
-    /// AVAudioRecorder settings for the chosen quality. 标准 = the original 64 kbps;
-    /// 高 = 96 kbps / high.
+    /// AVAudioRecorder settings, tuned for SPEECH → ASR (not music). The audio is only
+    /// ever (a) played back in-app and (b) fed to Volcano ASR, which works at 16 kHz —
+    /// so the old 44.1 kHz / 64 kbps was pure waste (the encoder spent bits on a band
+    /// nothing consumes). 16 kHz mono + a low AAC bitrate **halves the file and the
+    /// upload time** with no loss of ASR accuracy. 标准 = 16 kHz / 32 kbps (≈1.2 MB per
+    /// 5 min, was ~2.4 MB); 高 = 24 kHz / 64 kbps for fuller playback (≈2.4 MB, was ~3.6 MB).
     nonisolated var recorderSettings: [String: Any] {
         let high = UserDefaults.standard.object(forKey: "pref.highQuality") as? Bool ?? false
         return [
             AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
-            AVSampleRateKey: 44_100,
+            AVSampleRateKey: high ? 24_000 : 16_000,
             AVNumberOfChannelsKey: 1,
             AVEncoderAudioQualityKey: (high ? AVAudioQuality.high : .medium).rawValue,
-            AVEncoderBitRateKey: high ? 96_000 : 64_000,
+            AVEncoderBitRateKey: high ? 64_000 : 32_000,
         ]
     }
 

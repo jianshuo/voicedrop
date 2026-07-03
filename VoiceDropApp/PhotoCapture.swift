@@ -397,7 +397,7 @@ final class PhotoCaptureVC: UIViewController, PHPickerViewControllerDelegate {
     /// "● 录音中 · MM:SS" — red dot via an attributed leading glyph.
     private func updateTimerLabel() {
         let elapsed = recordingStart.map { Int(Date().timeIntervalSince($0)) } ?? 0
-        let mmss = String(format: "%02d:%02d", max(0, elapsed) / 60, max(0, elapsed) % 60)
+        let mmss = max(0, elapsed).clockString
         let dot = NSTextAttachment()
         let r: CGFloat = 7
         let renderer = UIGraphicsImageRenderer(size: CGSize(width: r, height: r))

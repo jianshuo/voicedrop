@@ -34,8 +34,8 @@ final class CommunityStore {
     var loading = false
     var error: String?
 
-    private let base = URL(string: "https://jianshuo.dev/files/api")!
-    private let recoBase = URL(string: "https://jianshuo.dev/reco")!
+    private let base = API.filesBase
+    private let recoBase = API.recoBase
     private var token: String { AuthStore.shared.bearer }
 
     /// Community WRITES (share / unshare) need an Apple-verified identity — the server
@@ -59,6 +59,7 @@ final class CommunityStore {
             guard resp.isOK else { error = "加载失败"; return }
             struct R: Decodable { let posts: [CommunityPost] }
             posts = try JSONDecoder().decode(R.self, from: data).posts
+                .filter { !BlockStore.isBlocked($0.author) }   // local block list (Apple 1.2)
             await applyRanking()
         } catch { self.error = error.localizedDescription }
     }
@@ -97,15 +98,8 @@ final class CommunityStore {
     /// Share (or re-share) one of the user's articles. Returns shareId on success, nil on failure.
     /// `replyTo` links this post to another post's shareId.
     func share(_ rec: Recording, replyTo: String? = nil) async -> String? {
-        needsAppleSignIn = false
         guard !token.isEmpty, rec.hasArticles else { return nil }
-        if let id = await postShare(rec, replyTo: replyTo) { return id }
-        if needsAppleSignIn {
-            await AuthStore.shared.signInWithApple()
-            guard AuthStore.shared.isAuthenticated else { return nil }
-            return await postShare(rec, replyTo: replyTo)
-        }
-        return nil
+        return await withAppleRetry({ await postShare(rec, replyTo: replyTo) }, isSuccess: { $0 != nil })
     }
 
     /// Returns shareId if this recording is currently shared to the community, nil otherwise.
@@ -124,6 +118,24 @@ final class CommunityStore {
 
     private var needsAppleSignIn = false
 
+    /// Set `needsAppleSignIn` from a gated 403 — the ONE place that knows the
+    /// `needs_apple_signin` contract (was inlined in postShare + postUnshare).
+    private func markNeedsAppleSignin(code: Int, data: Data) {
+        needsAppleSignIn = code == 403 &&
+            (try? JSONDecoder().decode([String: String].self, from: data))?["error"] == "needs_apple_signin"
+    }
+
+    /// Run a community write once; if it failed with a gated 403, prompt Apple
+    /// sign-in and retry exactly once. The single share/unshare retry handshake.
+    private func withAppleRetry<T>(_ op: () async -> T, isSuccess: (T) -> Bool) async -> T {
+        needsAppleSignIn = false
+        let first = await op()
+        guard !isSuccess(first), needsAppleSignIn else { return first }
+        await AuthStore.shared.signInWithApple()
+        guard AuthStore.shared.isAuthenticated else { return first }
+        return await op()
+    }
+
     private func postShare(_ rec: Recording, replyTo: String?) async -> String? {
         var req = URLRequest(url: base.appending(path: "community").appending(path: "share").appending(path: rec.articleKey))
         req.httpMethod = "POST"
@@ -140,24 +152,18 @@ final class CommunityStore {
                 struct R: Decodable { let shareId: String? }
                 return (try? JSONDecoder().decode(R.self, from: data))?.shareId
             }
-            needsAppleSignIn = (code == 403) &&
-                ((try? JSONDecoder().decode([String: String].self, from: data))?["error"] == "needs_apple_signin")
+            markNeedsAppleSignin(code: code, data: data)
             return nil
         } catch { return nil }
     }
 
     @discardableResult
     func unshare(_ shareId: String) async -> Bool {
-        needsAppleSignIn = false
         guard !token.isEmpty else { return false }
-        posts.removeAll { $0.shareId == shareId }
-        if await postUnshare(shareId) { return true }
-        if needsAppleSignIn {
-            await AuthStore.shared.signInWithApple()
-            if AuthStore.shared.isAuthenticated { if await postUnshare(shareId) { return true } }
-            await load(); return false
-        }
-        await load(); return false
+        posts.removeAll { $0.shareId == shareId }                 // optimistic
+        let ok = await withAppleRetry({ await postUnshare(shareId) }, isSuccess: { $0 })
+        if !ok { await load() }                                   // failed → resync the optimistic removal
+        return ok
     }
 
     private func postUnshare(_ shareId: String) async -> Bool {
@@ -168,8 +174,7 @@ final class CommunityStore {
             let (data, resp) = try await URLSession.shared.data(for: req)
             let code = resp.httpStatusCode
             if (200..<300).contains(code) { needsAppleSignIn = false; return true }
-            needsAppleSignIn = (code == 403) &&
-                ((try? JSONDecoder().decode([String: String].self, from: data))?["error"] == "needs_apple_signin")
+            markNeedsAppleSignin(code: code, data: data)
             return false
         } catch { return false }
     }
@@ -200,16 +205,7 @@ final class CommunityStore {
     /// Download a photo by its full R2 key (`users/<sub>/photos/…`) via the public
     /// `/photo/<key>` endpoint — no auth, the same URL the web pages use. One photo
     /// logic everywhere: read straight from the photo's original location.
-    func photoData(fullKey: String) async -> Data? {
-        guard !fullKey.isEmpty else { return nil }
-        let enc = fullKey.urlPathEncoded
-        guard let url = URL(string: "\(base.absoluteString)/photo/\(enc)") else { return nil }
-        do {
-            let (data, resp) = try await URLSession.shared.data(from: url)
-            guard resp.isOK else { return nil }
-            return data
-        } catch { return nil }
-    }
+    func photoData(fullKey: String) async -> Data? { await PhotoService.data(fullKey: fullKey) }
 
     /// Report one engagement. Failures are silently ignored — when reco is down the
     /// core experience is unaffected.
@@ -224,6 +220,23 @@ final class CommunityStore {
         if let on { body["on"] = on }
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         _ = try? await URLSession.shared.data(for: req)
+    }
+
+    /// Report a post for objectionable content (Apple 1.2). The server HIDES it from
+    /// the community immediately (pending owner review); we also drop it from the local
+    /// feed right away so the reporter never sees it again.
+    @discardableResult
+    func report(_ shareId: String, reason: String = "") async -> Bool {
+        guard !token.isEmpty else { return false }
+        posts.removeAll { $0.shareId == shareId }
+        var req = URLRequest(url: base.appending(path: "community").appending(path: "report").appending(path: shareId))
+        req.httpMethod = "POST"
+        req.timeoutInterval = 5
+        req.setBearer(token)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["reason": reason])
+        do { let (_, resp) = try await URLSession.shared.data(for: req); return resp.isOK }
+        catch { return false }
     }
 
     /// Posts that are responses to `shareId`, oldest-first.
@@ -244,10 +257,8 @@ final class CommunityStore {
 func communityDate(_ ms: Double?) -> String {
     guard let ms else { return "" }
     let date = Date(timeIntervalSince1970: ms / 1000)
-    let f = DateFormatter()
-    f.locale = Locale(identifier: "zh_CN")
-    f.dateFormat = Calendar.current.isDate(date, equalTo: Date(), toGranularity: .year) ? "M月d日" : "yyyy年M月d日"
-    return f.string(from: date)
+    let fmt = Calendar.current.isDate(date, equalTo: Date(), toGranularity: .year) ? "M月d日" : "yyyy年M月d日"
+    return DateFormatter.zh(fmt).string(from: date)
 }
 
 // MARK: - Community post view
@@ -272,6 +283,7 @@ struct CommunityPostView: View {
     @State private var liked = false
     @State private var finishedReported = false
     @State private var showReportConfirm = false
+    @State private var showBlockConfirm = false
 
     // Recording a response
     @State private var recorder = AudioRecorder()
@@ -333,16 +345,28 @@ struct CommunityPostView: View {
         .navigationDestination(item: $selectedOriginal) { orig in
             CommunityPostView(store: store, post: orig, onRecordFinished: onRecordFinished)
         }
-        .sheet(item: $sharePayload) { ShareSheet(items: [$0.text]) }
+        .sheet(item: $sharePayload) { ShareSheet(items: $0.activityItems) }
         .confirmationDialog("举报这篇分享？", isPresented: $showReportConfirm, titleVisibility: .visible) {
-            Button("举报", role: .destructive) {
-                // 举报就是一次 engage 互动 —— 大幅降低它在社区里的排序。一次性、无法撤销。
-                Task { await store.engage(post.shareId, action: "report") }
-                showToast("已举报，感谢反馈")
+            Button("举报并下架", role: .destructive) {
+                // 举报立即让它从社区下架（待人工审核），并从本地列表移除。
+                Task { await store.report(post.shareId) }
+                showToast("已举报，内容已下架待审核")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { dismiss() }
             }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("举报会降低它在社区里的排序，且无法撤销。")
+            Text("举报后这篇会立即从社区下架，并在 24 小时内由人工审核处理。")
+        }
+        .confirmationDialog("屏蔽此用户？", isPresented: $showBlockConfirm, titleVisibility: .visible) {
+            Button("屏蔽", role: .destructive) {
+                BlockStore.block(full?.author ?? post.author)
+                store.posts.removeAll { ($0.author ?? "") == (full?.author ?? post.author ?? "") }
+                showToast("已屏蔽，TA 的内容将不再显示")
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { dismiss() }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("屏蔽后，你将不再看到 \(full?.author ?? post.author ?? "该用户") 的任何社区内容。可在「设置」里取消屏蔽。")
         }
         .task {
             liked = store.likedShareIds.contains(post.shareId)
@@ -383,11 +407,14 @@ struct CommunityPostView: View {
                 Button { Task { await startResponse() } } label: {
                     Label("写回应", systemImage: "mic")
                 }
-                Button { sharePost() } label: {
+                Button { Task { await sharePost() } } label: {
                     Label("分享", systemImage: "square.and.arrow.up")
                 }
                 Button(role: .destructive) { showReportConfirm = true } label: {
                     Label("举报", systemImage: "flag")
+                }
+                Button(role: .destructive) { showBlockConfirm = true } label: {
+                    Label("屏蔽此用户", systemImage: "hand.raised")
                 }
             } label: {
                 RoundedRectangle(cornerRadius: Theme.R.nav)
@@ -582,32 +609,44 @@ struct CommunityPostView: View {
     }
 
     private func promote(_ take: AudioRecorder.Recording) async {
-        let place = await location.placeTag()
-        let finalName = RecordingName.make(start: take.start, duration: take.duration, place: place)
-        var finalURL = AudioRecorder.documentsDir.appending(path: finalName)
-        do {
-            try FileManager.default.moveItem(at: take.url, to: finalURL)
-        } catch {
-            let fallback = "VoiceDrop-\(RecordingName.timestamp(take.start)).m4a"
-            let fallbackURL = AudioRecorder.documentsDir.appending(path: fallback)
-            if (try? FileManager.default.moveItem(at: take.url, to: fallbackURL)) != nil {
-                finalURL = fallbackURL
-            }
-        }
+        let finalURL = await RecordingPromoter.promote(take, place: await location.placeTag())
         // LibraryView.onChange picks this up when the article is mined and auto-shares with replyTo.
         UserDefaults.standard.set(post.shareId, forKey: "vd.pendingReply.\(finalURL.lastPathComponent)")
-        if Prefs.shared.iCloudBackup {
-            let toArchive = finalURL
-            await Task.detached { ICloudArchive.save(toArchive) }.value
-        }
     }
 
     // MARK: Share this post
 
-    private func sharePost() {
+    /// Share this 社区 post EXACTLY like one of your own articles: hand WeChat the
+    /// public `/voicedrop/<shareId>` link (the page resolves a community shareId too),
+    /// so it builds a rich link card — first photo + description — from the page og tags.
+    /// X / 其它 get the full text + inline link. Same `ArticleShareItem` as 我的录音.
+    private func sharePost() async {
         let title = full?.articles?.first?.title ?? post.title ?? "VoiceDrop 分享"
         let author = full?.author ?? post.author ?? "匿名"
-        sharePayload = SharePayload(text: "《\(title)》— \(author)\n来自 VoiceDrop 社区")
+        // Full text (every section, markers stripped) — matches the article-list share.
+        let arts = full?.articles ?? []
+        let allText = arts.isEmpty
+            ? "《\(title)》— \(author)\n来自 VoiceDrop 社区"
+            : ArticleBody.shareText(arts)
+        guard var comps = URLComponents(url: API.sharePage(post.shareId), resolvingAgainstBaseURL: false) else {
+            sharePayload = SharePayload(text: allText); return
+        }
+        comps.queryItems = [URLQueryItem(name: "s", value: String(articleIndex))]
+        guard let url = comps.url else { sharePayload = SharePayload(text: allText); return }
+        let image = await firstPhotoImage()                  // best-effort card thumbnail
+        sharePayload = SharePayload(text: allText + "\n\n" + url.absoluteString,
+                                    url: url, title: title, image: image)
+    }
+
+    /// First photo of the currently-shown article — the WeChat link-card thumbnail.
+    /// Best-effort: nil when there's no photo or the fetch fails (then WeChat falls back
+    /// to the page's og:image). Loads cross-user via the public `/photo/<key>` endpoint.
+    private func firstPhotoImage() async -> UIImage? {
+        guard let owner = full?.owner,
+              let body = full?.articles?[safe: articleIndex]?.body,
+              let relKey = ArticleBody.firstPhotoKey(in: body, photos: full?.photos ?? []),
+              let data = await store.photoData(fullKey: owner + relKey) else { return nil }
+        return UIImage(data: data)
     }
 
     // MARK: Toast
@@ -632,9 +671,7 @@ struct CommunityPostView: View {
         }
     }
 
-    private func timeString(_ t: TimeInterval) -> String {
-        let s = Int(t); return String(format: "%02d:%02d", s / 60, s % 60)
-    }
+    private func timeString(_ t: TimeInterval) -> String { t.clockString }
 }
 
 private extension Array {

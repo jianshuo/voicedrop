@@ -27,6 +27,21 @@ extension String {
     }
 }
 
+/// THE single source of truth for every backend host/URL. Was hardcoded as
+/// `URL(string: "https://jianshuo.dev/…")!` in ~14 spots across the app (and the
+/// Share Extension) — point the app at a staging host by editing only `host` here.
+/// Compiled into BOTH targets (this file is in VoiceDropShare too).
+enum API {
+    static let host = "jianshuo.dev"
+    static let filesBase = URL(string: "https://\(host)/files/api")!   // Files API (articles, files, photos, share, wechat, community)
+    static let agentBase = URL(string: "https://\(host)/agent")!       // Agent worker (mine trigger, usage, link REST)
+    static let recoBase  = URL(string: "https://\(host)/reco")!        // Reco worker (ranking, engagement)
+    static let agentWS   = "wss://\(host)/agent"                        // WebSocket base: append /edit, /status, /asr (+ query)
+    static let agentLink = URL(string: "https://\(host)/agent/link")!  // DeviceLink REST (start / verify / …)
+    /// Public share / community page for a share id.
+    static func sharePage(_ id: String) -> URL { URL(string: "https://\(host)/voicedrop/\(id)")! }
+}
+
 /// Cross-process bridge between the VoiceDrop app and its Share Extension. The
 /// two run in separate sandboxes; the App Group is the only channel they share.
 /// We mirror just the bearer token here (not the Keychain itself) so the
@@ -35,8 +50,8 @@ extension String {
 enum AppGroup {
     static let id = "group.com.wangjianshuo.VoiceDrop"
 
-    /// Same R2-backed upload endpoint the in-app `Uploader` PUTs to.
-    static let uploadBase = URL(string: "https://jianshuo.dev/files/api/upload")!
+    /// Same R2-backed upload endpoint the in-app `Uploader` PUTs to (derived from API).
+    static let uploadBase = API.filesBase.appendingPathComponent("upload")
 
     private static let bearerKey = "bearer"
     private static var store: UserDefaults? { UserDefaults(suiteName: id) }

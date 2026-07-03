@@ -8,6 +8,7 @@ import AVFoundation
 struct MinedArticle: Decodable, Identifiable {
     let title: String
     let body: String
+    var style: Int?                 // 文风版本 per-article 字段（legacy 文章在 body 注释里，读回退）
     var wechatMediaId: String?      // present once a WeChat draft has been created
     var id: String { title + "\(body.count)" }
 }
@@ -76,7 +77,9 @@ enum ArticleBody {
     }
 
     /// Split a body into text + photo segments at `[[photo:<token>]]` markers.
+    /// The leading origin comment (`<!--风格vN-->`) is stripped first — it's a label, not content.
     static func segments(_ body: String) -> [ArticleSegment] {
+        let body = stripOriginComment(body)
         let ns = body as NSString
         let matches = marker.matches(in: body, range: NSRange(location: 0, length: ns.length))
         guard !matches.isEmpty else { return [.text(body)] }
@@ -98,14 +101,71 @@ enum ArticleBody {
         return out
     }
 
-    /// Body with all `[[photo:N]]` markers removed — for places that can't render
-    /// the session photos (WeChat, the cross-user community, share excerpts).
+    /// Body with all `[[photo:N]]` markers AND the origin comment removed — for places
+    /// that can't render the session photos (WeChat, the cross-user community, share excerpts).
     static func stripMarkers(_ body: String) -> String {
-        let ns = body as NSString
+        let ns = stripOriginComment(body) as NSString
         let stripped = marker.stringByReplacingMatches(
-            in: body, range: NSRange(location: 0, length: ns.length), withTemplate: "")
+            in: ns as String, range: NSRange(location: 0, length: ns.length), withTemplate: "")
         return stripped.replacingOccurrences(of: "\n\n\n", with: "\n\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // LEGACY body comment protocol: `<!-- key: value -->`. The 文风版本 moved to the
+    // per-article `style` FIELD (2026-07-03) — a hidden comment line desynced the 第N行
+    // numbering between app and agent. Server-side migration stripped stored bodies;
+    // these parsers remain as read fallback for stragglers, and stripOriginComment
+    // stays so a comment can never reach any rendered surface.
+    private static let metaComment = try! NSRegularExpression(pattern: #"<!--\s*([A-Za-z][\w-]*)\s*:\s*(.*?)\s*-->"#)
+    private static let anyComment  = try! NSRegularExpression(pattern: #"<!--.*?-->"#, options: [.dotMatchesLineSeparators])
+
+    /// Parse `<!-- key: value -->` comments into a dict (last value wins per key).
+    static func meta(_ body: String) -> [String: String] {
+        let ns = body as NSString
+        var out: [String: String] = [:]
+        for m in metaComment.matches(in: body, range: NSRange(location: 0, length: ns.length)) {
+            let k = ns.substring(with: m.range(at: 1))
+            let v = ns.substring(with: m.range(at: 2)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if !v.isEmpty { out[k] = v }
+        }
+        return out
+    }
+
+    /// The `style` comment value (e.g. "风格 v8"), or nil. Legacy fallback only —
+    /// the chip label itself is built by StyleNaming.chipLabel from the version number.
+    static func styleLabel(_ body: String) -> String? { meta(body)["style"] }
+    /// The 文风 version number tagged on a body's `style` comment (e.g. "风格 v8" → 8), or nil.
+    static func styleVersion(_ body: String) -> Int? {
+        guard let s = styleLabel(body), let r = s.range(of: #"\d+"#, options: .regularExpression) else { return nil }
+        return Int(s[r])
+    }
+
+    /// Body with ALL `<!--…-->` comments removed (metadata, never shown).
+    static func stripOriginComment(_ body: String) -> String {
+        let ns = body as NSString
+        return anyComment.stringByReplacingMatches(
+            in: body, range: NSRange(location: 0, length: ns.length), withTemplate: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Relative R2 key of the FIRST photo referenced in `body` (legacy numeric markers
+    /// resolved via `photos`), or nil. Callers join their own scope/owner prefix and fetch.
+    /// One place that knows "the first photo of an article" (was inlined in the own-article
+    /// and community share paths).
+    static func firstPhotoKey(in body: String, photos: [String]) -> String? {
+        for seg in segments(body) {
+            if case .photo(let token) = seg, let relKey = resolvePhotoKey(token, photos: photos) { return relKey }
+        }
+        return nil
+    }
+
+    /// Plain-text share body for one or more sections: markers stripped, multi-section
+    /// titles bracketed, sections joined by a divider. The ONE share-text format every
+    /// surface uses (own-article + community).
+    static func shareText(_ articles: [MinedArticle]) -> String {
+        let multi = articles.count > 1
+        return articles.map { multi ? "【\($0.title)】\n\n\(stripMarkers($0.body))" : "\($0.title)\n\n\(stripMarkers($0.body))" }
+            .joined(separator: "\n\n---\n\n")
     }
 }
 
@@ -113,6 +173,13 @@ enum ArticleBody {
 /// the status WebSocket). Drives the in-flight badge label.
 enum MiningPhase: String { case asr, mining
     var badge: String { self == .asr ? "听录音" : "挖文章" }
+}
+
+/// Why the miner couldn't process a recording (the `.blocked` marker's reason). The
+/// ONE place the wire strings + their badge labels live (was split between the default
+/// in LibraryStore.fetchBlockReason and the label mapping in LibraryView).
+enum BlockReason: String { case noCredit = "no-credit", tooLong = "too-long"
+    var label: String { self == .tooLong ? "录音过长" : "余额不足" }
 }
 
 /// A recording as seen in the user's R2 space: the audio key plus whether the
@@ -123,6 +190,7 @@ struct Recording: Identifiable, Hashable {
     let hasArticles: Bool
     let isEmpty: Bool            // a `articles/<stem>.empty` marker exists (no usable speech)
     var articleTitle: String?    // first mined article's title; fills the place slot once 已成文
+    var coverPhotoKey: String?   // rel R2 key of the article's FIRST photo; shown as the row's left icon (nil → waveform)
     var uploading: Bool = false  // a local take still in the upload queue (not yet on the server)
     var phase: MiningPhase? = nil // server is actively mining this right now (WebSocket push); nil = not in-flight
     var blockReason: String? = nil   // "no-credit" | "too-long"; nil = not blocked
@@ -131,9 +199,17 @@ struct Recording: Identifiable, Hashable {
 
     var id: String { audioName }
     var stem: String { String(audioName.dropLast(4)) }          // strip .m4a
-    var articleKey: String { "articles/\(stem).json" }
-    var emptyKey: String { "articles/\(stem).empty" }
-    var srtKey: String { "articles/\(stem).srt" }
+    var articleKey: String { Recording.articleKey(forStem: stem) }
+    var emptyKey: String { Recording.emptyKey(forStem: stem) }
+    var srtKey: String { Recording.srtKey(forStem: stem) }
+    var blockedKey: String { Recording.blockedKey(forStem: stem) }
+
+    // The article-sidecar key layout, defined ONCE. LibraryStore.load checks these
+    // before a Recording exists, so they're static; the instance vars above delegate here.
+    static func articleKey(forStem s: String) -> String { "articles/\(s).json" }
+    static func emptyKey(forStem s: String)   -> String { "articles/\(s).empty" }
+    static func srtKey(forStem s: String)     -> String { "articles/\(s).srt" }
+    static func blockedKey(forStem s: String) -> String { "articles/\(s).blocked" }
 
     /// "6月18日 14:30 · Xuhui" style label — kept for detail views and export.
     var displayTitle: String {
@@ -144,29 +220,53 @@ struct Recording: Identifiable, Hashable {
     /// First line of a list row: article title when 已成文, place name otherwise, stem as fallback.
     var rowTitle: String {
         if let t = articleTitle, !t.isEmpty { return t }
-        let p = stem.components(separatedBy: "-")
-        guard p.count >= 5, p[0] == "VoiceDrop", p[1].count == 4 else { return stem }
-        let place = p.count >= 10 ? p[9] : (p.count >= 9 ? p[8] : "")
-        return place.isEmpty ? stem : place
+        return RecordingName.parse(stem)?.place ?? stem
     }
 
-    /// Second line of a list row: "6月18日 14:30" parsed from the filename.
+    /// Second line of a list row: "6月18日 14:30" from the R2 upload time, shown in
+    /// the device's LOCAL timezone (uploaded is ISO-8601 UTC). The filename's embedded
+    /// timestamp isn't a reliable clock, so prefer `uploaded`; fall back to the name
+    /// only when `uploaded` is missing/unparseable.
     var dateTimeLabel: String? {
-        let p = stem.components(separatedBy: "-")
-        guard p.count >= 5, p[0] == "VoiceDrop", p[1].count == 4 else { return nil }
+        guard let d = Recording.uploadedDate(uploaded) else { return nameDateTimeLabel }
+        // no timeZone → device local (UTC+8 for the user)
+        return DateFormatter.zh("M月d日 HH:mm").string(from: d)
+    }
+
+    /// Legacy fallback: "6月18日 14:30" from the VoiceDrop-<ts>… filename (via RecordingName.parse).
+    private var nameDateTimeLabel: String? {
+        guard let p = RecordingName.parse(stem) else { return nil }
         var bits: [String] = []
-        if let mo = Int(p[2]), let da = Int(p[3]) { bits.append("\(mo)月\(da)日") }
-        if p[4].count == 6 {
-            let t = p[4]
-            bits.append("\(t.prefix(2)):\(t.dropFirst(2).prefix(2))")
-        }
+        if let mo = p.month, let da = p.day { bits.append("\(mo)月\(da)日") }
+        if let hhmm = p.hhmm { bits.append(hhmm) }
         return bits.isEmpty ? nil : bits.joined(separator: " ")
     }
 
-    /// "0m33s"-style duration field if present.
-    var durationLabel: String? {
-        stem.components(separatedBy: "-").first { $0.range(of: #"^\d+m\d+s$"#, options: .regularExpression) != nil }
+    /// Parse R2's ISO-8601 `uploaded` (with or without fractional seconds) into a Date.
+    /// Formatters are built per call, NOT static: ISO8601DateFormatter isn't Sendable, and a
+    /// `static let` on this non-isolated struct fails Swift 6 strict-concurrency checks. This
+    /// matches the codebase's other date parsing (RecordingName / Community build formatters locally).
+    static func uploadedDate(_ s: String) -> Date? {
+        guard !s.isEmpty else { return nil }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = iso.date(from: s) { return d }
+        iso.formatOptions = [.withInternetDateTime]
+        return iso.date(from: s)
     }
+
+    /// THE single source of truth for recording list order: newest first.
+    /// In-flight rows (uploading / just-uploaded — `uploaded` still "") are the newest
+    /// and sort to the very top; everything else by R2 `uploaded` time descending (the
+    /// filename is not a reliable clock), filename as a stable tiebreak.
+    /// Sort in ONE place only (`LibraryStore.load`); never re-sort downstream.
+    static func newestFirst(_ a: Recording, _ b: Recording) -> Bool {
+        if a.uploaded.isEmpty != b.uploaded.isEmpty { return a.uploaded.isEmpty }
+        return (a.uploaded, a.audioName) > (b.uploaded, b.audioName)
+    }
+
+    /// "0m33s"-style duration field if present.
+    var durationLabel: String? { RecordingName.parse(stem)?.duration }
 }
 
 // MARK: - Store
@@ -177,10 +277,12 @@ final class LibraryStore {
     var recordings: [Recording] = []
     var loading = false
     var error: String?
+    var reminingStems: Set<String> = []   // stem 正在"重写"（复用已有 ASR、按原逻辑重挖）
 
-    private let base = URL(string: "https://jianshuo.dev/files/api")!
+    private let base = API.filesBase
     private var token: String { AuthStore.shared.bearer }
     private var titleCache: [String: String] = [:]   // articleKey -> first article title
+    private var coverCache: [String: String] = [:]   // articleKey -> first-photo rel key ("" = article has none)
     private var processingPhase: [String: MiningPhase] = [:]   // stem -> current mining phase (WebSocket)
 
     private struct ListResponse: Decodable {
@@ -217,23 +319,24 @@ final class LibraryStore {
             let list = try JSONDecoder().decode(ListResponse.self, from: data)
             let names = Set(list.files.map(\.name))
             let audios = list.files.filter {
-                let leaf = $0.name.components(separatedBy: "/").last ?? $0.name
-                return leaf.hasPrefix("VoiceDrop-") && leaf.hasSuffix(".m4a")
+                RecordingName.isRecordingFile($0.name.components(separatedBy: "/").last ?? $0.name)
             }
             recordings = audios.map {
                 let stem = String($0.name.dropLast(4))
                 return Recording(audioName: $0.name,
                                  uploaded: $0.uploaded ?? "",
-                                 hasArticles: names.contains("articles/\(stem).json"),
-                                 isEmpty: names.contains("articles/\(stem).empty"))
+                                 hasArticles: names.contains(Recording.articleKey(forStem: stem)),
+                                 isEmpty: names.contains(Recording.emptyKey(forStem: stem)))
             }
-            .sorted { $0.audioName > $1.audioName }   // newest first (timestamped names)
+            // The ONE place recordings get ordered — newest first. Every consumer
+            // (LibraryView, ExportSheet) reads this order; nobody re-sorts. See Recording.newestFirst.
+            .sorted(by: Recording.newestFirst)
 
             // Fetch block reasons (.blocked marker) for recordings the worker couldn't mine.
             // .json / .empty take precedence — only fetch when neither is present.
             for i in recordings.indices {
                 guard !recordings[i].hasArticles, !recordings[i].isEmpty,
-                      names.contains("articles/\(recordings[i].stem).blocked") else { continue }
+                      names.contains(recordings[i].blockedKey) else { continue }
                 recordings[i].blockReason = await fetchBlockReason(recordings[i].stem)
             }
 
@@ -250,10 +353,11 @@ final class LibraryStore {
                 }
             }
 
-            // Apply cached titles immediately, then fetch any missing ones so the
-            // 已成文 rows show the article title instead of the place.
+            // Apply cached titles + cover-photo keys immediately, then fetch any
+            // missing ones so 已成文 rows show the article title and its first photo.
             for i in recordings.indices where recordings[i].hasArticles {
                 recordings[i].articleTitle = titleCache[recordings[i].articleKey]
+                recordings[i].coverPhotoKey = coverCache[recordings[i].articleKey].flatMap { $0.isEmpty ? nil : $0 }
             }
             await fetchMissingTitles()
         } catch {
@@ -267,21 +371,26 @@ final class LibraryStore {
     private func fetchMissingTitles() async {
         let pending = recordings.filter { $0.hasArticles && $0.articleTitle == nil }
         guard !pending.isEmpty else { return }
-        let found = await withTaskGroup(of: (String, String).self) { group -> [(String, String)] in
+        // One doc fetch fills BOTH the title and the first-photo cover icon.
+        // cover "" = the article has no photo (cache it so we don't refetch).
+        let found = await withTaskGroup(of: (String, String, String).self) { group -> [(String, String, String)] in
             for rec in pending {
                 group.addTask {
-                    let title = await self.fetchDoc(rec)?.resolvedArticles.first?.title ?? ""
-                    return (rec.id, title)
+                    guard let doc = await self.fetchDoc(rec), let art = doc.resolvedArticles.first else { return (rec.id, "", "") }
+                    let cover = ArticleBody.firstPhotoKey(in: art.body, photos: doc.photos ?? []) ?? ""
+                    return (rec.id, art.title, cover)
                 }
             }
-            var out: [(String, String)] = []
-            for await pair in group where !pair.1.isEmpty { out.append(pair) }
+            var out: [(String, String, String)] = []
+            for await t in group where !t.1.isEmpty { out.append(t) }
             return out
         }
-        for (id, title) in found {
+        for (id, title, cover) in found {
             if let idx = recordings.firstIndex(where: { $0.id == id }) {
                 recordings[idx].articleTitle = title
                 titleCache[recordings[idx].articleKey] = title
+                recordings[idx].coverPhotoKey = cover.isEmpty ? nil : cover
+                coverCache[recordings[idx].articleKey] = cover
             }
         }
     }
@@ -329,9 +438,10 @@ final class LibraryStore {
     /// Fetch the reason from a `.blocked` marker (no-credit / too-long). Defaults to
     /// "no-credit" on any fetch or parse failure so callers always get a non-nil String.
     private func fetchBlockReason(_ stem: String) async -> String {
-        guard let data = try? await get("articles/\(stem).blocked"),
-              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return "no-credit" }
-        return obj["reason"] as? String ?? "no-credit"
+        guard let data = try? await get(Recording.blockedKey(forStem: stem)),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return BlockReason.noCredit.rawValue }
+        return obj["reason"] as? String ?? BlockReason.noCredit.rawValue
     }
 
     /// Delete a whole recording from R2: the audio plus every sidecar marker
@@ -368,6 +478,7 @@ final class LibraryStore {
         _ = await del(rec.srtKey)
         _ = await del(rec.emptyKey)
         titleCache[rec.articleKey] = nil   // re-mined article may have a new title
+        coverCache[rec.articleKey] = nil   // …and a different (or no) first photo
         await dispatchMine()               // trigger a fresh mine cycle now
         await load()
         return true
@@ -464,22 +575,54 @@ final class LibraryStore {
         }
     }
 
+    /// Re-mine this article with 文风 version `styleV` (POST /agent/restyle). Server writes
+    /// a new tagged article version and moves head; returns the new head, nil on failure.
+    /// Caller only invokes this when that variant isn't already in versions[] (else patchHead).
+    func restyle(_ rec: Recording, styleV: Int) async -> Int? {
+        guard !token.isEmpty, let url = URL(string: "\(API.agentBase.absoluteString)/restyle") else { return nil }
+        struct Req: Encodable { let stem: String; let styleV: Int }
+        struct Resp: Decodable { let ok: Bool; let head: Int? }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setBearer(token)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONEncoder().encode(Req(stem: rec.stem, styleV: styleV))
+        req.timeoutInterval = 120   // a mine LLM call can take a while
+        guard let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
+              let r = try? JSONDecoder().decode(Resp.self, from: data), r.ok else { return nil }
+        return r.head
+    }
+
+    /// 重写：复用已有 ASR，按原挖矿逻辑用当前文风重挖（POST /agent/restyle {stem}，不带 styleV →
+    /// 服务端用文风 head，可重新拆多篇）。写文章新版本、转写不动。期间标记 reminingStems，成功后刷新。
+    func remine(_ rec: Recording) async {
+        guard !token.isEmpty, rec.hasArticles,
+              let url = URL(string: "\(API.agentBase.absoluteString)/restyle") else { return }
+        struct Req: Encodable { let stem: String }
+        struct Resp: Decodable { let ok: Bool; let head: Int? }
+        reminingStems.insert(rec.stem)
+        defer { reminingStems.remove(rec.stem) }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setBearer(token)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONEncoder().encode(Req(stem: rec.stem))
+        req.timeoutInterval = 120   // opus 重挖可能要几十秒
+        guard let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
+              let r = try? JSONDecoder().decode(Resp.self, from: data), r.ok else {
+            error = "重写失败"
+            return
+        }
+        titleCache[rec.articleKey] = nil   // 标题可能变
+        coverCache[rec.articleKey] = nil   // 首图也可能变
+        await load()
+    }
+
     /// Upload a square JPEG to the user's photo folder and return the relative key.
     func uploadPhoto(data: Data, sessionTs: String, offset: Int) async -> String? {
-        guard !token.isEmpty else { return nil }
-        let relKey = RecordingName.photoKey(sessionTs: sessionTs, offset: offset)
-        let enc = relKey.urlPathEncoded
-        guard let url = URL(string: "\(base.absoluteString)/upload/\(enc)") else { return nil }
-        var req = URLRequest(url: url)
-        req.httpMethod = "PUT"
-        req.setBearer(token)
-        req.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
-        req.httpBody = data
-        do {
-            let (_, resp) = try await URLSession.shared.data(for: req)
-            let code = resp.httpStatusCode
-            return (200..<300).contains(code) ? relKey : nil
-        } catch { return nil }
+        await PhotoService.upload(data: data,
+                                  relKey: RecordingName.photoKey(sessionTs: sessionTs, offset: offset),
+                                  bearer: token)
     }
 
     struct VersionHistory {
@@ -543,16 +686,7 @@ final class LibraryStore {
 
     /// Download a photo by its full R2 key via the public `/photo/<key>` endpoint
     /// (no auth — the one photo URL shared by the community + web pages).
-    func photoData(fullKey: String) async -> Data? {
-        guard !fullKey.isEmpty else { return nil }
-        let enc = fullKey.urlPathEncoded
-        guard let url = URL(string: "\(base.absoluteString)/photo/\(enc)") else { return nil }
-        do {
-            let (data, resp) = try await URLSession.shared.data(from: url)
-            guard resp.isOK else { return nil }
-            return data
-        } catch { return nil }
-    }
+    func photoData(fullKey: String) async -> Data? { await PhotoService.data(fullKey: fullKey) }
 
     /// Download the audio to a temp file for local playback.
     func downloadAudio(_ rec: Recording) async -> URL? {

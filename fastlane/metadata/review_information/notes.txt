@@ -2,3 +2,32 @@ Sign in with Apple is used for an anonymous, zero-PII account. No demo account
 needed — the app works immediately on first launch. Microphone is used for the
 core recording feature; location (optional, can be denied) only tags the
 filename with the current city/district.
+
+USER-GENERATED CONTENT — Guideline 1.2 compliance
+"VD社区" (VD Community) lets users share their own articles publicly. All four
+required safeguards are implemented:
+
+1) Filtering of objectionable content (before it is posted): every article is
+   automatically screened by an LLM moderation pass at generation time. Any
+   article flagged as objectionable (sexual, violent, hateful, harassing,
+   illegal, self-harm, etc.) cannot be shared to the community — the server
+   rejects the share.
+
+2) Report mechanism + timely action: every community post has a "举报" (Report)
+   action in its ⋯ menu. Reporting IMMEDIATELY removes the post from the public
+   feed (hidden pending review) — not just down-ranked. Reports go to an internal
+   moderation queue that the operator reviews and acts on within 24 hours
+   (permanent removal or restore).
+
+3) Block abusive users: every post's ⋯ menu has "屏蔽此用户" (Block this user).
+   A blocked author's content is hidden from that user everywhere. Blocked users
+   can be managed/unblocked in Settings → 已屏蔽用户.
+
+4) Published contact + EULA with zero tolerance: before a user's FIRST community
+   post, they must agree to a community agreement (社区公约 / EULA) that states a
+   zero-tolerance policy for objectionable content and abusive behavior. The
+   agreement and a "联系我们 / 内容投诉" (Contact / Report content) link are in
+   Settings; content concerns reach us at jianshuo@hotmail.com.
+
+To test: open the VD社区 tab, open any post, tap ⋯ to see Report / Block. The
+agree-gate appears the first time you toggle "VD社区可见" on a recording.

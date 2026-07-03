@@ -77,7 +77,8 @@ final class AudioRecorder {
 
         let now = Date()
         let url = Self.stagingURL(start: now)
-        // Encoder settings follow the user's 录音质量 pref (标准 64k / 高 96k).
+        // Encoder settings follow the user's 录音质量 pref, speech-tuned for ASR:
+        // 标准 16kHz/32k · 高 24kHz/64k (see Prefs.recorderSettings).
         let rec = try AVAudioRecorder(url: url, settings: Prefs.shared.recorderSettings)
         rec.isMeteringEnabled = true
         guard rec.record() else { throw RecorderError.couldNotStart }

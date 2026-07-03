@@ -121,6 +121,7 @@ def md_to_wechat_html(md, photo_url=None):
     a `[[photo:...]]` marker as literal text. `photo_url` is a callable key -> url|None.
     The key is now a relative photo key (e.g. photos/<ts>/<offset>-<rand>.jpg); old
     numeric `[[photo:N]]` markers don't resolve and are simply stripped."""
+    md = re.sub(r'<!--.*?-->', '', md, flags=re.S)   # strip version-origin comment (<!--风格vN-->)
     md = re.sub(r'\n{3,}', '\n\n', md)
     lines = md.split('\n')
     parts = []
@@ -238,6 +239,32 @@ def _pick_cover(doc_id, names):
     return names[h % len(names)]
 
 
+def _first_photo_relkey(body):
+    """The relkey of the FIRST [[photo:<relkey>]] marker in a body, or None. Legacy
+    numeric [[photo:N]] markers can't resolve to a key on the relay (no photos array)
+    → treated as no cover photo, so the article falls back to the style cover."""
+    for m in re.finditer(r"\[\[photo:([^\]]+)\]\]", body or ""):
+        tok = m.group(1).strip()
+        if tok and not tok.isdigit():
+            return tok
+    return None
+
+
+def _digest_from_body(body_md, limit=110):
+    """A plain-text 摘要 (digest) for the WeChat draft. Strips photo markers, markdown
+    image/link syntax and inline marks, collapses whitespace, trims to `limit` chars on
+    a clean boundary. WeChat shows ~54 chars and stores up to 120 — we cap a bit under.
+    Empty body → '' (WeChat then auto-grabs the first chars, same as before)."""
+    s = re.sub(r"<!--.*?-->", "", body_md or "", flags=re.S)   # version-origin comment
+    s = re.sub(r"\[\[photo:[^\]]+\]\]", "", s)
+    s = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", s)   # ![alt](url) / [text](url) → text
+    s = re.sub(r"[#>*`_~]+", "", s)                    # heading / inline marks
+    s = re.sub(r"\s+", " ", s).strip()
+    if len(s) <= limit:
+        return s
+    return s[:limit].rstrip("，。、；：,.;: ") + "…"
+
+
 def resolve_cover_thumb(access_token, doc_id, wechat_cfg, force=False):
     """Return a WeChat thumb_media_id for this doc: pick a cover from
     assets/wechat-covers/ by hash(doc_id), upload it once, and cache the media_id
@@ -274,6 +301,40 @@ def _fetch_photo(owner, relkey):
     raw = _req("GET", f"{BASE}/photo/{quote(full, safe='/')}")
     ct = "image/png" if full.lower().endswith(".png") else "image/jpeg"
     return raw, ct
+
+
+def make_cover_resolver(access_token, owner, doc_id, cfg):
+    """Return cover_for(a, force=False) -> a WeChat thumb_media_id for ONE article.
+    Prefers the article body's FIRST [[photo:<relkey>]] photo — fetched from the public
+    endpoint and uploaded ONCE as a permanent image material, cached in
+    cfg['coverMediaIds'] under 'photo:<fullkey>' (the Function persists it to
+    WECHAT.json, so re-publishing reuses it). On no-photo / fetch-fail it falls back to
+    the per-doc style cover (resolve_cover_thumb). A photo-cover failure is NEVER fatal —
+    it just degrades to the style cover, so 题图 is always something."""
+    owner = (owner or "").strip()
+
+    def cover_for(a, force=False):
+        relkey = _first_photo_relkey(a.get("body", ""))
+        if relkey and owner:
+            fullkey = owner.rstrip("/") + "/" + relkey.lstrip("/")
+            ckey = "photo:" + fullkey
+            cache = cfg.setdefault("coverMediaIds", {})
+            if not force and cache.get(ckey):
+                return cache[ckey]
+            try:
+                got = _fetch_photo(owner, relkey)
+                if got:
+                    raw, ct = got
+                    fname = relkey.rstrip("/").split("/")[-1] or "cover.jpg"
+                    mid = _upload_cover_material(access_token, raw, filename=fname, content_type=ct)
+                    cache[ckey] = mid
+                    log(f"   🖼 cover ← article photo {relkey} → {mid}")
+                    return mid
+            except Exception as e:  # noqa: BLE001 — a bad cover photo must not fail the publish
+                log(f"   ⚠ photo cover failed {relkey}: {str(e)[:140]} → style cover")
+        return resolve_cover_thumb(access_token, doc_id, cfg, force=force)
+
+    return cover_for
 
 
 def wechat_upload_content_image(access_token, img, filename="img.jpg", content_type="image/jpeg"):
@@ -368,18 +429,19 @@ def make_photo_resolver(access_token, owner, appid):
     return resolve
 
 
-def create_wechat_draft(access_token, title, body_md, thumb_media_id, photo_url=None):
+def create_wechat_draft(access_token, title, body_md, thumb_media_id, photo_url=None, digest=""):
     """Create a WeChat draft and return its media_id."""
     content_html = md_to_wechat_html(body_md, photo_url=photo_url)
-    payload = {
-        "articles": [{
-            "title": title,
-            "thumb_media_id": thumb_media_id,
-            "content": content_html,
-            "need_open_comment": 0,
-            "only_fans_can_comment": 0,
-        }]
+    art = {
+        "title": title,
+        "thumb_media_id": thumb_media_id,
+        "content": content_html,
+        "need_open_comment": 0,
+        "only_fans_can_comment": 0,
     }
+    if digest:
+        art["digest"] = digest   # 摘要 — empty → WeChat auto-grabs the first ~54 chars
+    payload = {"articles": [art]}
     raw = _wechat_req("POST",
                       f"https://api.weixin.qq.com/cgi-bin/draft/add?access_token={access_token}",
                       data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -392,20 +454,23 @@ def create_wechat_draft(access_token, title, body_md, thumb_media_id, photo_url=
     return data.get("media_id", "")
 
 
-def update_wechat_draft(access_token, media_id, index, title, body_md, thumb_media_id, photo_url=None):
+def update_wechat_draft(access_token, media_id, index, title, body_md, thumb_media_id, photo_url=None, digest=""):
     """Update an existing WeChat draft in place (no new draft). draft/update takes
     a single article object (not a list) at the given index."""
     content_html = md_to_wechat_html(body_md, photo_url=photo_url)
+    art = {
+        "title": title,
+        "thumb_media_id": thumb_media_id,
+        "content": content_html,
+        "need_open_comment": 0,
+        "only_fans_can_comment": 0,
+    }
+    if digest:
+        art["digest"] = digest   # 摘要 — empty → WeChat auto-grabs the first ~54 chars
     payload = {
         "media_id": media_id,
         "index": index,
-        "articles": {
-            "title": title,
-            "thumb_media_id": thumb_media_id,
-            "content": content_html,
-            "need_open_comment": 0,
-            "only_fans_can_comment": 0,
-        },
+        "articles": art,
     }
     raw = _wechat_req("POST",
                       f"https://api.weixin.qq.com/cgi-bin/draft/update?access_token={access_token}",
@@ -418,20 +483,24 @@ def update_wechat_draft(access_token, media_id, index, title, body_md, thumb_med
         raise RuntimeError(f"WeChat draft update error: {data}")
 
 
-def sync_wechat_drafts(access_token, art, thumb_media_id, make_thumb=None, photo_url=None):
+def sync_wechat_drafts(access_token, art, cover_for, photo_url=None, digest_for=None):
     """Push one WeChat draft per article in `art`, mutating each in place.
     An article with a still-valid wechatMediaId is updated where it sits (no
     duplicate); a missing OR stale one (the saved draft was deleted → 40007) is
-    created fresh and its id stored back. If creating also 40007s — the cover
-    material was wiped — and make_thumb is given, a new cover is uploaded and the
-    create retried once. `photo_url` (key->url|None) embeds the body's inline session
-    photos as <img>. Returns (created, updated)."""
+    created fresh and its id stored back. `cover_for(a, force=False)` returns THAT
+    article's thumb_media_id (its own body's first photo, else the per-doc style
+    cover); on a create 40007 (cover material wiped) the cover is re-uploaded
+    (force=True) and the create retried once. `digest_for(body)` (optional) takes the
+    article BODY string and returns its 摘要 text. `photo_url` (key->url|None) embeds the
+    body's inline session photos as <img>. Returns (created, updated)."""
     created = updated = 0
     for a in art.get("articles", []):
+        thumb = cover_for(a)
+        digest = (digest_for(a.get("body", "")) if digest_for else "") or ""
         mid = a.get("wechatMediaId")
         if mid:
             try:
-                update_wechat_draft(access_token, mid, 0, a["title"], a["body"], thumb_media_id, photo_url=photo_url)
+                update_wechat_draft(access_token, mid, 0, a["title"], a["body"], thumb, photo_url=photo_url, digest=digest)
                 updated += 1
                 log(f"   ♻ WeChat draft updated: {a['title']} → {mid}")
                 continue
@@ -439,13 +508,11 @@ def sync_wechat_drafts(access_token, art, thumb_media_id, make_thumb=None, photo
                 log(f"   ⚠ stale draft media_id {mid} → creating a fresh draft")
                 a.pop("wechatMediaId", None)
         try:
-            new_mid = create_wechat_draft(access_token, a["title"], a["body"], thumb_media_id, photo_url=photo_url)
+            new_mid = create_wechat_draft(access_token, a["title"], a["body"], thumb, photo_url=photo_url, digest=digest)
         except InvalidMediaIdError:
-            if not make_thumb:
-                raise
             log("   ⚠ cover material invalid → re-uploading cover")
-            thumb_media_id = make_thumb()
-            new_mid = create_wechat_draft(access_token, a["title"], a["body"], thumb_media_id, photo_url=photo_url)
+            thumb = cover_for(a, force=True)
+            new_mid = create_wechat_draft(access_token, a["title"], a["body"], thumb, photo_url=photo_url, digest=digest)
         a["wechatMediaId"] = new_mid
         created += 1
         log(f"   📩 WeChat draft: {a['title']} → {new_mid}")
@@ -481,15 +548,20 @@ def _publish(payload):
     # public asset route by resolve_cover_thumb.
     cfg = {"coverMediaIds": dict(payload.get("cover_media_ids") or {})}
     doc_id = article.get("id") or ""
-    thumb = resolve_cover_thumb(token, doc_id, cfg)
+    owner = (payload.get("owner") or "").strip()
+    # 题图 (cover): each article uses its OWN body's first [[photo:…]] as the WeChat
+    # thumb_media_id; no photo (or fetch fails) → the per-doc style cover. So a photo
+    # article shares with its real picture, not a generic cover.
+    cover_for = make_cover_resolver(token, owner, doc_id, cfg)
     # Inline session photos: the body carries [[photo:<relkey>]] markers; the Function
     # passes `owner` (= 'users/<sub>/') so we can fetch each photo from the public
     # endpoint and upload it into the draft. Missing owner (old Function) → no embeds,
     # markers stripped, exactly as before.
-    photo_url = make_photo_resolver(token, (payload.get("owner") or "").strip(), appid)
+    photo_url = make_photo_resolver(token, owner, appid)
+    # 摘要 (digest): a plain-text excerpt of each body, so the WeChat share card has a
+    # real summary instead of WeChat's raw first-54-chars fallback.
     created, updated = sync_wechat_drafts(
-        token, article, thumb, photo_url=photo_url,
-        make_thumb=lambda: resolve_cover_thumb(token, doc_id, cfg, force=True))
+        token, article, cover_for, photo_url=photo_url, digest_for=_digest_from_body)
     return {
         "ok": True,
         "article": article,          # mutated in place: each item now has wechatMediaId

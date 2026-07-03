@@ -18,6 +18,10 @@ targets:
       path: VoiceDropApp/Info.plist
       properties:
         CFBundleDisplayName: VoiceDrop
+        CFBundleURLTypes:
+          - CFBundleURLName: com.wangjianshuo.VoiceDrop
+            CFBundleURLSchemes:
+              - voicedrop
         NSMicrophoneUsageDescription: "VoiceDrop 录下你的口述，并上传到你的文件中转站。"
         NSCameraUsageDescription: "VoiceDrop 可在录音过程中拍摄场景照片，随录音一起保存。"
         NSPhotoLibraryAddUsageDescription: "VoiceDrop 把你拍的场景照片在系统相册里也存一份。"
@@ -59,6 +63,7 @@ targets:
         DEVELOPMENT_TEAM: 97XBW2A43H
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        OTHER_LDFLAGS: "$(inherited) -lz"
       configs:
         # Manual signing only for the App Store build (CI/fastlane). Debug stays
         # automatic so local dev / simulator runs need no profile.
@@ -74,6 +79,7 @@ targets:
     sources:
       - path: VoiceDropShare
       - path: VoiceDropApp/Networking.swift   # AppGroup bridge + setBearer, shared verbatim
+      - path: VoiceDropApp/RecordingName.swift   # recording-style filename builder, pure Foundation
     info:
       path: VoiceDropShare/Info.plist
       properties:

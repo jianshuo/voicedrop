@@ -168,22 +168,7 @@ struct RecordSession: View {
     /// mirror). No upload here — the list drains the queue. Place geocoding is
     /// best-effort and usually instant (location already resolved during the take).
     private func promote(_ take: AudioRecorder.Recording) async {
-        let place = await location.placeTag()
-        let finalName = RecordingName.make(start: take.start, duration: take.duration, place: place)
-        var url = take.url
-        let finalURL = AudioRecorder.documentsDir.appending(path: finalName)
-        do {
-            try FileManager.default.moveItem(at: take.url, to: finalURL)
-            url = finalURL
-        } catch {
-            let basicURL = AudioRecorder.documentsDir
-                .appending(path: "VoiceDrop-\(RecordingName.timestamp(take.start)).m4a")
-            if (try? FileManager.default.moveItem(at: take.url, to: basicURL)) != nil { url = basicURL }
-        }
-        if Prefs.shared.iCloudBackup {
-            let toArchive = url
-            await Task.detached { ICloudArchive.save(toArchive) }.value
-        }
+        _ = await RecordingPromoter.promote(take, place: await location.placeTag())
     }
 
     // MARK: Photo capture (hidden)
@@ -205,22 +190,14 @@ struct RecordSession: View {
     @MainActor
     private static func uploadPhoto(date: Date, data: Data, sessionStart: Date?) async {
         guard let start = sessionStart else { return }
-        let folder = RecordingName.timestamp(start)
         let offset = Int(date.timeIntervalSince(start))   // 录音开始后第几秒拍的
-        let key = RecordingName.photoKey(sessionTs: folder, offset: offset)
-        let base = URL(string: "https://jianshuo.dev/files/api")!
-        var req = URLRequest(url: base.appending(path: "upload").appending(path: key))
-        req.httpMethod = "PUT"
-        req.setBearer(AuthStore.shared.bearer)
-        req.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
-        _ = try? await URLSession.shared.upload(for: req, from: data)
+        let key = RecordingName.photoKey(sessionTs: RecordingName.timestamp(start), offset: offset)
+        await PhotoService.upload(data: data, relKey: key, bearer: AuthStore.shared.bearer)
     }
 
     private func openSettings() {
         if let u = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(u) }
     }
 
-    private func timeString(_ t: TimeInterval) -> String {
-        let total = Int(t); return String(format: "%02d:%02d", total / 60, total % 60)
-    }
+    private func timeString(_ t: TimeInterval) -> String { t.clockString }
 }

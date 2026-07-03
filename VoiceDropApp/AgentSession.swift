@@ -17,7 +17,7 @@ struct AgentImage: Equatable {
 /// socket, a backgrounding, or an app-kill never loses or double-applies an edit.
 @MainActor
 @Observable
-final class ArticleAgentSession {
+final class ArticleAgentSession: VoiceAgentSession {
     struct EditRequest: Identifiable, Equatable {
         let id: String          // stable across reconnects/relaunches (sent on the wire)
         let text: String
@@ -35,7 +35,7 @@ final class ArticleAgentSession {
     /// done. Drives the stacked queue UI. The server is the real authority.
     var queue: [EditRequest] = []
 
-    var onUpdate: ((ArticleDoc) -> Void)?
+    var onUpdate: ((ArticleDoc?) -> Void)?
     var onReply: ((String, Bool) -> Void)?
 
     private var task: URLSessionWebSocketTask?
@@ -43,7 +43,7 @@ final class ArticleAgentSession {
     private var rec: Recording?
     private var closed = false
 
-    private let base = "wss://jianshuo.dev/agent/edit"
+    private let base = API.agentWS + "/edit"
     private var token: String { AuthStore.shared.bearer }
     private var stem: String { rec?.stem ?? "" }
 
@@ -136,7 +136,12 @@ final class ArticleAgentSession {
     }
 
     private func decodeDoc(_ any: Any?) -> ArticleDoc? {
-        guard let any, let d = try? JSONSerialization.data(withJSONObject: any) else { return nil }
+        // A JSON-null `article` arrives as NSNull (non-nil but not a valid top-level
+        // JSON object); `data(withJSONObject:)` would throw an ObjC exception `try?`
+        // can't catch → abort(). Gate on isValidJSONObject first. (See the same fix
+        // in LibraryCommandSession.decodeDoc — the library path hits null far more.)
+        guard let any, JSONSerialization.isValidJSONObject(any),
+              let d = try? JSONSerialization.data(withJSONObject: any) else { return nil }
         return try? JSONDecoder().decode(ArticleDoc.self, from: d)
     }
 

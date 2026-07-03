@@ -40,8 +40,8 @@ final class AuthStore {
         return "anon-" + String(hex.prefix(32))
     }
 
-    /// Where the session is exchanged. Public URL, not a secret.
-    private let authURL = URL(string: "https://jianshuo.dev/files/api/auth/apple")!
+    /// Where the session is exchanged.
+    private let authURL = API.filesBase.appendingPathComponent("auth/apple")
 
     private var appleCoordinator: AppleSignInCoordinator?
 
@@ -60,10 +60,7 @@ final class AuthStore {
     private func isJWTExpired(_ jwt: String) -> Bool {
         let parts = jwt.split(separator: ".")
         guard parts.count == 3 else { return true }
-        // base64url → base64 (pad to multiple of 4)
-        var b64 = String(parts[1]).replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
-        while b64.count % 4 != 0 { b64 += "=" }
-        guard let data = Data(base64Encoded: b64),
+        guard let data = Data(base64URLEncoded: String(parts[1])),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let exp = obj["exp"] as? Double else { return true }
         return Date().timeIntervalSince1970 >= exp
