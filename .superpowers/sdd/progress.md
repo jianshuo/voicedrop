@@ -20,7 +20,7 @@ Workflow: 直接在各自 main 上提交（本会话既定工作流 + harness wo
 - [x] T11 抽 PushToTalkBar                                (voicedrop)
 - [x] T12 LibraryCommandSession + CommandQueueStore       (voicedrop)
 - [x] T13 LibraryView 接线                                (voicedrop)
-- [ ] T14 TestFlight 真机验证                             (voicedrop)
+- [x] T14 TestFlight 真机验证                             (voicedrop)
 
 - T2: complete (impl 851f1a5 + fix 6c82b99, re-verified diff = exact 2 prescribed fixes; 406/406). SPEC✅.
   Minors -> FINAL triage:
@@ -50,5 +50,19 @@ Workflow: 直接在各自 main 上提交（本会话既定工作流 + harness wo
 
 - T13: complete (commit af544ed, wiring 全到位: confirm alert/onConfirm/序号badge/currentRefs/onWillSend→setRefs/完成退出; BUILD SUCCEEDED). CAVEAT(设备调优#1): 长按红键进命令态→再按住 bar 说话(两次触摸),非单次连续对讲机(跨视图手势无法共享一次触摸)。真机体验后决定是否把红键本身做成 sequenced 长按→拖动的一次性握持。
 
+- T14: CI 首次失败(Release arm64 CompileSwift 超时 LibraryView:54，4 链 alert 类型推断爆预算)→修复 1ffd92a(拆 body+rowAlerts 两 some View + clearBinding 显式 Binding)→CI 重跑 SUCCESS(6m11s),TestFlight 构建上线。final review 修复 9ccc190(C1/I1/M4)已 push+Worker 重部署 d3f743ac。全部 14 任务完成,待真机端到端验证。
+
 ## Completed
 - T1: complete (commit 63cf925, review clean SPEC✅/Approved; 405/405 full suite)
+
+## Final whole-branch review (server, opus) — findings
+- 🔴 C1 (ship-blocker): merge_articles 的 ctx.callClaude 无 tools，但 _makeLoggedCall 无条件带 tool_choice → Anthropic 400 → 合并全挂。修复中：两处 _makeLoggedCall tool_choice 改成有 tools 才带。
+- 🟠 I1: LibraryAgent 队列 loadDoc=null 关掉了 lastEditId exactly-once → 中途驱逐会重跑(重复合并/重复计费 restyle)。修复中：merge stem 用稳定 row.id 确定性生成+存在即跳过；per-turn done marker(command-turns/<id>.json)。
+- 🟡 M2(合并 stem 秒级碰撞→并入 I1a)、M4(deleteArticleFiles 加 badStem)。M3(未确认删除 hibernation 后重弹)=设计如此，保留。
+- SOUND: confirm/cancel exactly-once+恢复、refs→stem 越权、工具集隔离、计费门。
+- 残留已知 minor: restyle 重挖中途被驱逐仍可能重复计费(在地改写,很窄),记录不修。
+
+## Post-真机 round 1 fixes (2026-07-02)
+- 🔴 真机 400「tools.4.custom.destructive: Extra inputs not permitted」：tool 定义里的 destructive 字段被原样发给 Anthropic，schema 不允许→每次命令首个 agent 调用就挂。移除 4 处 destructive（本就没被读），加 schema 守卫测试。414 绿。Worker 重部署 13a2aa58。commit 644e9fd。
+- UX：红键本身长按即说话（对讲机，LongPress(0.3).sequenced(before:DragGesture)，轻点仍录音），去掉两步 PushToTalkBar 命令栏；反馈复用抽出的 VoiceFeedbackStack（语音编辑 bar 不回归）；数字在按住时浮现。commit a69fb0f + gap fix 979cc87。iOS CI SUCCESS，TestFlight 上线。
+- 🔴 crash (真机, 任意命令后): 服务端库级命令回 {updated, article:null}, JSON null→NSNull, decodeDoc 的 try? JSONSerialization.data(withJSONObject:NSNull) 抛 ObjC NSInvalidArgumentException(try? 抓不住)→abort()。崩溃栈确认 +[NSJSONSerialization dataWithJSONObject:]→objc_exception_throw→abort。修复 b054ff9: decodeDoc 先 isValidJSONObject 守卫(两处:LibraryCommandSession+AgentSession)。iOS CI SUCCESS, TestFlight 上线。

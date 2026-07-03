@@ -576,7 +576,12 @@ canonical 设计/计划：`docs/superpowers/specs/2026-06-27-device-link-pairing
   `DeviceLinkApprovalSheet` 显码+「不是我」，收 `link_release` 加密 token→complete）/ `DeviceLinkStore`+`DeviceLinkView`
   （新设备：输 6 位→开 socket→输 4 位→`link_ready` 解密→`AuthStore.adoptToken`→发 `.vdDidAdoptAccount` 刷新列表）。
 - `AppleAuth.swift` 加 **`AuthStore.adoptToken(_:)`**（替换匿名身份、清 session）。`StatusSession.swift` 的 `handle` 在
-  `status_update` 前先分支 `link_request`/`link_release`。`AccountView` 加「登录已有账号」入口，`LibraryView` 接审批卡 + adopt 后刷新。
+  `status_update` 前先分支 `link_request`/`link_release`。`LibraryView` 接审批卡 + adopt 后刷新。
+- **「登录已有账号」入口已从 `AccountView` 移除（2026-07-03，用户要求）**：app 内不再有新设备侧发起配对的 UI，
+  `DeviceLinkView`/`DeviceLinkStore`（新设备侧）成为无入口的保留代码——**别删**：协议实现还在被 wjs-voicedrop skill 的
+  vd-login.mjs（CLI 扮演新设备）复用参考；老设备侧（`DeviceLinkResponder`/`DeviceLinkApprovalSheet`，挂在 LibraryView）
+  仍在服务 skill 登录的审批弹窗，是活代码。同日 `AccountView` 数据卡里的「查看全部文章」行也移除（含
+  `SettingsStore.articlesPageURL()` + `ArticlesLinkError`）；服务端 `GET /token/articles` 路由未动（web 文章页还在用）。
 
 **安全**：4 位码 5 次/2 分钟（暴力≈5/10000，且真主人在自己设备看得到登录尝试）；token 全程 E2E；complete 强制 scope 匹配。
 **已知延后**：/start 的 IP+token 限流（Worker 无 KV 计数基建，本期只做「必须带有效 bearer」最小闸门）。

@@ -2,17 +2,6 @@ import SwiftUI
 import Observation
 import UIKit
 
-private enum ArticlesLinkError: LocalizedError {
-    case unauthenticated, http(Int, String), badResponse
-    var errorDescription: String? {
-        switch self {
-        case .unauthenticated: return "未登录"
-        case .http(let code, let body): return "HTTP \(code): \(body)"
-        case .badResponse: return "响应格式错误"
-        }
-    }
-}
-
 /// 版本名 = 文风正文的第一行，用来区分各个版本（比纯 vN 好认）。
 /// 取第一行、最多 12 字，超出截断加省略号；界面上再用 lineLimit(1) 兜底自动收尾。
 enum StyleNaming {
@@ -122,22 +111,6 @@ final class SettingsStore {
             styleVersions = r.versions
             styleHead = r.head
         }
-    }
-
-    func articlesPageURL() async throws -> URL {
-        guard !token.isEmpty else { throw ArticlesLinkError.unauthenticated }
-        var req = URLRequest(url: base.appending(path: "token").appending(path: "articles"))
-        req.setBearer(token)
-        let (data, resp) = try await URLSession.shared.data(for: req)
-        let code = resp.httpStatusCode
-        guard (200..<300).contains(code) else {
-            let body = String(String(decoding: data, as: UTF8.self).prefix(80))
-            throw ArticlesLinkError.http(code, body)
-        }
-        struct Resp: Decodable { let url: String }
-        guard let obj = try? JSONDecoder().decode(Resp.self, from: data),
-              let url = URL(string: obj.url) else { throw ArticlesLinkError.badResponse }
-        return url
     }
 
     /// Save ONLY the 文风 (versioned /style). No name write — the name field is gone

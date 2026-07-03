@@ -5,11 +5,8 @@ import UIKit
 struct AccountView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var store = LibraryStore()
-    @State private var settings = SettingsStore()
     @State private var idCopied = false
     @State private var tokenCopied = false
-    @State private var openingArticles = false
-    @State private var showDeviceLink = false
 
     private var auth: AuthStore { AuthStore.shared }
     private var recordingCount: Int { store.recordings.count }
@@ -42,7 +39,6 @@ struct AccountView: View {
         .background(Theme.appBG.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .task { await store.load() }
-        .sheet(isPresented: $showDeviceLink) { DeviceLinkView() }
     }
 
     // MARK: Identity
@@ -95,11 +91,6 @@ struct AccountView: View {
                 }
                 .buttonStyle(.plain)
             }
-
-            Button { showDeviceLink = true } label: {
-                Label("登录已有账号", systemImage: "iphone.and.arrow.forward")
-            }
-            .buttonStyle(.bordered)
         }
         .padding(18)
         .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.R.card))
@@ -137,22 +128,6 @@ struct AccountView: View {
             dataRow("录音", "\(recordingCount) 条", trailingChevron: false)
             settingsRowDivider
             dataRow("成文", "\(minedCount) 篇", trailingChevron: false)
-            settingsRowDivider
-            Button {
-                guard !openingArticles else { return }
-                Task {
-                    openingArticles = true; defer { openingArticles = false }
-                    if let url = try? await settings.articlesPageURL() { await UIApplication.shared.open(url) }
-                }
-            } label: {
-                HStack {
-                    Text("查看全部文章").font(.system(size: 16)).foregroundStyle(Theme.ink)
-                    Spacer()
-                    if openingArticles { ProgressView() } else { settingsChevron }
-                }
-                .padding(.vertical, 14).padding(.horizontal, 15).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
         }
     }
 
