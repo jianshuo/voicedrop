@@ -26,6 +26,21 @@ extension PageAlign {
     var textAlignment: TextAlignment { switch self { case .leading: .leading; case .center: .center; case .trailing: .trailing } }
 }
 
+extension PageNode {
+    /// 子树里是否有自滚动的列表 embed（articleList / communityFeed）。
+    /// 有 → 外壳不得再包 ScrollView（List 在 ScrollView 里塌成零高），列表自己承担滚动。
+    var containsListEmbed: Bool {
+        switch self {
+        case .embed(.articleList), .embed(.communityFeed):
+            return true
+        case let .vstack(_, _, _, children), let .hstack(_, _, _, children), let .grid(_, _, children):
+            return children.contains { $0.containsListEmbed }
+        default:
+            return false
+        }
+    }
+}
+
 // MARK: - 渲染上下文（embed 桥 + 动作回调）
 
 struct PageContext {

@@ -242,6 +242,20 @@ struct CommunityFeedList: View {
     }
 }
 
+/// `embed: notePlaceholder` 的占位卡（Phase 1 无功能，仅示意）。
+struct NotePlaceholder: View {
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "brain").font(.system(size: 28)).foregroundStyle(Theme.faint)
+            Text("思考 · 即将推出").font(.system(size: 15)).foregroundStyle(Theme.secondary)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 28)
+        .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.R.card))
+        .overlay(RoundedRectangle(cornerRadius: Theme.R.card).stroke(Theme.borderChrome, lineWidth: 1))
+        .padding(.horizontal, 16)
+    }
+}
+
 /// 两个列表共用的居中提示（空态 / 加载失败）。
 func homeMessage(_ title: String, _ subtitle: String) -> some View {
     VStack(spacing: 10) {

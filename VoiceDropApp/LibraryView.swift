@@ -32,6 +32,7 @@ struct LibraryView: View {
     @State private var command = LibraryCommandSession()
     @State private var commandReply: AgentReply?
     @State private var confirmPrompt: (id: String, summary: String)?
+    @State private var pageStore = PageStore()   // 自定义首页 page.json；tree==nil → 原生首页
     @EnvironmentObject private var router: AppRouter
     @Environment(\.scenePhase) private var scenePhase
 
@@ -80,12 +81,22 @@ struct LibraryView: View {
     private var mainContent: some View {
         VStack(spacing: 0) {
             topBar
-            tabHeader
-            if tab == .recordings { recordingsContent } else { communityContent }
+            if let tree = pageStore.tree {
+                // 有自滚动的列表 embed 时不能再套 ScrollView（List 在 ScrollView 里塌成零高）；
+                // 纯静态页则套上，超屏可滚。
+                if tree.containsListEmbed {
+                    PageRenderer(node: tree, ctx: pageContext)
+                } else {
+                    ScrollView { PageRenderer(node: tree, ctx: pageContext) }
+                }
+            } else {
+                tabHeader
+                if tab == .recordings { recordingsContent } else { communityContent }
+            }
         }
         .background(Theme.appBG.ignoresSafeArea())
         .overlay(alignment: .bottom) {
-            if tab == .recordings {
+            if pageStore.tree == nil && tab == .recordings {
                 recordButton
             } else {
                 EmptyView()
@@ -106,6 +117,7 @@ struct LibraryView: View {
             statusSession.onLinkRequest = { pid, code, pubkey in linkResponder.present(pairingId: pid, code: code, pubkey: pubkey) }
             statusSession.onLinkRelease = { pid in linkResponder.release(pairingId: pid) }
             statusSession.connect()
+            await pageStore.load()
             await refresh()
         }
         .task {
@@ -127,7 +139,7 @@ struct LibraryView: View {
             DeviceLinkApprovalSheet(responder: linkResponder, pending: p)
         }
         .onChange(of: scenePhase) { _, p in
-            if p == .active { statusSession.connect(); Task { await refresh() } }
+            if p == .active { statusSession.connect(); Task { await pageStore.load(); await refresh() } }
             else if p == .background { statusSession.disconnect() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .vdDidAdoptAccount)) { _ in
@@ -219,6 +231,33 @@ struct LibraryView: View {
             }
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: SDUI 自定义首页（page.json）
+
+    /// embed 桥 + 动作回调：自定义页里的列表/录音键与原生首页共享同一批状态与导航。
+    private var pageContext: PageContext {
+        PageContext(
+            articleList: AnyView(recordingsContent),
+            communityFeed: AnyView(communityContent),
+            recordButton: AnyView(recordButton),
+            notePlaceholder: AnyView(NotePlaceholder()),
+            loadPhoto: { [store] key in
+                guard let scope = await store.ownerScope() else { return nil }
+                return await store.photoData(fullKey: scope + key)
+            },
+            onTap: { handlePageAction($0) }
+        )
+    }
+
+    private func handlePageAction(_ action: PageAction) {
+        switch action {
+        case .record: showRecord = true
+        case .openArticles: tab = .recordings
+        case .openCommunity: tab = .community; Task { await community.load() }
+        case .openSettings: showSettings = true
+        case .openNote: break   // 占位：Phase 1 无动作
+        }
     }
 
     // MARK: List (bodies live in HomeLists.swift — reused by the SDUI embed bridge)
