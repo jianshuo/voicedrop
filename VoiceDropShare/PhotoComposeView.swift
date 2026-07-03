@@ -331,8 +331,13 @@ private struct ThumbnailCell: View {
             .clipped()
             .task {
                 guard image == nil else { return }
+                // ImageIO downsampled decode, NEVER UIImage(contentsOfFile:) — that decodes
+                // the full-resolution bitmap (~46MB per 12MP photo, retained per cell), and
+                // 6+ shared photos blew past the extension's ~120MB jetsam limit: iOS killed
+                // the process on open and the share sheet silently bounced back. Same OOM
+                // class SquareCrop.jpeg(fromFile:) already fixed for the upload path.
                 image = await Task.detached(priority: .utility) {
-                    UIImage(contentsOfFile: url.path)
+                    SquareCrop.thumbnailImage(fromFile: url)
                 }.value
             }
     }
@@ -379,6 +384,21 @@ enum SquareCrop {
             }
             return data
         }
+    }
+
+    /// Small display thumbnail for the grid cells — ImageIO downsampled decode
+    /// (~0.5MB at 360px vs ~46MB full-res), so even 12 cells stay far under the
+    /// Share Extension's memory limit. 360px ≈ a 3-column cell at 3× scale.
+    static func thumbnailImage(fromFile url: URL, maxSide: CGFloat = 360) -> UIImage? {
+        guard let src = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        let opts: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,     // bake in EXIF orientation
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxSide,
+        ]
+        guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) else { return nil }
+        return UIImage(cgImage: cg)
     }
 
     /// Load a shared image file URL straight to a square JPEG, safe off the main
