@@ -213,6 +213,8 @@ struct RecordingDetailView: View {
             agentReply = AgentReply(text: text, ok: ok)
         }
         agent.connect(recording)
+        // 长按菜单配置：后台拉一次，失败静默（缓存/内置兜底，长按永远有菜单）。
+        Task { await UIConfigStore.shared.refresh() }
         await dictation.requestAuth()
         await loadVersionHistory()
     }
@@ -577,19 +579,49 @@ struct RecordingDetailView: View {
             ForEach(bodyRows(a)) { row in
                 switch row {
                 case .paragraph(let n, let text):
+                    // 长按出操作菜单——为此取消了 .textSelection（长按选择与 contextMenu
+                    // 手势冲突），菜单尾部的本地「拷贝」项补偿。
                     Text(textAttributed(text))
                         .font(.system(size: 16)).foregroundStyle(Theme.bodyRead)
-                        .lineSpacing(9).textSelection(.enabled)
+                        .lineSpacing(9)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .overlay(alignment: .topLeading) { lineNumber(n, visible: editing) }
+                        .contextMenu { paragraphMenu(line: n, text: text) }
                 case .image(let n, let m, let key):
-                    PhotoTile(store: store, relKey: key)
+                    PhotoTile(store: store, relKey: key,
+                              menu: UIConfigStore.shared.imageMenu(page: "voice-editor"),
+                              onInstruction: { agent.enqueue($0, articleIndex: articleIndex) })
                         .overlay(alignment: .topLeading) { lineNumber(n, visible: editing) }
                         .overlay(alignment: .topLeading) { imageBadge(m, visible: editing) }
                 }
             }
         }
         .animation(.easeInOut(duration: 0.2), value: editing)
+    }
+
+    /// 长按段落的操作菜单：服务端配置的「改写这段 / 插入图片」+ 客户端本地「拷贝」
+    /// （拷贝不进服务端配置、不走网络）。点选把成品指令交给现有语音编辑队列——
+    /// 与口述/插入照片同一入口，排队、串行、「正在改」指示全部复用。
+    @ViewBuilder
+    private func paragraphMenu(line: Int, text: String) -> some View {
+        if let menu = UIConfigStore.shared.textMenu(page: "voice-editor") {
+            ConfigMenuContent(
+                menu: menu,
+                fill: { UIConfigStore.fill($0, ["LINE": String(line), "QUOTE": Self.quotePrefix(text)]) },
+                onPick: { agent.enqueue($0, articleIndex: articleIndex) }
+            )
+            Divider()
+        }
+        Button {
+            UIPasteboard.general.string = text
+        } label: {
+            Label("拷贝", systemImage: "doc.on.doc")
+        }
+    }
+
+    /// {{QUOTE}} = 段落开头 ~15 字（双引号换成单引号，避免嵌进指令引文时断裂）。
+    private static func quotePrefix(_ text: String) -> String {
+        String(text.prefix(15)).replacingOccurrences(of: "\"", with: "'")
     }
 
     /// Line number floating in the left margin, vertically centered on the first
@@ -867,6 +899,11 @@ final class ArticleShareItem: NSObject, UIActivityItemSource {
 struct PhotoTile: View {
     let store: LibraryStore
     let relKey: String
+    /// 长按操作菜单（服务端 ui-config 下发）+ 点选回调，由父视图注入；缺省 nil =
+    /// 无菜单（其它使用点零行为变化）。仅已出图（image != nil）时才出菜单——
+    /// 制作中/失败态编辑一张还没出的图必然失败，直接不给入口。
+    var menu: UIMenuConfig? = nil
+    var onInstruction: ((String) -> Void)? = nil
 
     @State private var image: UIImage?
     @State private var failed = false
@@ -902,6 +939,16 @@ struct PhotoTile: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 12))
+            .contextMenu {
+                // 空内容 = 系统不弹菜单（制作中/失败态长按无反应）。
+                if image != nil, let menu, let onInstruction {
+                    ConfigMenuContent(
+                        menu: menu,
+                        fill: { UIConfigStore.fill($0, ["KEY": relKey]) },
+                        onPick: onInstruction
+                    )
+                }
+            }
             .task(id: "\(relKey)#\(reloadToken)") { await load() }
     }
 
