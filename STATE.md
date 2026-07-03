@@ -1,6 +1,6 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-07-03
+Last updated: 2026-07-04
 
 ## What it is
 
@@ -280,6 +280,38 @@ Secrets (`wrangler secret put`): `SESSION_SECRET` (same value as Pages — verif
 anon tokens work without it), `CLAUDE_API_KEY`, **`FILES_TOKEN`** (= Pages FILES_TOKEN; authenticates
 `mine.py`'s `POST /agent/notify` — if missing, notify 401s and status never updates).
 Deploy: `cd ~/code/jianshuo.dev/agent && npx wrangler deploy`.
+
+**语音编辑引擎 = Haiku（2026-07-04，用户要求提速）**：R2 `config/model.json` 加
+`"editModel":"claude-haiku-4-5"`（每轮 `resolveEditModel` 动态读，零部署即生效；库级语音指令同
+通道一起换；挖矿模型仍 opus-4.8 不动）。计价 `usage.js PRICE` 是**精确键匹配**——editModel 必须
+写 `claude-haiku-4-5` 这个键名，写带日期后缀的 id 会让计费查不到、成本记 0。
+
+## 长按操作菜单（2026-07-04，worker 已上线，iOS 在 design/sdui-homepage）
+
+文章详情页长按**已出图的配图** / **段落**弹原生分组菜单，点选把配置好的指令（含该图精确
+`[[photo:KEY]]` 或 第N行+开头引文）塞进现有语音编辑通道执行。spec（含定稿 JSON 契约与全部
+指令文案）= `docs/superpowers/specs/2026-07-04-longpress-actions-menu-design.md`；计划 =
+`docs/superpowers/plans/2026-07-04-longpress-actions-menu.md`。
+
+- **服务端唯一新增 `GET /agent/ui-config`**（agent worker，任意有效用户 token，401 无 token）：
+  按页面命名空间的 UI 配置文档（`pages.voice-editor.longpress.image/text`），真源 =
+  `agent/src/ui-config.js` 字面量，**R2 `config/ui-config.json` 存在且带 schema+pages 则整体
+  覆盖**（照 community-blocklist 先例，改 R2 = 零部署调菜单/文案）。scope 已解析未用，为
+  per-user 合并预留。测试 `agent/test/ui-config.test.js`。
+- **v1 菜单**：图片「图片风格」= 卡通(宫崎骏)/广告(用户定稿的设计师重设计指令)/水彩/素描/油画/胶片
+  （`{{KEY}}`→relKey，PhotoTile 内替换）；文字「改写这段」= 更简洁/更口语/更书面/扩写一点
+  （`{{LINE}}`/`{{QUOTE}}`=段首15字、双引号换单引号）+「插入图片→公众号题图」（指令直接说
+  「放在文章最前面」+2.45:1，Claude 自己调 `new_photo` after_line=0；**不传 size 参数**，比例
+  由提示词约束——用户定）+ 客户端本地「拷贝」（不进配置）。
+- **iOS**：`UIConfigStore.swift`（Codable 模型 + 详情页出现时拉取 + UserDefaults 缓存 + 与服务端
+  一致的内置兜底，schema>1 保留现值）、`ConfigMenu.swift`（页面无关渲染器 `ConfigMenuContent`：
+  组间 Divider、submenu 递归、未知节点静默跳过）。挂载在 `RecordingDetailView`：PhotoTile 仅
+  `image != nil` 时出菜单（制作中/失败态无入口）；**段落行为挂菜单取消了 `.textSelection`**
+  （手势冲突），「拷贝」项补偿。点选 = `agent.enqueue(...)`（与口述/插入照片同入口，队列/
+  「正在改」/placeholder 全复用）。
+- 部署状态：worker 已 deploy + 线上冒烟（401/200 + 菜单内容）；iOS commit `e4ec435`
+  （design/sdui-homepage），**真机手测待做**（长按图→卡通→placeholder→出图；段落→更简洁；
+  题图→顶部横幅；拷贝；制作中无菜单）。
 
 ## Community (VD社区)
 
