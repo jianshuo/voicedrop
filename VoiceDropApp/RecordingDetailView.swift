@@ -79,17 +79,17 @@ struct RecordingDetailView: View {
     }
 
     /// Tappable chip on the meta line — opens 换风格重写. Shows the current 风格 vN.
+    /// 素样式：和左边的日期同色同号（13px metaRead），不做胶囊底，只靠铅笔+箭头示意可点。
     private var styleChip: some View {
         Button { showRestyle = true } label: {
-            HStack(spacing: 5) {
-                Image(systemName: "pencil").font(.system(size: 10, weight: .semibold))
-                Text(currentStyleLabel ?? "选风格").font(.system(size: 12, weight: .semibold))
-                Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.accent.opacity(0.55))
+            HStack(spacing: 4) {
+                Image(systemName: "pencil").font(.system(size: 11))
+                Text(currentStyleLabel ?? "选风格").font(.system(size: 13))
+                Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundStyle(Theme.chevron)
             }
-            .foregroundStyle(Theme.accent)
-            .padding(.leading, 9).padding(.trailing, 9).padding(.vertical, 4)
-            .background(Theme.accentSoft, in: Capsule())
-            .overlay(Capsule().stroke(Theme.accent.opacity(0.28), lineWidth: 1))
+            .foregroundStyle(Theme.metaRead)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
