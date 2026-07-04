@@ -40,14 +40,16 @@ struct LibraryView: View {
     private var rows: [Recording] {
         let serverNames = Set(store.recordings.map(\.audioName))
         let uploading = uploader.pending
-            .map { Recording(audioName: $0.lastPathComponent, uploaded: "", hasArticles: false, isEmpty: false, uploading: true) }
+            .map { Recording(audioName: $0.lastPathComponent, uploaded: "", hasArticles: false, isEmpty: false,
+                             tags: uploader.pendingTagsByName[$0.lastPathComponent], uploading: true) }
             .filter { !serverNames.contains($0.audioName) }
         let busy = serverNames.union(uploading.map(\.audioName))
         // Optimistic: an uploaded take shows as 待处理 immediately, before the
         // server list catches up — so the row never disappears between states.
         let optimistic = uploader.justUploaded
             .filter { !busy.contains($0) }
-            .map { Recording(audioName: $0, uploaded: "", hasArticles: false, isEmpty: false, uploading: false) }
+            .map { Recording(audioName: $0, uploaded: "", hasArticles: false, isEmpty: false,
+                             tags: uploader.pendingTagsByName[$0], uploading: false) }
         // store.recordings is ALREADY ordered newest-first (LibraryStore.load → Recording.newestFirst);
         // do NOT re-sort here. Just prepend the in-flight rows (uploading / just-uploaded), which are
         // the newest by definition, so they sit on top.

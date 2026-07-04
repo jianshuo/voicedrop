@@ -213,6 +213,7 @@ struct Recording: Identifiable, Hashable {
     static func emptyKey(forStem s: String)   -> String { "articles/\(s).empty" }
     static func srtKey(forStem s: String)     -> String { "articles/\(s).srt" }
     static func blockedKey(forStem s: String) -> String { "articles/\(s).blocked" }
+    static func tagsKey(forStem s: String)    -> String { "articles/\(s).tags" }
 
     /// "6月18日 14:30 · Xuhui" style label — kept for detail views and export.
     var displayTitle: String {
@@ -371,6 +372,19 @@ final class LibraryStore {
                     } else {
                         recordings[i].phase = ph
                     }
+                }
+            }
+
+            // A recording still mining may carry a pending .tags sidecar (recorded
+            // on a tag page) — read it so the row stays on that tag's page through
+            // 待处理→挖矿中, not only after 成文. Sidecars are rare (≤ the takes
+            // currently in flight), so the extra fetches are ~zero on most loads.
+            for i in recordings.indices {
+                let tagsKey = Recording.tagsKey(forStem: recordings[i].stem)
+                guard !recordings[i].hasArticles, names.contains(tagsKey) else { continue }
+                if let data = try? await get(tagsKey),
+                   let tags = try? JSONDecoder().decode([String].self, from: data), !tags.isEmpty {
+                    recordings[i].tags = tags
                 }
             }
 

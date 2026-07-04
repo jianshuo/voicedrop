@@ -96,10 +96,27 @@ final class Uploader {
         return data.range(of: Data("moov".utf8)) != nil
     }
 
-    func refreshPending() { pending = pendingFiles(); pendingCount = pending.count }
+    /// name (VoiceDrop-*.m4a) → its pending tags, read from the local sidecars.
+    /// Keeps an in-flight take visible on its tag page through 上传→待处理 (the
+    /// entry outlives the sidecar file so 待处理 optimistic rows still match).
+    private(set) var pendingTagsByName: [String: [String]] = [:]
+
+    func refreshPending() {
+        pending = pendingFiles(); pendingCount = pending.count
+        for url in pending {
+            if let data = try? Data(contentsOf: Self.tagsSidecarURL(for: url)),
+               let tags = try? JSONDecoder().decode([String].self, from: data), !tags.isEmpty {
+                pendingTagsByName[url.lastPathComponent] = tags
+            }
+        }
+    }
 
     /// Drop optimistic 待处理 entries the server has now confirmed in its list.
-    func dropConfirmed(_ names: Set<String>) { justUploaded.removeAll { names.contains($0) } }
+    func dropConfirmed(_ names: Set<String>) {
+        justUploaded.removeAll { names.contains($0) }
+        // The server list now owns these rows (tags come from the R2 sidecar / doc).
+        for n in names { pendingTagsByName[n] = nil }
+    }
 
     /// Move an uploaded take out of the pending scan but keep it on disk
     /// (Documents/uploaded/) — used when "上传后删除本地" is off.
