@@ -11,17 +11,23 @@ import SwiftUI
 ///   voicedrop://community         VD社区
 ///   voicedrop://settings          设置
 ///   voicedrop://record            开始录音（全屏）
+///   voicedrop://record?tag=创业   开始录音，挖出的文章缺省带该标签
 ///   voicedrop://article/<stem>    某篇文章详情（stem 形如 VoiceDrop-2026-07-01-…）
 enum DeepLink: Equatable {
     case recordings
     case community
     case settings
-    case record
+    case record(tag: String?)
     case article(String)
 }
 
 @MainActor
 final class AppRouter: ObservableObject {
+    /// One shared instance: the SwiftUI App owns it as its StateObject AND the
+    /// App Intents (开始录音) reach it directly — an in-app intent has no access
+    /// to the view hierarchy's environment.
+    static let shared = AppRouter()
+
     /// The last deep link received, awaiting application by LibraryView. Cleared
     /// after it's applied so re-subscribing doesn't re-trigger it.
     @Published var pending: DeepLink?
@@ -32,7 +38,10 @@ final class AppRouter: ObservableObject {
         case "", "recordings", "home": pending = .recordings
         case "community":              pending = .community
         case "settings", "setting":    pending = .settings
-        case "record":                 pending = .record
+        case "record":
+            let tag = URLComponents(url: url, resolvingAgainstBaseURL: false)?
+                .queryItems?.first { $0.name == "tag" }?.value
+            pending = .record(tag: (tag?.isEmpty ?? true) ? nil : tag)
         case "article":
             // voicedrop://article/<stem>  → path components after the host
             let stem = url.pathComponents.filter { $0 != "/" }.joined(separator: "/")

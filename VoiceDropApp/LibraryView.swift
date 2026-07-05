@@ -17,6 +17,7 @@ struct LibraryView: View {
     @State private var confirmDelete: Recording?
     @State private var confirmReprocess: Recording?
     @State private var showRecord = false
+    @State private var deepLinkRecordTag: String?   // tag from voicedrop://record?tag=… / 开始录音 intent
     @State private var showSettings = false
     @State private var selectedRec: Recording?
     @State private var selectedPost: CommunityPost?
@@ -140,6 +141,8 @@ struct LibraryView: View {
             // NEVER judge mid-load: enrichment may still be arriving and a
             // transient tag-less state would bounce the user for nothing.
             if !store.loading, case .tag(let t) = tab, !tags.contains(t) { tab = .recordings }
+            // Keep the App Intents tag picker's candidates fresh (see CachedTags).
+            if !tags.isEmpty || !store.loading { CachedTags.save(tags) }
         }
         .onChange(of: store.loading) { _, isLoading in
             // Loading just finished — now the tag set is authoritative; if the
@@ -162,7 +165,10 @@ struct LibraryView: View {
         }
         .navigationDestination(isPresented: $showSettings) { SettingsView(libraryStore: store) }
         .fullScreenCover(isPresented: $showRecord) {
-            RecordSession(defaultTag: currentPageTag) { showRecord = false; Task { await refresh() } }
+            RecordSession(defaultTag: deepLinkRecordTag ?? currentPageTag) {
+                showRecord = false; deepLinkRecordTag = nil
+                Task { await refresh() }
+            }
         }
         .task {
             statusSession.onPhase = { stem, phase in store.markPhase(stem: stem, phase: phase) }
@@ -214,8 +220,11 @@ struct LibraryView: View {
                 tab = .community; selectedRec = nil; selectedPost = nil; showSettings = false
             case .settings:
                 selectedRec = nil; selectedPost = nil; showSettings = true
-            case .record:
-                selectedRec = nil; selectedPost = nil; showSettings = false; showRecord = true
+            case .record(let tag):
+                // A deep-link/intent tag beats the current page's tag; nil keeps
+                // page behavior (record on a tag page → that page's tag).
+                selectedRec = nil; selectedPost = nil; showSettings = false
+                deepLinkRecordTag = tag; showRecord = true
             case .article(let stem):
                 tab = .recordings; selectedPost = nil; showSettings = false
                 if let rec = store.recordings.first(where: { $0.stem == stem }) {
