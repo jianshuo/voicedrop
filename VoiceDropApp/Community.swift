@@ -275,6 +275,7 @@ struct CommunityPostView: View {
     @State private var loading = true
     @State private var articleIndex = 0
     @State private var replies: [CommunityPost] = []
+    @State private var replyPreviews: [String: String] = [:]   // shareId → 2-line body preview (设计稿 1d 卡片)
     @State private var selectedReply: CommunityPost?
     @State private var replyToFull: CommunityFullPost?   // the post this article responds to
     @State private var selectedOriginal: CommunityPost?  // navigate to original post
@@ -378,6 +379,7 @@ struct CommunityPostView: View {
                 replyToFull = await store.fetchPost(replyToId)
             }
             replies = await repliesTask
+            await loadReplyPreviews()
         }
         .onDisappear { _ = recorder.stop() }
     }
@@ -508,36 +510,90 @@ struct CommunityPostView: View {
         .buttonStyle(.plain)
     }
 
+    // 设计稿 Reply Display 1d「章节页」：正文结束后底色变深一档的独立章节——
+    // 大标题「回应」+ 数量徽章 + 一句说明，每篇回应一张浅纸卡片（作者·时间 /
+    // 标题 / 两行摘要），点卡片进回应全文。
     @ViewBuilder private var repliesSection: some View {
         if !replies.isEmpty {
             VStack(alignment: .leading, spacing: 0) {
-                Rectangle().fill(Theme.borderRead).frame(height: 1).padding(.top, 32)
-                ForEach(replies) { reply in
-                    Button { selectedReply = reply } label: {
-                        HStack(spacing: 6) {
-                            Text(reply.author ?? "匿名")
-                                .font(.system(size: 13, weight: .medium)).foregroundStyle(Theme.accent)
-                                .layoutPriority(1)
-                            Text(communityDate(reply.firstSharedAt))
-                                .font(.system(size: 12)).foregroundStyle(Theme.metaRead)
-                                .layoutPriority(1)
-                            if let title = reply.title {
-                                Text("· \(title)")
-                                    .font(.system(size: 13)).foregroundStyle(Theme.bodyRead)
-                                    .lineLimit(1).truncationMode(.tail)
-                            }
-                            Spacer(minLength: 4)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 11)).foregroundStyle(Theme.faint)
-                        }
-                        .padding(.vertical, 11)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .overlay(Rectangle().fill(Theme.borderRead).frame(height: 0.5), alignment: .bottom)
-                    }
-                    .buttonStyle(.plain)
+                HStack(spacing: 10) {
+                    Text("回应").font(.system(size: 20, weight: .semibold)).foregroundStyle(Color(hex: "2B2823"))
+                    Text("\(replies.count)")
+                        .font(.system(size: 12.5, weight: .bold)).foregroundStyle(.white)
+                        .padding(.horizontal, 7).frame(minWidth: 22, minHeight: 22)
+                        .background(Theme.accent, in: Capsule())
+                }
+                Text("别人读完这篇后写下的文章")
+                    .font(.system(size: 12.5)).foregroundStyle(Color(hex: "8D8578"))
+                    .padding(.top, 4)
+                ForEach(Array(replies.enumerated()), id: \.element.id) { i, reply in
+                    Button { selectedReply = reply } label: { replyCard(reply) }
+                        .buttonStyle(.plain)
+                        .padding(.top, i == 0 ? 16 : 12)
                 }
             }
+            .padding(.horizontal, 24).padding(.vertical, 24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color(hex: "EAE2D3"))
+            .overlay(Rectangle().fill(Color(hex: "DBD0BC")).frame(height: 1), alignment: .top)
+            .padding(.horizontal, -20)   // full-bleed：抵消 ScrollView 内容的水平 padding
+            .padding(.top, 30)
         }
+    }
+
+    private func replyCard(_ reply: CommunityPost) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(reply.author ?? "匿名")
+                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(Theme.accent)
+                Text(communityDate(reply.firstSharedAt))
+                    .font(.system(size: 12)).foregroundStyle(Color(hex: "9A9387"))
+            }
+            if let title = reply.title, !title.isEmpty {
+                Text(title)
+                    .font(.system(size: 17, weight: .semibold)).foregroundStyle(Color(hex: "2B2823"))
+                    .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+            }
+            if let preview = replyPreviews[reply.shareId], !preview.isEmpty {
+                Text(preview)
+                    .font(.system(size: 14.5)).foregroundStyle(Color(hex: "5C554A"))
+                    .lineSpacing(4).lineLimit(2)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 18).padding(.vertical, 16)
+        .background(Color(hex: "FAF7F1"), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color(hex: "E2D8C6"), lineWidth: 1))
+    }
+
+    /// Fetch each reply's full post once and distill a plain-text preview for its
+    /// card (markdown/photo markers stripped). Concurrent, best-effort — a card
+    /// without a preview just shows author + title.
+    private func loadReplyPreviews() async {
+        let pending = replies.filter { replyPreviews[$0.shareId] == nil }
+        guard !pending.isEmpty else { return }
+        let found = await withTaskGroup(of: (String, String).self) { group -> [(String, String)] in
+            for r in pending {
+                group.addTask {
+                    let body = await store.fetchPost(r.shareId)?.articles?.first?.body ?? ""
+                    return (r.shareId, Self.previewText(body))
+                }
+            }
+            var out: [(String, String)] = []
+            for await t in group { out.append(t) }
+            return out
+        }
+        for (id, p) in found { replyPreviews[id] = p }
+    }
+
+    /// Plain-text preview: photo markers and markdown syntax out, whitespace
+    /// collapsed, clipped (2 lines ≈ 60 CJK chars; SwiftUI clamps the rest).
+    nonisolated private static func previewText(_ body: String) -> String {
+        var t = body.replacingOccurrences(of: #"\[\[photo:[^\]]+\]\]"#, with: " ", options: .regularExpression)
+        t = t.replacingOccurrences(of: #"[#>*`\-]+"#, with: " ", options: .regularExpression)
+        t = t.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return String(t.prefix(80))
     }
 
     // MARK: Recording bar (visible while recording a response)
