@@ -125,13 +125,25 @@ def md_to_wechat_html(md, photo_url=None):
     md = re.sub(r'\n{3,}', '\n\n', md)
     lines = md.split('\n')
     parts = []
-    list_tag = None  # 'ul' or 'ol'
+    # Lists are buffered and emitted as ONE part with no text nodes between the
+    # <li>s: the WeChat draft editor normalizes stray text nodes (even a bare
+    # newline) directly inside <ul>/<ol> into empty <li> bullets. A blank line
+    # does NOT close an open list — miner output is usually a loose markdown
+    # list (blank line between items), which is still one list, not N lists.
+    list_tag = None   # 'ul' or 'ol'
+    list_items = []   # buffered '<li>…</li>' strings of the open list
+
+    def flush_list():
+        nonlocal list_tag, list_items
+        if list_tag:
+            parts.append(f'<{list_tag} style="padding-left:2em;margin:.5em 0">'
+                         + ''.join(list_items) + f'</{list_tag}>')
+        list_tag, list_items = None, []
+
     for line in lines:
         photo_m = _PHOTO_LINE_RE.match(line)
         if photo_m:
-            if list_tag:
-                parts.append(f'</{list_tag}>')
-                list_tag = None
+            flush_list()
             url = photo_url(photo_m.group(1)) if photo_url else None
             if url:
                 parts.append(
@@ -142,38 +154,27 @@ def md_to_wechat_html(md, photo_url=None):
         # mid-paragraph one can't become a sensible inline image, so drop it).
         line = _INLINE_PHOTO_RE.sub('', line)
         if re.match(r'^#{1,6}\s', line):
-            if list_tag:
-                parts.append(f'</{list_tag}>')
-                list_tag = None
+            flush_list()
             level = len(line) - len(line.lstrip('#'))
             text = _inline_md(line.lstrip('#').strip())
             size = {1: '1.5em', 2: '1.3em', 3: '1.1em'}.get(level, '1em')
             parts.append(f'<h{level} style="font-size:{size};font-weight:bold;margin:1em 0 .5em">{text}</h{level}>')
         elif re.match(r'^[-*]\s', line):
             if list_tag != 'ul':
-                if list_tag:
-                    parts.append(f'</{list_tag}>')
-                parts.append('<ul style="padding-left:2em;margin:.5em 0">')
+                flush_list()
                 list_tag = 'ul'
-            parts.append(f'<li style="margin:.3em 0">{_inline_md(line[2:].strip())}</li>')
+            list_items.append(f'<li style="margin:.3em 0">{_inline_md(line[2:].strip())}</li>')
         elif re.match(r'^\d+\.\s', line):
             if list_tag != 'ol':
-                if list_tag:
-                    parts.append(f'</{list_tag}>')
-                parts.append('<ol style="padding-left:2em;margin:.5em 0">')
+                flush_list()
                 list_tag = 'ol'
-            parts.append(f'<li style="margin:.3em 0">{_inline_md(re.sub(r"^\d+\.\s*", "", line).strip())}</li>')
+            list_items.append(f'<li style="margin:.3em 0">{_inline_md(re.sub(r"^\d+\.\s*", "", line).strip())}</li>')
         elif not line.strip():
-            if list_tag:
-                parts.append(f'</{list_tag}>')
-                list_tag = None
+            pass  # blank line: keep any open list open (loose list continuation)
         else:
-            if list_tag:
-                parts.append(f'</{list_tag}>')
-                list_tag = None
+            flush_list()
             parts.append(f'<p style="margin:.8em 0;line-height:1.8">{_inline_md(line)}</p>')
-    if list_tag:
-        parts.append(f'</{list_tag}>')
+    flush_list()
     return '\n'.join(parts)
 
 
