@@ -438,6 +438,11 @@ struct SettingsView: View {
                             SettingsRow(tileBG: Theme.tileNeutral, symbol: "pencil", tileFG: Theme.secondary,
                                         title: "写作风格", subtitle: "成文时模仿这套语气") { settingsChevron }
                         }.buttonStyle(.plain)
+                        settingsRowDivider
+                        NavigationLink { InstructionSettingsView() } label: {
+                            SettingsRow(tileBG: Theme.tileNeutral, symbol: "wand.and.stars", tileFG: Theme.secondary,
+                                        title: "AI 指令", subtitle: "自定义长按菜单里的每个动作") { settingsChevron }
+                        }.buttonStyle(.plain)
                     }
 
                     group("发布") {
