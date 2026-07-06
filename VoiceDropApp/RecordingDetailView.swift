@@ -501,9 +501,7 @@ struct RecordingDetailView: View {
             if !images.isEmpty,
                await PHPhotoLibrary.requestAuthorization(for: .addOnly) == .authorized {
                 do {
-                    try await PHPhotoLibrary.shared().performChanges {
-                        for img in images { PHAssetChangeRequest.creationRequestForAsset(from: img) }
-                    }
+                    try await Self.saveImagesToPhotos(images)
                     saved = images.count
                 } catch { /* 存失败不拦路：文案还在剪贴板 */ }
             }
@@ -513,6 +511,15 @@ struct RecordingDetailView: View {
             UIApplication.shared.open(xhs) { ok in
                 if !ok { Task { @MainActor in showToast("没检测到小红书 App，文案在剪贴板里") } }
             }
+        }
+    }
+
+    /// 写相册必须脱离 MainActor：performChanges 的 change block 在 Photos 自己的
+    /// 队列上执行，闭包若继承 View 的 MainActor 隔离，Swift 6 运行时隔离断言会
+    /// 直接 SIGTRAP（TestFlight 实测崩溃）。nonisolated 让闭包不带主线程隔离。
+    nonisolated private static func saveImagesToPhotos(_ images: [UIImage]) async throws {
+        try await PHPhotoLibrary.shared().performChanges {
+            for img in images { PHAssetChangeRequest.creationRequestForAsset(from: img) }
         }
     }
 
