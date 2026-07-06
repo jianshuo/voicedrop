@@ -27,6 +27,21 @@ struct CommunityFullPost: Decodable {
     let photos: [String]?       // legacy [[photo:N]] resolution; nil for new posts
 }
 
+/// 一篇分享的投币状态（/agent/feed/state 的条目）。
+struct FeedState: Decodable {
+    var count: Int
+    var fed: Bool
+}
+
+/// POST /agent/feed 的响应（成功与业务错误共用一个壳）。
+struct FeedResult: Decodable {
+    let ok: Bool?
+    let already: Bool?
+    let error: String?
+    struct Suanli: Decodable { let author: Double; let feeder: Double }
+    let suanli: Suanli?
+}
+
 @MainActor
 @Observable
 final class CommunityStore {
@@ -46,6 +61,11 @@ final class CommunityStore {
 
     /// shareIds the current user has liked — filled by `applyRanking()`, seeds the ❤️ state.
     var likedShareIds: Set<String> = []
+
+    /// 投币点亮态：shareId → (count, fed)。由 loadFeedStates() 批量填充。
+    var feedStates: [String: FeedState] = [:]
+    /// 当前币价（算力/币），随 feed/state 响应更新，展示用。
+    var coinPrice: Double = 0
 
     /// All shared posts, newest-first by first-share time.
     func load() async {
@@ -207,6 +227,59 @@ final class CommunityStore {
     /// logic everywhere: read straight from the photo's original location.
     func photoData(fullKey: String) async -> Data? { await PhotoService.data(fullKey: fullKey) }
 
+    // MARK: 投币（互助扩散：作者 2 币、投币者 0.5 币，即时换算力到账）
+
+    /// 批量拉取投币状态（详情页进入时）。匿名 token 也可查（同一用户 anon/Apple scope 一致）。
+    func loadFeedStates(_ shareIds: [String]) async {
+        guard !token.isEmpty, !shareIds.isEmpty else { return }
+        var req = URLRequest(url: API.agentBase.appending(path: "feed/state"))
+        req.httpMethod = "POST"
+        req.timeoutInterval = 3
+        req.setBearer(token)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["share_ids": shareIds])
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            guard resp.isOK else { return }
+            struct R: Decodable { let states: [String: FeedState]; let price_suanli_per_coin: Double? }
+            let r = try JSONDecoder().decode(R.self, from: data)
+            feedStates.merge(r.states) { _, new in new }
+            if let p = r.price_suanli_per_coin { coinPrice = p }
+        } catch { /* 状态查不到就保持未点亮，投币接口自身兜底幂等 */ }
+    }
+
+    /// 投币。服务端一人一篇只能一次（唯一键幂等）；需 Apple 实名 —— 匿名 403 时
+    /// 复用 share 的 withAppleRetry 握手：弹 Apple 登录成功后自动重试一次。
+    func feed(_ shareId: String) async -> FeedResult? {
+        guard !token.isEmpty else { return nil }
+        let r = await withAppleRetry({ await postFeed(shareId) },
+                                     isSuccess: { $0?.ok == true || $0?.already == true })
+        if r?.ok == true || r?.already == true {
+            var s = feedStates[shareId] ?? FeedState(count: 0, fed: false)
+            if !s.fed && r?.already != true { s.count += 1 }
+            s.fed = true
+            feedStates[shareId] = s
+        }
+        return r
+    }
+
+    private func postFeed(_ shareId: String) async -> FeedResult? {
+        var req = URLRequest(url: API.agentBase.appending(path: "feed"))
+        req.httpMethod = "POST"
+        req.timeoutInterval = 8
+        req.setBearer(shareToken)   // 投币要实名：session JWT 优先，缺了服务端 403 触发登录
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["share_id": shareId])
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            let code = resp.httpStatusCode
+            let r = try? JSONDecoder().decode(FeedResult.self, from: data)
+            if (200..<300).contains(code) { needsAppleSignIn = false; return r }
+            markNeedsAppleSignin(code: code, data: data)
+            return r
+        } catch { return nil }
+    }
+
     /// Report one engagement. Failures are silently ignored — when reco is down the
     /// core experience is unaffected.
     func engage(_ shareId: String, action: String, on: Bool? = nil) async {
@@ -282,6 +355,7 @@ struct CommunityPostView: View {
     @State private var sharePayload: SharePayload?
     @State private var toast: String?
     @State private var liked = false
+    @State private var feeding = false      // 投币请求在途，防连点
     @State private var finishedReported = false
     @State private var showReportConfirm = false
     @State private var showBlockConfirm = false
@@ -371,6 +445,7 @@ struct CommunityPostView: View {
         }
         .task {
             liked = store.likedShareIds.contains(post.shareId)
+            Task { await store.loadFeedStates([post.shareId]) }
             await store.engage(post.shareId, action: "view")
             full = await store.fetchPost(post.shareId)
             loading = false
@@ -391,6 +466,7 @@ struct CommunityPostView: View {
             NavSquare(systemName: "chevron.left", stroke: Theme.inkRead, border: Theme.borderRead) { dismiss() }
                 .accessibilityLabel("返回")
             Spacer()
+            feedButton
             Button {
                 liked.toggle()
                 // Keep the store's liked-set in sync so re-entering this view (which seeds
@@ -430,6 +506,48 @@ struct CommunityPostView: View {
             .accessibilityLabel("更多")
         }
         .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 8)
+    }
+
+    // MARK: 投币（赞旁边：给作者 2 币、自己 0.5 币，按当前币价即时换算力到账）
+
+    private var fedState: FeedState? { store.feedStates[post.shareId] }
+
+    private var feedButton: some View {
+        let fed = fedState?.fed ?? false
+        let gold = Color(red: 0.93, green: 0.65, blue: 0.10)
+        return Button {
+            guard !fed, !feeding else { return }
+            feeding = true
+            Task {
+                let r = await store.feed(post.shareId)
+                feeding = false
+                if r?.ok == true, r?.already != true, let s = r?.suanli {
+                    showToast("已投币：你 +\(suanliText(s.feeder))，作者 +\(suanliText(s.author)) 算力")
+                } else if r?.already == true {
+                    showToast("已经投过这篇了")
+                } else if r?.error == "cannot_feed_own" {
+                    showToast("不能给自己的文章投币")
+                } else if r?.error == "pool_exhausted" {
+                    showToast("今日算力池已发完，明天再来")
+                } else if r?.error == "needs_apple_signin" {
+                    showToast("投币需要先用 Apple 登录")
+                } else {
+                    showToast("投币失败，稍后再试")
+                }
+            }
+        } label: {
+            Image(systemName: fed ? "bolt.circle.fill" : "bolt.circle")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(fed ? gold : Theme.inkRead)
+                .frame(width: 38, height: 38)
+                .opacity(feeding ? 0.4 : 1)
+        }
+        .disabled(fed || feeding)
+        .accessibilityLabel(fed ? "已投币" : "投币")
+    }
+
+    private func suanliText(_ v: Double) -> String {
+        v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v)
     }
 
     // MARK: Article body (text + inline session photos)
