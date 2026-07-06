@@ -5,6 +5,19 @@ private struct LedgerResp: Decodable { let entries: [Entry] }
 private struct Entry: Decodable, Identifiable {
     var id: Int { ts }
     let ts: Int; let kind: String; let reason: String; let suanli: Double; let balance_suanli: Double
+    let detail: Detail?
+    /// 服务端账单明细快照（投币类条目带：哪篇文章 + 对方是谁）。
+    struct Detail: Decodable { let title: String?; let from: String?; let author: String? }
+
+    /// 明细副标题：《文章》· 来自 谁 / 作者 谁。没有明细返回 nil（老条目）。
+    var subtitle: String? {
+        guard let d = detail else { return nil }
+        var parts: [String] = []
+        if let t = d.title, !t.isEmpty { parts.append("《\(t)》") }
+        if let f = d.from, !f.isEmpty { parts.append("来自 \(f)") }
+        if let a = d.author, !a.isEmpty { parts.append("作者 \(a)") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
 }
 
 /// 算力 ↔ 篇 estimate — single source so the 设置 list row and this page agree.
@@ -150,6 +163,10 @@ struct UsageView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(label(e)).font(.system(size: 15)).foregroundStyle(Theme.ink)
+                        if let sub = e.subtitle {
+                            Text(sub).font(.system(size: 12)).foregroundStyle(Theme.secondary)
+                                .lineLimit(1)
+                        }
                         Text(timeText(e)).font(.system(size: 12)).foregroundStyle(Theme.faint)
                     }
                     Spacer()
