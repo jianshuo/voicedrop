@@ -1,12 +1,12 @@
 # App Review 回信（Submission 30458391-cfe9-4ace-aa72-e8a25b6ae910，2026-07-06 被拒三条）
 
-回信正文（贴到 App Store Connect 的 Reply 框，英文）——发送前把 `build ___` 替换成新 build 号：
+回信正文（贴到 App Store Connect 的 Reply 框，英文）——build 号已填：**181**（已挂到 1.0 版本上）：
 
 ---
 
 Hello,
 
-Thank you for the detailed review. We have addressed all three issues. Please review the new build (1.0, build ___).
+Thank you for the detailed review. We have addressed all three issues. Please review the new build (1.0, build 181).
 
 **Guideline 5.1.1(v) — Account deletion**
 
