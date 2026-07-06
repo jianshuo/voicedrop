@@ -610,12 +610,17 @@ class Handler(BaseHTTPRequestHandler):
         try:
             return self._send(200, _publish(payload))
         except ValueError as e:
+            log(f"   ✗ publish rejected: {e}")
             return self._send(400, {"error": str(e)})
         except RuntimeError as e:
             # A real WeChat-side failure — relay the actual errcode/errmsg (HTTP 200,
-            # ok:false) so the Function/app can show it.
-            return self._send(200, {"ok": False, **_wechat_err(e)})
+            # ok:false) so the Function/app can show it. Log errcode/errmsg only —
+            # never the payload (it holds appid/secret).
+            err = _wechat_err(e)
+            log(f"   ✗ WeChat error: errcode={err.get('errcode')} errmsg={err.get('errmsg')}")
+            return self._send(200, {"ok": False, **err})
         except Exception as e:  # noqa: BLE001 — last-resort guard
+            log(f"   ✗ relay error: {str(e)[:200]}")
             return self._send(500, {"error": "relay error", "detail": str(e)[:200]})
 
     def log_message(self, fmt, *args):
