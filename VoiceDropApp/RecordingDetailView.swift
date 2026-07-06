@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import Photos
 import PhotosUI
 import LinkPresentation
 
@@ -476,8 +477,10 @@ struct RecordingDetailView: View {
     }
 
     /// 分享到小红书（第一期：内容包 + 剪贴板直达）：服务端把文章转成小红书文案
-    /// （标题≤20字、正文≤1000字、3–5个标签），全文写进剪贴板；文章配图（≤9张）
-    /// 走 ShareSheet 分享给小红书 App，用户在发布页长按粘贴文案即可。
+    /// （标题≤20字、正文≤1000字、3–5个标签），全文写进剪贴板；配图（≤9张）存进
+    /// 系统相册，然后直接唤起小红书——用户在发布器里从相册选图、长按粘贴文案。
+    /// （不走 ShareSheet：小红书的分享扩展对 UIImage 和图片文件 URL 都弹
+    /// 「暂不支持该分享类型」，见 #3/#4 两次实测。）
     private func shareToXHS() async {
         guard !xhsWorking else { return }
         xhsWorking = true
@@ -487,26 +490,30 @@ struct RecordingDetailView: View {
             return
         }
         UIPasteboard.general.string = pack.clipboardText
-        // 小红书的分享扩展只认图片「文件」（public.image 文件 URL，像从相册分享），
-        // 传内存 UIImage 会被它拒收（「暂不支持该分享类型」）——所以落成临时文件再分享。
-        var imageURLs: [URL] = []
+        var saved = 0
         if !pack.photoKeys.isEmpty, let scope = await store.ownerScope() {
-            let dir = FileManager.default.temporaryDirectory.appendingPathComponent("xhs-share", isDirectory: true)
-            try? FileManager.default.removeItem(at: dir)   // 清掉上一次的
-            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-            for (i, relKey) in pack.photoKeys.prefix(9).enumerated() {   // 小红书一篇最多 9 图
-                guard let data = await store.photoData(fullKey: scope + relKey), !data.isEmpty else { continue }
-                let ext = data.starts(with: [0x89, 0x50]) ? "png" : "jpg"
-                let url = dir.appendingPathComponent(String(format: "photo-%02d.%@", i + 1, ext))
-                if (try? data.write(to: url)) != nil { imageURLs.append(url) }
+            var images: [UIImage] = []
+            for relKey in pack.photoKeys.prefix(9) {   // 小红书一篇最多 9 图
+                if let data = await store.photoData(fullKey: scope + relKey),
+                   let img = UIImage(data: data) { images.append(img) }
+            }
+            // addOnly 权限 + 等保存真正完成再跳走，权限弹窗不会被切走打断。
+            if !images.isEmpty,
+               await PHPhotoLibrary.requestAuthorization(for: .addOnly) == .authorized {
+                do {
+                    try await PHPhotoLibrary.shared().performChanges {
+                        for img in images { PHAssetChangeRequest.creationRequestForAsset(from: img) }
+                    }
+                    saved = images.count
+                } catch { /* 存失败不拦路：文案还在剪贴板 */ }
             }
         }
-        if imageURLs.isEmpty {
-            showToast("文案已复制。这篇没有配图，去小红书选一张图后粘贴文案")
-            return
+        showToast(saved > 0 ? "文案已复制，\(saved) 张图已存入相册" : "文案已复制")
+        if let xhs = URL(string: "xhsdiscover://") {
+            UIApplication.shared.open(xhs) { ok in
+                if !ok { Task { @MainActor in showToast("没检测到小红书 App，文案在剪贴板里") } }
+            }
         }
-        showToast("文案已复制，分享图片到小红书后粘贴")
-        sharePayload = SharePayload(text: pack.clipboardText, imageFiles: imageURLs)
     }
 
     private func toggleCommunity(_ visible: Bool) async {
@@ -896,14 +903,12 @@ struct SharePayload: Identifiable {
     var url: URL? = nil
     var title: String = "VoiceDrop"
     var image: UIImage? = nil
-    var imageFiles: [URL] = []   // 小红书通道：只给图片文件 URL（文案在剪贴板；它的分享扩展只认文件，混入文本项或内存 UIImage 都会被拒收）
     var id: String { text }
 
-    /// The activity items handed to `UIActivityViewController`. With `imageFiles` it's
-    /// a pure image-file share (小红书). With a URL we wrap everything in `ArticleShareItem`
-    /// (per-target adaptation); without one it's plain text (no card possible anyway).
+    /// The activity items handed to `UIActivityViewController`. With a URL we wrap
+    /// everything in `ArticleShareItem` (per-target adaptation); without one it's
+    /// plain text (no card possible anyway).
     var activityItems: [Any] {
-        if !imageFiles.isEmpty { return imageFiles }
         guard let url else { return [text] }
         return [ArticleShareItem(text: text, url: url, title: title, image: image)]
     }
