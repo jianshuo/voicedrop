@@ -421,13 +421,13 @@ struct RecordingDetailView: View {
             )) {
                 Label("VD社区可见", systemImage: "person.2")
             }
+            Button { Task { await shareToXHS() } } label: {
+                Label("分享到小红书", systemImage: "book.closed")
+            }
+            .disabled(xhsWorking)
             Button { Task { await share() } } label: {
                 Label("分享", systemImage: "square.and.arrow.up")
             }
-            Button { Task { await shareToXHS() } } label: {
-                Label(xhsWorking ? "正在生成小红书文案…" : "分享到小红书", systemImage: "book.closed")
-            }
-            .disabled(xhsWorking)
             Divider()
             Button(role: .destructive) { confirmDeleteFromDetail = true } label: {
                 Label("删除", systemImage: "trash")
@@ -437,7 +437,7 @@ struct RecordingDetailView: View {
                 .fill(Theme.card)
                 .frame(width: 38, height: 38)
                 .overlay {
-                    if publishing { ProgressView().tint(Theme.accent).scaleEffect(0.8) }
+                    if publishing || xhsWorking { ProgressView().tint(Theme.accent).scaleEffect(0.8) }
                     else { Image(systemName: "ellipsis").font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.secondary) }
                 }
                 .overlay(RoundedRectangle(cornerRadius: Theme.R.nav).stroke(Theme.borderRead, lineWidth: 1))
