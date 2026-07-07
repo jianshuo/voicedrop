@@ -17,6 +17,7 @@ targets:
     info:
       path: VoiceDropApp/Info.plist
       properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleDisplayName: VoiceDrop
         CFBundleURLTypes:
           - CFBundleURLName: com.wangjianshuo.VoiceDrop
@@ -80,6 +81,7 @@ targets:
     info:
       path: VoiceDropShare/Info.plist
       properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleDisplayName: VoiceDrop
         NSExtension:
           NSExtensionPointIdentifier: com.apple.share-services
