@@ -37,10 +37,14 @@ struct RecordingDetailView: View {
     @State private var agent = ArticleAgentSession()
     @State private var dictation = SpeechDictation()
 
-    // 追问：状态机 + 织入段落的临时荧光高亮（第N行）。回答用的就是主说话条——
-    // 展开时追问信息把 pill 包起来，按住说话即回答，松手按普通指令发出。
+    // 追问：状态机。回答用的就是主说话条——展开时追问信息把 pill 包起来，
+    // 按住说话即回答，松手按普通指令发出。
     @State private var followup = FollowupState()
-    @State private var highlightLine: Int?
+
+    // 编辑落地的「改在哪了」反馈：每次 onUpdate 后 diff 新旧正文，变动行荧光
+    // 高亮几秒后淡出。按篇存（key=article index），语音修改/追问织入/插图共用。
+    @State private var highlightLines: [Int: Set<Int>] = [:]
+    @State private var highlightGen = 0
     @State private var connected = false
     @State private var confirmDeleteFromDetail = false
     @State private var showingInsertPhoto = false
@@ -251,8 +255,28 @@ struct RecordingDetailView: View {
 
     /// 指令已进队列：当场标 answered + 翻题（之后就是普通发信息 UI）。
     private func followupAnswerSent() {
-        guard let q = followup.current(for: articleIndex), let body = articles[safe: articleIndex]?.body else { return }
-        followup.answerSent(q, articleIndex: articleIndex, oldBody: body)
+        guard let q = followup.current(for: articleIndex) else { return }
+        followup.answerSent(q, articleIndex: articleIndex)
+    }
+
+    /// 编辑落地 → 逐篇 diff 新旧正文，变动行荧光高亮几秒后淡出。连发指令时
+    /// 每次落地都刷新高亮并重置淡出计时（generation 计数防旧计时器误清新高亮）。
+    private func flashChanges(from old: [MinedArticle], to new: [MinedArticle]) {
+        var map: [Int: Set<Int>] = [:]
+        for i in new.indices {
+            let oldBody = i < old.count ? old[i].body : ""
+            let rows = BodyDiff.changedRows(old: oldBody, new: new[i].body)
+            if !rows.isEmpty { map[i] = rows }
+        }
+        guard !map.isEmpty else { return }
+        highlightGen += 1
+        let gen = highlightGen
+        withAnimation(.easeIn(duration: 0.3)) { highlightLines = map }
+        Task {
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            guard gen == highlightGen else { return }
+            withAnimation(.easeOut(duration: 0.8)) { highlightLines = [:] }
+        }
     }
 
     /// Open the editing socket + ask for mic/speech once the article is loaded.
@@ -261,9 +285,10 @@ struct RecordingDetailView: View {
         connected = true
         agent.onUpdate = { [self] newDoc, _ in
             guard let newDoc else { return }
+            let oldArticles = articles
             doc = newDoc
             articleIndex = min(articleIndex, max(0, newDoc.resolvedArticles.count - 1))
-            followup.handleUpdated(newDoc)   // 追问回答的收尾（diff → 确认 → 翻题）
+            flashChanges(from: oldArticles, to: newDoc.resolvedArticles)
             // A new agent edit writes a new version; refresh history and reset to latest.
             Task { await loadVersionHistory() }
         }
@@ -274,13 +299,6 @@ struct RecordingDetailView: View {
         }
         followup.patch = { [self] id, status in
             Task { await store.patchQuestion(recording, id: id, status: status) }
-        }
-        followup.onHighlight = { [self] line in
-            withAnimation(.easeIn(duration: 0.3)) { highlightLine = line }
-            Task {
-                try? await Task.sleep(nanoseconds: 3_500_000_000)
-                withAnimation(.easeOut(duration: 0.8)) { highlightLine = nil }
-            }
         }
         agent.connect(recording)
         // 长按菜单配置：后台拉一次，失败静默（缓存/内置兜底，长按永远有菜单）。
@@ -723,8 +741,8 @@ struct RecordingDetailView: View {
                         .font(.system(size: 16)).foregroundStyle(Theme.bodyRead)
                         .lineSpacing(9)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        // 追问回答刚织进的段落：荧光笔高亮几秒后淡出（3c）。
-                        .background(highlightLine == n ? Theme.fuHighlight : .clear,
+                        // 刚落地的编辑改过的行：荧光笔高亮几秒后淡出。
+                        .background((highlightLines[articleIndex]?.contains(n) ?? false) ? Theme.fuHighlight : .clear,
                                     in: RoundedRectangle(cornerRadius: 4))
                         .overlay {
                             GeometryReader { geo in

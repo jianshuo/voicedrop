@@ -7,9 +7,9 @@ import Observation
 // 普通指令发出（走现有编辑队列 UI），没有专门的等待态。
 // 问题本体是服务端 doc 顶层 sidecar（ArticleDoc.questions），不进正文、不进版本。
 
-/// 追问的页面状态机。视图注入两个钩子：`patch`（状态回写服务器，fire-and-forget）
-/// 与 `onHighlight`（正文第N行荧光高亮）。回答就是一条普通编辑指令——发出的
-/// 那一刻标 answered 并翻题；`handleUpdated` 只负责事后 diff 出被补段落做高亮。
+/// 追问的页面状态机。视图注入 `patch`（状态回写服务器，fire-and-forget）。
+/// 回答就是一条普通编辑指令——发出的那一刻标 answered 并翻题；织入落地后的
+/// 正文高亮走成文页统一的编辑落地 diff（BodyDiff），这里不再管。
 @MainActor
 @Observable
 final class FollowupState {
@@ -19,11 +19,7 @@ final class FollowupState {
     var sheet: Sheet = .dismissed
     var currentId: String?
 
-    struct Pending { let articleIndex: Int; let oldBody: String }
-    private(set) var pending: Pending?
-
     var patch: ((String, String) -> Void)?     // (questionId, status) → PATCH
-    var onHighlight: ((Int) -> Void)?          // 织入段落的第N行 → 正文高亮
 
     private static let maxAgeMs: Double = 7 * 24 * 3600 * 1000   // 7 天未答自动消失
 
@@ -34,7 +30,6 @@ final class FollowupState {
             guard let t = q.createdAt else { return true }
             return now - t < Self.maxAgeMs
         }
-        pending = nil
         currentId = all.first { $0.status == "pending" }?.id
         sheet = all.contains { $0.status == "pending" } ? .collapsed : .dismissed
     }
@@ -64,24 +59,11 @@ final class FollowupState {
         advance(articleIndex: articleIndex)
     }
 
-    /// 口述回答已作为普通指令发出：当场标 answered、记旧正文供事后高亮、翻题。
-    /// 之后的进展就是普通发信息 UI（队列气泡/正在改），这里不再有等待态。
-    func answerSent(_ q: FollowupQuestion, articleIndex: Int, oldBody: String) {
-        pending = Pending(articleIndex: articleIndex, oldBody: oldBody)
+    /// 口述回答已作为普通指令发出：当场标 answered、翻题。之后的进展就是普通
+    /// 发信息 UI（队列气泡/正在改），织入段落的高亮由统一的编辑落地 diff 负责。
+    func answerSent(_ q: FollowupQuestion, articleIndex: Int) {
         setStatus(q.id, "answered")
         advance(articleIndex: articleIndex)
-    }
-
-    /// 编辑落地（onUpdate）：diff 出被补写的段落 → 正文荧光高亮。纯锦上添花，
-    /// 不阻塞任何交互。
-    func handleUpdated(_ doc: ArticleDoc?) {
-        guard let p = pending, let doc else { return }
-        pending = nil
-        let arts = doc.resolvedArticles
-        let newBody = (p.articleIndex >= 0 && p.articleIndex < arts.count) ? arts[p.articleIndex].body : ""
-        if let hit = Self.firstChangedRow(old: p.oldBody, new: newBody) {
-            onHighlight?(hit.line)
-        }
     }
 
     private func setStatus(_ id: String, _ status: String) {
@@ -100,22 +82,25 @@ final class FollowupState {
         withAnimation(.easeInOut(duration: 0.25)) { sheet = .dismissed }
     }
 
-    // ── diff：找口述回答被织进了哪一段 ─────────────────────────────────────────
-    /// 行 = 正文按真实换行拆出的非空行（照片标记也占行号，与成文页第N行一致）；
-    /// 段 = 其中的文字行序号。返回第一处不同的行。
-    static func firstChangedRow(old: String, new: String) -> (line: Int, paragraph: Int)? {
+}
+
+// ── 正文 diff：编辑落地后「哪些行变了」──────────────────────────────────────────
+// 语音修改、追问织入、插图……一切经 onUpdate 落地的编辑共用：新正文里内容在旧
+// 正文中不存在的行 = 变动行，荧光高亮几秒。按内容集合比（不按位置），行的插入/
+// 删除引起的整体位移不会误报；删除类操作没有落点，自然不高亮。
+enum BodyDiff {
+    /// 返回新正文里的变动行号集合。行号 = 非空 trimmed 行的连续序号
+    /// （照片标记也占号），与成文页 bodyRows 的第N行一致。
+    static func changedRows(old: String, new: String) -> Set<Int> {
         func rows(_ s: String) -> [String] {
             s.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
         }
-        let a = rows(old), b = rows(new)
-        func isPhoto(_ s: String) -> Bool { s.hasPrefix("[[photo:") && s.hasSuffix("]]") }
-        for i in 0..<b.count {
-            if i >= a.count || a[i] != b[i] {
-                let paragraph = b[0...i].filter { !isPhoto($0) }.count
-                return (line: i + 1, paragraph: max(paragraph, 1))
-            }
+        let oldSet = Set(rows(old))
+        var out = Set<Int>()
+        for (i, row) in rows(new).enumerated() where !oldSet.contains(row) {
+            out.insert(i + 1)
         }
-        return nil
+        return out
     }
 }
 
