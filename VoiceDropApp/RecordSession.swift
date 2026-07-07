@@ -11,18 +11,35 @@ struct RecordSession: View {
     /// default-carry that tag. Written as a local sidecar at promote time and
     /// uploaded with the take (survives offline queueing / app restarts).
     var defaultTag: String? = nil
+    /// When true, this session records with the AVAudioEngine backend AND connects
+    /// the realtime AI 采访员 from t=0 (launched via the hidden trigger on the list).
+    /// Chosen at start, never switched mid-recording — recording is never interrupted.
+    var realtime: Bool = false
     /// Dismiss back to the list (after stop, or cancel).
     var onFinish: () -> Void
 
     enum Phase: Equatable { case starting, denied, recording, failed(String) }
 
     @State private var recorder = AudioRecorder()
+    @State private var interviewer = RealtimeInterviewer()
     @State private var location = LocationTagger()
     @State private var phase: Phase = .starting
 
     // Photo capture (hidden feature)
     @State private var sessionStart: Date?
     @State private var showCamera = false
+
+    // Live UI state from whichever backend is active this session.
+    private var activeElapsed: TimeInterval { realtime ? interviewer.elapsed : recorder.elapsed }
+    private var activeLevel: Double { realtime ? interviewer.level : recorder.level }
+    private var realtimeStatusText: String {
+        switch interviewer.connState {
+        case .connecting: return "AI 连接中…"
+        case .live: return "AI 已接通"
+        case .degraded: return "AI 已断开 · 录音继续"
+        case .idle: return ""
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -39,17 +56,22 @@ struct RecordSession: View {
             }
         }
         .task {
-            recorder.onInterrupted = { take in Task { await promote(take); onFinish() } }
+            let onInt: (AudioRecorder.Recording) -> Void = { take in Task { await promote(take); onFinish() } }
+            if realtime { interviewer.onInterrupted = onInt } else { recorder.onInterrupted = onInt }
             let granted = await AudioRecorder.ensurePermission()
             guard granted else { phase = .denied; return }
             location.start()
-            // Use the recorder's OWN start instant as the session id, so the photo
+            // Use the backend's OWN start instant as the session id, so the photo
             // folder key matches the audio filename to the second (don't take a
             // separate Date() — it drifts across a second boundary).
-            do { try recorder.start(); sessionStart = recorder.startDate; phase = .recording }
+            do {
+                if realtime { try interviewer.start(); sessionStart = interviewer.engine.startDate }
+                else { try recorder.start(); sessionStart = recorder.startDate }
+                phase = .recording
+            }
             catch { phase = .failed("无法开始录音：\(error.localizedDescription)") }
         }
-        .onDisappear { _ = recorder.stop() }
+        .onDisappear { if realtime { _ = interviewer.stop() } else { _ = recorder.stop() } }
         .fullScreenCover(isPresented: $showCamera) {
             // The camera stays open for continuous shooting; shots collect in a
             // filmstrip (deletable) and are all uploaded when the user taps 完成.
@@ -70,15 +92,20 @@ struct RecordSession: View {
 
     private var recordingScreen: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Circle().fill(Theme.recordRed).frame(width: 9, height: 9)
-                Text("正在录音").font(.system(size: 14)).tracking(2).foregroundStyle(Theme.secondary)
+            VStack(spacing: 6) {
+                HStack(spacing: 8) {
+                    Circle().fill(Theme.recordRed).frame(width: 9, height: 9)
+                    Text(realtime ? "AI 采访中" : "正在录音").font(.system(size: 14)).tracking(2).foregroundStyle(Theme.secondary)
+                }
+                if realtime {
+                    Text(realtimeStatusText).font(.system(size: 11)).tracking(1).foregroundStyle(Theme.faint)
+                }
             }
             .padding(.top, 64)
 
             Spacer()
             VStack(spacing: 34) {
-                Text(timeString(recorder.elapsed))
+                Text(timeString(activeElapsed))
                     .font(.system(size: 78, weight: .ultraLight).monospacedDigit())
                     .foregroundStyle(Theme.ink)
                     .contentTransition(.numericText())
@@ -129,14 +156,14 @@ struct RecordSession: View {
         let pattern: [Double] = [0.30, 0.56, 0.82, 0.48, 0.95, 0.65, 0.38, 0.74, 0.52, 0.86, 0.34, 0.62, 0.44]
         return HStack(alignment: .bottom, spacing: 3) {
             ForEach(pattern.indices, id: \.self) { i in
-                let frac = pattern[i] * (0.22 + recorder.level * 0.95)
+                let frac = pattern[i] * (0.22 + activeLevel * 0.95)
                 RoundedRectangle(cornerRadius: 2)
                     .fill(barColor(frac))
                     .frame(width: 3, height: max(6, 46 * frac))
             }
         }
         .frame(height: 46)
-        .animation(.easeOut(duration: 0.1), value: recorder.level)
+        .animation(.easeOut(duration: 0.1), value: activeLevel)
     }
 
     private func barColor(_ frac: Double) -> Color {
@@ -163,7 +190,8 @@ struct RecordSession: View {
     // MARK: Flow
 
     private func stop() async {
-        guard let take = recorder.stop() else { onFinish(); return }
+        let take = realtime ? interviewer.stop() : recorder.stop()
+        guard let take else { onFinish(); return }
         await promote(take)
         onFinish()                    // close — the list shows 正在上传 and uploads
     }

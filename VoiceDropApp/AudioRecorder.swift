@@ -13,7 +13,7 @@ import Observation
 /// a half-written take (the cause of the moov-less / 0-byte corrupt uploads).
 @MainActor
 @Observable
-final class AudioRecorder {
+final class AudioRecorder: RecordingBackend {
 
     /// A finished take, handed to ContentView for enrichment + upload.
     struct Recording: Sendable {

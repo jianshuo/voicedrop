@@ -17,6 +17,7 @@ struct LibraryView: View {
     @State private var confirmDelete: Recording?
     @State private var confirmReprocess: Recording?
     @State private var showRecord = false
+    @State private var recordRealtime = false     // hidden trigger → record with the AI 采访员
     @State private var deepLinkRecordTag: String?   // tag from voicedrop://record?tag=… / 开始录音 intent
     @State private var showSettings = false
     @State private var selectedRec: Recording?
@@ -165,8 +166,8 @@ struct LibraryView: View {
         }
         .navigationDestination(isPresented: $showSettings) { SettingsView(libraryStore: store) }
         .fullScreenCover(isPresented: $showRecord) {
-            RecordSession(defaultTag: deepLinkRecordTag ?? currentPageTag) {
-                showRecord = false; deepLinkRecordTag = nil
+            RecordSession(defaultTag: deepLinkRecordTag ?? currentPageTag, realtime: recordRealtime) {
+                showRecord = false; deepLinkRecordTag = nil; recordRealtime = false
                 Task { await refresh() }
             }
         }
@@ -544,7 +545,23 @@ struct LibraryView: View {
             redCircle
                 .scaleEffect(talking ? 1.08 : 1)
                 .gesture(talkGesture)
-                .simultaneousGesture(TapGesture().onEnded { if !talking { showRecord = true } })
+                .simultaneousGesture(TapGesture().onEnded { if !talking { recordRealtime = false; showRecord = true } })
+                // Hidden AI 采访 trigger, left of the red key (mirrors RecordSession's 拍照 on the right):
+                // a faint icon; tap = record WITH the realtime interviewer (engine backend from t=0).
+                .overlay(alignment: .center) {
+                    Image(systemName: "waveform.and.mic")
+                        .font(.system(size: 22, weight: .light))
+                        .foregroundStyle(Color(hex: "A89E8E")).opacity(0.45)
+                        .frame(width: 42, height: 42)
+                        .contentShape(Rectangle())
+                        .onTapGesture { if !talking { recordRealtime = true; showRecord = true } }
+                        .overlay(alignment: .top) {
+                            Text("AI 采访").font(.system(size: 11)).tracking(2)
+                                .foregroundStyle(Color(hex: "C2B8A8")).fixedSize().offset(y: 42)
+                        }
+                        .offset(x: -96)
+                        .accessibilityLabel("AI 采访录音")
+                }
             Text(talking ? (willCancel ? "上滑取消 · 松开放弃" : "松开发送 · 上滑取消") : "轻点录音 · 长按说话")
                 .font(.system(size: 12)).tracking(1)
                 .foregroundStyle(talking ? Theme.accent : Theme.secondary)
