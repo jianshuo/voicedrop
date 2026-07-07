@@ -197,7 +197,9 @@ struct PushToTalkBar: View {
         .background(RoundedRectangle(cornerRadius: Theme.R.primary).fill(Theme.card))
         .overlay(RoundedRectangle(cornerRadius: Theme.R.primary).stroke(Theme.borderRead, lineWidth: 1))
         .shadow(color: .clear, radius: 7, x: 0, y: 4)
-        .contentShape(RoundedRectangle(cornerRadius: Theme.R.primary))
+        // 命中区向外扩 12pt：手指起点贴着药丸边缘时也算按住说话，不会穿透到
+        // 后面的正文行触发段落长按菜单。
+        .contentShape(Rectangle().inset(by: -12))
         .gesture(holdGesture())
     }
 

@@ -172,13 +172,16 @@ struct FollowupWrap: View {
 
                 pill.padding(.top, 12)
 
-                // 分段进度条：每题一段 16×4；绿=已答，橙=当前，灰=未答/跳过。
+                // 分段进度条：每题一段，绿=已答，橙=当前，灰=未答/跳过。
+                // 段宽弹性（≤16pt）：题少时是设计稿的 16×4，题多（十几个以上）
+                // 自动收窄挤进一行，绝不把卡片撑宽。
                 HStack(spacing: 5) {
                     ForEach(qs) { seg in
                         RoundedRectangle(cornerRadius: 2)
                             .fill(seg.status == "answered" ? Theme.fuGreen
                                   : (seg.id == q.id ? Theme.accent : Theme.fuBorder))
-                            .frame(width: 16, height: 4)
+                            .frame(height: 4)
+                            .frame(minWidth: 3, maxWidth: 16)
                     }
                 }
                 .padding(.top, 12)
