@@ -16,7 +16,9 @@ iOS 代码：`~/code/voicedrop/VoiceDropApp/`（RecordSession / AudioRecorder / 
 |---|---|---|
 | 目标表面 | **原生 iOS app**（不是 web） | 用户确认；红键在原生录音屏 |
 | 传输 | **WebSocket Realtime，不用 WebRTC** | WebRTC 用 RTCAudioSession 接管/重配音频会话 + 自带一路麦克风采集，和现有 AVAudioRecorder 抢麦→易打断录音；WS 让我们单采集全掌控。用户授权「用最好的方法」 |
-| 音频采集 | **AVAudioRecorder → AVAudioEngine 单采集 tee** | 一路采麦，PCM 同时写录音文件(a) + 推给 AI(b)；两个采集者不可靠，AVAudioRecorder 不给 buffer，单采集 tee 是唯一稳的架构 |
+| **连接路径** | **手机 → Cloudflare worker WS 中转 → OpenAI，不直连**（2026-07-08 纠正，取代原「手机直连 OpenAI + 临时凭证」） | 用户的国内用户**连不了 api.openai.com**；手机只连 `wss://jianshuo.dev/agent/realtime/relay`（可达，和现有 /asr /status 一样），worker 在边缘用 OPENAI_API_KEY 连 OpenAI 双向转发。照现有 `proxyVolcAsrWebSocket`(/asr) 先例。附带好处：key 全留服务端、计费在服务端看穿过的事件更可信 |
+| **触发方式** | **列表页红键旁隐蔽区，点它=带 AI 录音**（2026-07-08 定；不用上滑/长按，红键手势已满 tap/长按口述/长按上滑取消） | 点隐蔽区→以 realtime 模式拉起录音屏，AVAudioEngine 从 t=0 跑；后端在开始那一刻定死，全程无切换无缝 |
+| 音频采集 | **两套后端：默认 AVAudioRecorder 不动；仅 realtime 模式切 AVAudioEngine 单采集 tee**（2026-07-08 细化，取代原「整体替换」） | 普通录音（不接 AI）走现有 AVAudioRecorder，一字节不动、零风险；只有按下 realtime 触发才走引擎 tee（一路采麦，PCM 同时写 .m4a + 推 AI）。风险关进 opt-in 模式，碰不到默认录音。两条路 .m4a 输出/命名/上传契约一致 |
 | AI 声音 | **外放 + 回声消除(AEC)** | 用户选；voiceProcessing 把 AI 声音从麦克风信号里消掉。**代价**：AEC/降噪/AGC 会改变录音音色，与今天原始 AAC 有差别（用户已接受；要逐比特一致只有「只进耳机」能做到） |
 | 何时追问 | **程序控制 + 限流**（app 计时 ≥5s 停顿 + 限流才发 response.create），不用纯服务端 VAD | 纯服务端 VAD 每次静音就问→话痨且无法「不合适就不问」；app 控制精确且可限流。用户确认 |
 | 模型 | **gpt-realtime-2.1** | 最新 Realtime 2；`reasoning.effort: low` |
@@ -27,7 +29,7 @@ iOS 代码：`~/code/voicedrop/VoiceDropApp/`（RecordSession / AudioRecorder / 
 
 - **模型**：`gpt-realtime-2.1`（Realtime 2，加 reasoning；建议 `reasoning.effort: low`）。
 - **临时凭证 mint**：`POST /v1/realtime/client_secrets`，服务端用 `OPENAI_API_KEY`。请求体字段：`model`、`instructions`、`audio.input.format` / `audio.output.format`、`audio.input.turn_detection`、`output_modalities`（`["audio"]`）、`reasoning.effort`。响应含 `id`(sess_…)、`client_secret`、`expires_at`。
-- **WS 连接**：`wss://api.openai.com/v1/realtime?model=gpt-realtime-2.1&client_secret=<临时secret>`。key 绝不上设备。
+- **WS 连接（中转，2026-07-08 定）**：worker 边缘用 `fetch(https://api.openai.com/v1/realtime?model=gpt-realtime-2.1, { headers: { Upgrade:"websocket", Authorization:"Bearer "+OPENAI_API_KEY } })` 拿 `upstream.webSocket`。手机不直连、不用 `client_secrets` mint（上面那条 mint 事实**作废**，改为 worker 用真 key 直接连）。key 绝不上设备。
 - **turn_detection**：`server_vad` 字段 `silence_duration_ms`(默认 500)、`threshold`(0.5)、`prefix_padding_ms`(300)、`create_response`、`interrupt_response`；另有 `semantic_vad`(`eagerness` low/medium/high/auto)。server_vad **仍发** `input_audio_buffer.speech_started` / `speech_stopped` 事件（不受 create_response 影响）。
 - **音频事件**：发 `input_audio_buffer.append`(PCM16 base64)；喊 AI 开口发 `response.create`(client event)；掐断 AI 发 `response.cancel`；收 `response.audio.delta`(AI 语音 base64)、`response.done`(含 `usage`)。
 - **费率(gpt-realtime-2.1，每 1M token)**：audio input **$32**、audio cached input **$0.40**、audio output **$64**；text input **$4**、text cached **$0.40**、text output **$24**。
@@ -44,25 +46,24 @@ iOS 代码：`~/code/voicedrop/VoiceDropApp/`（RecordSession / AudioRecorder / 
 
 **风险（最需真机验证）**：把现有 `AVAudioRecorder` 换成 `AVAudioEngine` 采集，动了神圣录音路径。缓解：录音文件写入是 tap 里第一优先、同步、不依赖任何 realtime 状态；先在真机验证「纯录音（不接 AI）」用新引擎与旧 AVAudioRecorder 产出等价、无 glitch，再接 AI。
 
-### B. 服务端（voicedrop-agent worker，Phase 1）
-两个新端点，认证用现有用户 token（resolveScope）：
+### B. 服务端（voicedrop-agent worker，Phase 1）—— WS 中转（2026-07-08 重做，取代原 mint/usage 两端点）
+**一个 WS 中转端点**，照现有 `proxyVolcAsrWebSocket`(/asr) 先例——无状态 WS 代理，不用 DO：
 
-1. **`POST /agent/realtime/session`** — mint 临时凭证
-   - **不硬性拦截余额**（用户定：算力可为负）。直接用 `env.OPENAI_API_KEY` 调 `POST /v1/realtime/client_secrets`，body 带：`model: "gpt-realtime-2.1"`、采访员 `instructions`（见 D）、`audio.input.format`/`audio.output.format`（pcm16 24kHz）、`audio.input.turn_detection: { type:"server_vad", silence_duration_ms:500, create_response:false, interrupt_response:false }`（只借它的 speech_started/stopped 事件，**不自动回应**）、`output_modalities:["audio"]`、`reasoning.effort:"low"`。
-   - 回 `{ client_secret, expires_at, session_id }` 给 app。`OPENAI_API_KEY` 只在 worker。
-2. **`POST /agent/realtime/usage`** — 结算计费
-   - app 会话结束上报 `{ session_id, usage: {audio_in, audio_in_cached, audio_out, text_in, text_in_cached, text_out} }`（token 数从 WS `response.done.usage` 累加）。
-   - worker 按费率折算美元 → 折算算力，**直接扣费**（沿用 usage_store，**允许扣成负数，不设下限**），记 ledger（来源标 `realtime`）。
-   - **计费不追求精确**（用户定）：直接信 app 上报的 token 数，不做 audio_seconds 上限兜底那类复杂 reconciliation。
+**`GET /agent/realtime/relay`（WebSocket upgrade）**
+- 认证：现有用户 token（`bearerToken`+`resolveScope`），无效 → 401；非 upgrade → 426。
+- worker 用 `env.OPENAI_API_KEY` 向 `https://api.openai.com/v1/realtime?model=gpt-realtime-2.1` 发 `Upgrade: websocket` 请求拿到 `upstream.webSocket`（CF 出站 WS 要 https:// + Upgrade 头，不能 wss://）。
+- `new WebSocketPair()`，`server.accept()`+`upstream.accept()`，**双向逐帧转发**（client↔OpenAI，照 asr-proxy 的 forwarder + Blob 归一）。
+- 连上后 worker **注入一条 `session.update`**（采访员 instructions + `turn_detection: server_vad, create_response:false` + pcm16 24k），配置服务端掌控，app 不经手 instructions。
+- **服务端计费**：在 upstream→client 方向解析帧，`type==="response.done"` 时累加 `usage`（audio/text × in/out/cached）；连接关闭时 `ctx.waitUntil(debit(...))` 折算算力扣费（来源 `realtime`，允许透支为负、不拦）。**比客户端自报可信**。
+- key **完全不上设备**，也不再需要临时 `ek_` 凭证。
 
-**换算口径（用户定 2026-07-07）**：`1 USD = 7.3 RMB`，再 `×23 算力/元` ⇒ **`1 USD ≈ 167.9 算力`**。常量 `USD_TO_SUANLI = 7.3 * 23`。费率($/1M token)存 worker 侧常量/config，便于跟 OpenAI 官方更新。
+**换算口径（用户定 2026-07-07）**：`1 USD = 7.3 RMB × 23 算力/元 ⇒ 167.9 算力/USD`。`realtimeCostUY`（usage.js）沿用 `FX=7.3`，费率($/1M token)存常量。计费不追求精确、允许负数。
 
-### C. App WS 客户端（iOS，Phase 2）—— `RealtimeInterviewer`
-- 向 `/agent/realtime/session` 取临时 secret → 连 `wss://api.openai.com/v1/realtime?model=gpt-realtime-2.1&client_secret=…`。
-- 连上发 `session.update` 兜底设 instructions / turn_detection / modalities。
-- 持续发 `input_audio_buffer.append`（来自音频 tap 的(b)路）。
-- 监听 `input_audio_buffer.speech_started` / `speech_stopped` 驱动停顿计时（见 D）。
-- 累加 `response.done.usage`；会话结束调 `/agent/realtime/usage`。
+### C. App WS 客户端（iOS，Phase 2）—— `RealtimeSession` / `RealtimeInterviewer`
+- 连 **`wss://jianshuo.dev/agent/realtime/relay`**（**不是** OpenAI），握手头 `req.setBearer(AuthStore.bearer)`——和 `StatusSession` 一模一样。**无临时凭证、无 OpenAI 直连**。
+- 持续发 `input_audio_buffer.append`（音频 tap 的(b)路，经中转到 OpenAI）。
+- 收 `input_audio_buffer.speech_started/stopped` 驱动停顿计时（见 D）；发 `response.create`/`response.cancel`（经中转）。
+- 收 `response.output_audio.delta` 播放。**app 不做计费**（服务端中转已计）。
 - 任何错误 → 静默降级，录音继续。
 
 ### D. 采访员行为（instructions + 程序控制 + 限流）
@@ -78,18 +79,16 @@ iOS 代码：`~/code/voicedrop/VoiceDropApp/`（RecordSession / AudioRecorder / 
 ## 数据流
 
 ```
-点隐蔽触发区
-  → RecordSession 照常 recorder.start()（录音开始，神圣）
-  → 同时 RealtimeInterviewer.start():
-       POST /agent/realtime/session（worker 用 OPENAI_API_KEY mint 临时 secret；不拦余额）
-       连 WS → session.update
-  → 音频 tap 每 buffer: (a) 写 .m4a  (b) 24kHz PCM16 → input_audio_buffer.append
+点列表页红键旁隐蔽区 → 以 realtime 模式拉起录音屏（AVAudioEngine 从 t=0）
+  → EngineRecorder.start()（录音开始，神圣）+ RealtimeInterviewer.start():
+       连 wss://jianshuo.dev/agent/realtime/relay（setBearer；worker 在边缘连 OpenAI 并注入 session.update）
+  → 音频 tap 每 buffer: (a) 写 .m4a  (b) 24kHz PCM16 → input_audio_buffer.append（经中转到 OpenAI）
   → 收 speech_stopped → app 起 5s 静音计时
-       满足 ≥5s + 限流 + 有新内容 → response.create → 收 response.audio.delta → 外放（AEC 挡住不进录音）
+       满足 ≥5s + 限流 + 有新内容 → response.create → 收 response.output_audio.delta → 外放（AEC 挡住不进录音）
        收 speech_started（说话人续说）→ 若 AI 在说则 response.cancel
-  → 停止录音 / 再点触发区:
-       recorder.stop() 照常 promote→上传队列（不变）
-       RealtimeInterviewer.stop(): 累加的 usage → POST /agent/realtime/usage → 扣算力记账
+  → 停止录音:
+       EngineRecorder.stop() → promote→上传队列（不变）；RealtimeInterviewer.stop() 断开中转
+       worker 中转侧在连接关闭时按累加的 usage 扣算力记账（服务端计费，app 不管）
 ```
 
 ## 错误处理 / 降级（录音优先级最高）
@@ -108,7 +107,7 @@ iOS 代码：`~/code/voicedrop/VoiceDropApp/`（RecordSession / AudioRecorder / 
 ## 分期
 
 ### Phase 1（我完整交付 + vitest + 部署）
-voicedrop-agent worker：`/agent/realtime/session`（mint + 算力预检）、`/agent/realtime/usage`（费率折算 + 扣费记账）、费率 config、采访员 instructions 常量。需要 `OPENAI_API_KEY` 配成 worker secret（用户提供）。这是 iOS 要调的后端契约，可独立测试上线。
+voicedrop-agent worker：**`GET /agent/realtime/relay`（WS 中转）** + 服务端计费（连接关闭时按累加 usage 扣算力）+ `realtimeCostUY` 费率折算 + 采访员 instructions/session.update 注入。`OPENAI_API_KEY` 配成 worker secret（已配）。这是 iOS 要连的后端契约，可独立上线（worker→OpenAI 连通性 + 中转管道需线上验证）。
 
 ### Phase 2（我写 Swift，用户 Xcode/真机/TestFlight 验）
 `AudioRecorder` 采集重构（AVAudioEngine + AEC + tee，保录音输出/上传契约）、`RealtimeInterviewer`（WS 客户端 + 停顿计时/限流 + 播放）、RecordSession UI（隐蔽触发区 + 状态）、usage 上报。**先真机验证「新引擎纯录音等价、无 glitch」，再接 AI。**
@@ -118,7 +117,7 @@ voicedrop-agent worker：`/agent/realtime/session`（mint + 算力预检）、`/
 - **Phase 2**：真机手测——(1) 新引擎纯录音与旧 AVAudioRecorder 产出等价、无爆音；(2) 接 AI 后录音仍完整、AEC 挡住 AI 声音；(3) ≥5s 停顿才追问、说话人续说即 cancel；(4) 断网/杀 AI 录音不受影响；(5) 计费数与官方用量吻合。
 
 ## 安全
-- `OPENAI_API_KEY` 只在 worker secret，绝不下发设备；app 只拿短时 `client_secret`（`expires_at` 到期重 mint）。
+- `OPENAI_API_KEY` 只在 worker secret，绝不下发设备；app 连的是自家中转（`req.setBearer(anon)`），全程碰不到 OpenAI 凭证。
 - realtime 端点认用户 token + scope 隔离；usage 上报按 session_id 记该用户账。
 
 ## 非目标（YAGNI）
