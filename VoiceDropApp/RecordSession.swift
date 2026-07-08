@@ -58,29 +58,32 @@ struct RecordSession: View {
             }
         }
         .task {
-            EngineRecorder.log.info("RecordSession.task BEGIN realtime=\(realtime)")
+            EngineRecorder.trace("========== RecordSession.task BEGIN realtime=\(realtime) ==========")
             let onInt: (AudioRecorder.Recording) -> Void = { take in Task { await promote(take); onFinish() } }
             if realtime { interviewer.onInterrupted = onInt } else { recorder.onInterrupted = onInt }
-            EngineRecorder.log.info("RecordSession.task ensurePermission BEGIN (perm=\(AVAudioApplication.shared.recordPermission.rawValue))")
+            EngineRecorder.trace("task: ensurePermission BEGIN (perm=\(AVAudioApplication.shared.recordPermission.rawValue))")
             let granted = await AudioRecorder.ensurePermission()
-            EngineRecorder.log.info("RecordSession.task ensurePermission END granted=\(granted)")
-            guard granted else { phase = .denied; return }
+            EngineRecorder.trace("task: ensurePermission END granted=\(granted)")
+            guard granted else { EngineRecorder.trace("task: permission DENIED"); phase = .denied; return }
             // Pre-warm the audio route so the FIRST cold start isn't laggy (第一次卡顿).
             // Activating the session + a short settle happens here while the spinner shows,
             // so interviewer.start()'s engine start hits a warm route.
-            if realtime { await EngineRecorder.prewarm() }
+            if realtime { EngineRecorder.trace("task: prewarm BEGIN"); await EngineRecorder.prewarm(); EngineRecorder.trace("task: prewarm END") }
             location.start()
+            EngineRecorder.trace("task: location.start() done → entering do{} start")
             // Use the backend's OWN start instant as the session id, so the photo
             // folder key matches the audio filename to the second (don't take a
             // separate Date() — it drifts across a second boundary).
             do {
-                if realtime { try interviewer.start(); sessionStart = interviewer.engine.startDate }
-                else { try recorder.start(); sessionStart = recorder.startDate }
+                if realtime { EngineRecorder.trace("task: interviewer.start() BEGIN"); try interviewer.start(); sessionStart = interviewer.engine.startDate; EngineRecorder.trace("task: interviewer.start() END") }
+                else { EngineRecorder.trace("task: recorder.start() BEGIN"); try recorder.start(); sessionStart = recorder.startDate; EngineRecorder.trace("task: recorder.start() END") }
                 phase = .recording
+                EngineRecorder.trace("task: phase=.recording SET (UI should now show recording)")
             }
-            catch { phase = .failed("无法开始录音：\(error.localizedDescription)") }
+            catch { EngineRecorder.trace("task: CATCH \(error.localizedDescription)"); phase = .failed("无法开始录音：\(error.localizedDescription)") }
         }
-        .onDisappear { if realtime { _ = interviewer.stop() } else { _ = recorder.stop() } }
+        .onAppear { EngineRecorder.trace("RecordSession.onAppear realtime=\(realtime) phase=\(String(describing: phase))") }
+        .onDisappear { EngineRecorder.trace("RecordSession.onDisappear"); if realtime { _ = interviewer.stop() } else { _ = recorder.stop() } }
         .fullScreenCover(isPresented: $showCamera) {
             // The camera stays open for continuous shooting; shots collect in a
             // filmstrip (deletable) and are all uploaded when the user taps 完成.

@@ -51,6 +51,7 @@ final class RealtimeInterviewer {
     /// Start recording (sacred) + connect the relay. Throws only if RECORDING can't
     /// start — the relay never throws here (failure = degraded, recording continues).
     func start() throws {
+        EngineRecorder.trace("interviewer.start(): wiring callbacks")
         session.onStateChange     = { [weak self] s in self?.connState = s }
         session.onResponseCreated = { [weak self] in self?.beginAiTurn() }             // AI about to speak
         session.onAudioDelta      = { [weak self] pcm in self?.beginAiTurn(); self?.engine.playAI(pcm) }
@@ -61,8 +62,11 @@ final class RealtimeInterviewer {
             self.session.appendAudio(pcm)
         }
 
+        EngineRecorder.trace("interviewer.start(): engine.start() BEGIN")
         try engine.start()      // if this throws, nothing else has run — no AI, no relay
+        EngineRecorder.trace("interviewer.start(): engine.start() END → session.connect()")
         session.connect()       // best-effort
+        EngineRecorder.trace("interviewer.start(): session.connect() returned (recording live)")
     }
 
     private func beginAiTurn() {

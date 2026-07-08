@@ -16,9 +16,17 @@ struct LibraryView: View {
     @State private var tab: HomeTab = .recordings
     @State private var confirmDelete: Recording?
     @State private var confirmReprocess: Recording?
-    @State private var showRecord = false
-    @State private var recordRealtime = false     // hidden trigger → record with the AI 采访员
-    @State private var deepLinkRecordTag: String?   // tag from voicedrop://record?tag=… / 开始录音 intent
+    // A pending record launch. Item-based (NOT a Bool + a separate flag) so the mode
+    // travels WITH the presentation: fullScreenCover(item:) always builds the sheet
+    // from the item that triggered it. The old isPresented: + separate recordRealtime
+    // @State read STALE on the first present — the first "AI 采访" tap silently launched
+    // a non-realtime recording, then worked the second time. See RecordLaunch.
+    @State private var recordLaunch: RecordLaunch?
+    private struct RecordLaunch: Identifiable {
+        let id = UUID()
+        let realtime: Bool      // true = AI 采访员 (engine backend + relay); false = plain recording
+        let tag: String?        // deep-link/intent tag; nil = use the current page's tag
+    }
     @State private var showSettings = false
     @State private var selectedRec: Recording?
     @State private var selectedPost: CommunityPost?
@@ -165,11 +173,13 @@ struct LibraryView: View {
             CommunityPostView(store: community, post: post, onRecordFinished: responseRecorded)
         }
         .navigationDestination(isPresented: $showSettings) { SettingsView(libraryStore: store) }
-        .fullScreenCover(isPresented: $showRecord) {
-            RecordSession(defaultTag: deepLinkRecordTag ?? currentPageTag, realtime: recordRealtime) {
-                showRecord = false; deepLinkRecordTag = nil; recordRealtime = false
+        .fullScreenCover(item: $recordLaunch) { launch in
+            RecordSession(defaultTag: launch.tag ?? currentPageTag, realtime: launch.realtime) {
+                recordLaunch = nil
                 Task { await refresh() }
             }
+            .onAppear { EngineRecorder.trace("COVER onAppear → RecordSession shown, realtime=\(launch.realtime)") }
+            .onDisappear { EngineRecorder.trace("COVER onDisappear") }
         }
         .task {
             statusSession.onPhase = { stem, phase in store.markPhase(stem: stem, phase: phase) }
@@ -212,7 +222,7 @@ struct LibraryView: View {
         .onReceive(router.$pending.compactMap { $0 }) { link in
             // A deep link (voicedrop://<page>) arrived — apply it, clearing any
             // pushed detail/settings/record so it lands cleanly, then reset.
-            showRecord = false
+            recordLaunch = nil
             switch link {
             case .recordings:
                 tab = .recordings; selectedRec = nil; selectedPost = nil; showSettings = false
@@ -225,7 +235,7 @@ struct LibraryView: View {
                 // A deep-link/intent tag beats the current page's tag; nil keeps
                 // page behavior (record on a tag page → that page's tag).
                 selectedRec = nil; selectedPost = nil; showSettings = false
-                deepLinkRecordTag = tag; showRecord = true
+                recordLaunch = RecordLaunch(realtime: false, tag: tag)
             case .article(let stem):
                 tab = .recordings; selectedPost = nil; showSettings = false
                 if let rec = store.recordings.first(where: { $0.stem == stem }) {
@@ -545,7 +555,7 @@ struct LibraryView: View {
             redCircle
                 .scaleEffect(talking ? 1.08 : 1)
                 .gesture(talkGesture)
-                .simultaneousGesture(TapGesture().onEnded { if !talking { recordRealtime = false; showRecord = true } })
+                .simultaneousGesture(TapGesture().onEnded { if !talking { EngineRecorder.trace("TAP 红键(普通录音) → launch realtime=false"); recordLaunch = RecordLaunch(realtime: false, tag: nil) } })
                 // Hidden AI 采访 trigger, left of the red key (mirrors RecordSession's 拍照 on the right):
                 // a faint icon; tap = record WITH the realtime interviewer (engine backend from t=0).
                 .overlay(alignment: .center) {
@@ -554,7 +564,7 @@ struct LibraryView: View {
                         .foregroundStyle(Color(hex: "A89E8E")).opacity(0.45)
                         .frame(width: 42, height: 42)
                         .contentShape(Rectangle())
-                        .onTapGesture { if !talking { recordRealtime = true; showRecord = true } }
+                        .onTapGesture { if !talking { EngineRecorder.trace("TAP AI采访键 → launch realtime=true"); recordLaunch = RecordLaunch(realtime: true, tag: nil) } }
                         .overlay(alignment: .top) {
                             Text("AI 采访").font(.system(size: 11)).tracking(2)
                                 .foregroundStyle(Color(hex: "C2B8A8")).fixedSize().offset(y: 42)

@@ -33,11 +33,13 @@ final class RealtimeSession {
     private var closed = false
 
     func connect() {
-        guard task == nil else { return }
+        EngineRecorder.trace("session.connect(): BEGIN (task==nil? \(task == nil))")
+        guard task == nil else { EngineRecorder.trace("session.connect(): SKIP already connected"); return }
         closed = false
         state = .connecting
         let token = AuthStore.shared.bearer
-        guard !token.isEmpty, let url = URL(string: "\(API.agentWS)/realtime/relay") else { state = .degraded; return }
+        guard !token.isEmpty, let url = URL(string: "\(API.agentWS)/realtime/relay") else { EngineRecorder.trace("session.connect(): DEGRADED no token/url"); state = .degraded; return }
+        EngineRecorder.trace("session.connect(): opening WS \(url.absoluteString)")
         var req = URLRequest(url: url)
         req.setBearer(token)                                  // handshake header, same as StatusSession
         let s = URLSession(configuration: .default)

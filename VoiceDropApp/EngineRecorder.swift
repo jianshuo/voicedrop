@@ -31,6 +31,11 @@ import os
 @Observable
 final class EngineRecorder: RecordingBackend {
     nonisolated static let log = Logger(subsystem: "dev.jianshuo.voicedrop", category: "realtime")
+    /// One-liner trace helper so other views can log into the same subsystem/category
+    /// without importing os or building their own Logger. Used to instrument the
+    /// tap → fullScreenCover → RecordSession.task chain when diagnosing the
+    /// "first entry does nothing" cold-start bug.
+    nonisolated static func trace(_ msg: String) { log.info("\(msg, privacy: .public)") }
     private(set) var isRecording = false
     private(set) var elapsed: TimeInterval = 0
     private(set) var level: Double = 0
