@@ -110,7 +110,11 @@ final class SpeechDictation {
     var authorized: Bool? = nil      // nil = not asked yet
     var error: String?
 
-    private let engine = AVAudioEngine()
+    // 每次 start() 都换全新引擎:AVAudioEngine 闲置期间若音频会话类别/路由变过
+    // (同页的 AudioPlayer 播放、录音、来电…),缓存的 I/O 图会失效——下次 start()
+    // 表面成功但 tap 送 0 buffer 或格式过期的 buffer(重采样成噪音,ASR 全聋)。
+    // 这就是「按住说话经常听不到」的根因;EngineRecorder 每次新建引擎同理。
+    private var engine = AVAudioEngine()
     private var session: URLSession?
     private var task: URLSessionWebSocketTask?
     private var audioStreamer: VolcAudioStreamer?
@@ -201,6 +205,8 @@ final class SpeechDictation {
     }
 
     private func startAudioEngine() throws {
+        engine = AVAudioEngine()          // fresh graph against the CURRENT session/route
+        tapInstalled = false
         let input = engine.inputNode
         let inputFormat = input.outputFormat(forBus: 0)
         guard inputFormat.sampleRate > 0, inputFormat.channelCount > 0 else {
