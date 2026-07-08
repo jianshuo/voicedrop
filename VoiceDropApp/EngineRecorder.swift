@@ -57,6 +57,12 @@ final class EngineRecorder: RecordingBackend {
     private let playbackEngine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
     private var playbackStarted = false     // playback engine starts LAZILY on first AI audio
+    // Half-duplex needs to know when the AI's audio has finished PLAYING (not just when
+    // OpenAI finished generating), so the uplink resumes only after the loudspeaker is
+    // quiet — otherwise the mic captures the AI's own tail and loops the conversation.
+    private var pendingPlayback = 0
+    var isPlaybackIdle: Bool { pendingPlayback == 0 }
+    var onPlaybackDrained: (() -> Void)?
     private var sink: Sink?
     private var currentURL: URL?
     private var startInstant: Date?
@@ -186,7 +192,16 @@ final class EngineRecorder: RecordingBackend {
                 playbackStarted = true
             } catch { engineError = "播放引擎启动失败: \(error.localizedDescription)"; return }
         }
-        player.scheduleBuffer(buffer, completionHandler: nil)
+        pendingPlayback += 1
+        // .dataPlayedBack fires when the buffer has actually been PLAYED (not just consumed),
+        // so we know when the loudspeaker is truly quiet.
+        player.scheduleBuffer(buffer, completionCallbackType: .dataPlayedBack) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.pendingPlayback -= 1
+                if self.pendingPlayback <= 0 { self.pendingPlayback = 0; self.onPlaybackDrained?() }
+            }
+        }
         if !player.isPlaying { player.play() }
     }
 
