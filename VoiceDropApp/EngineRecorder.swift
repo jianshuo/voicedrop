@@ -8,12 +8,13 @@ import Observation
 ///   • tees the mic PCM (resampled to 24 kHz Int16) to `onPCM` for the AI uplink,
 ///   • plays AI audio via a separate playback engine's `AVAudioPlayerNode`.
 ///
-/// Acoustic echo cancellation (AEC) via `setVoiceProcessingEnabled(true)`, so the model
-/// hears only the user (real barge-in; no echo self-interruption) and the recording is
-/// clean. AEC requires a SINGLE full-duplex engine (playback is the reference signal).
-/// The mic tap uses the input node's NATIVE format (format: nil) — earlier "tap 0" was a
-/// format-mismatch bug (24k tap vs 48k mic), not VPIO itself. If the diagnostic still
-/// shows tap 0 on device, fall back to a no-VPIO two-engine half-duplex build.
+/// NO acoustic echo cancellation (AEC): enabling `setVoiceProcessingEnabled` silently
+/// killed the input tap on device (tap 0 buffers). Without AEC the AI's loudspeaker
+/// leaks into the recording → USE EARPHONES for a clean take. (AEC to be revisited.)
+///
+/// TWO engines: a capture-only engine (tap identical to VoiceEdit — proven to deliver
+/// buffers) + a separate playback-only engine. A single full-duplex engine left the
+/// input un-pulled (tap 0). The mic tap uses the input node's NATIVE format (format: nil).
 ///
 /// KNOWN LIMITATIONS (deferred, tracked): the hand-rolled resampler resets phase per
 /// buffer — exact for the 48 kHz built-in mic (2:1 → 24 kHz) but imprecise for 44.1 kHz
@@ -46,14 +47,14 @@ final class EngineRecorder: RecordingBackend {
     nonisolated static let aiFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
                                                     sampleRate: 24_000, channels: 1, interleaved: false)!
 
-    // SINGLE full-duplex engine WITH voice-processing (AEC). AEC needs the playback
-    // (AI voice) as a reference signal to cancel it from the mic, so playback MUST go
-    // through the same engine/IO unit as the VPIO input. The tap uses the input's
-    // NATIVE format (format: nil) — earlier "tap 0" was a format-mismatch bug (24k tap
-    // vs 48k mic), NOT VPIO itself; this clean combo (VPIO + nil tap) is the real test.
-    // If tap stays 0 on device (diagnostic), fall back to the no-VPIO half-duplex build.
-    private let engine = AVAudioEngine()
+    // TWO separate engines. A single full-duplex engine (input tap + output player)
+    // left the input side un-pulled → tap 0 buffers on device. Splitting into a
+    // capture-only engine (identical to VoiceEdit's proven pattern) + a playback-only
+    // engine makes each single-purpose and reliable. They share one AVAudioSession.
+    private let captureEngine = AVAudioEngine()
+    private let playbackEngine = AVAudioEngine()
     private let player = AVAudioPlayerNode()
+    private var playbackStarted = false     // playback engine starts LAZILY on first AI audio
     private var sink: Sink?
     private var currentURL: URL?
     private var startInstant: Date?
@@ -74,13 +75,11 @@ final class EngineRecorder: RecordingBackend {
         engineError = nil
 
         var tapInstalled = false
+        var captureStarted = false
         do {
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .defaultToSpeaker])
             try session.setActive(true)
-
-            let input = engine.inputNode
-            try? input.setVoiceProcessingEnabled(true)   // AEC (best-effort; if unavailable, capture still runs)
 
             let now = Date()
             let url = AudioRecorder.stagingURL(start: now)
@@ -95,19 +94,22 @@ final class EngineRecorder: RecordingBackend {
             currentURL = url
             startInstant = now
 
-            // Playback node through the SAME engine (so VPIO/AEC has the reference signal).
-            if player.engine == nil { engine.attach(player) }
-            engine.connect(player, to: engine.mainMixerNode, format: EngineRecorder.aiFormat)
-
-            // Mic tap — native format (format: nil). Remove any stale tap first so a retry
-            // after a failed start can't crash with a double-installTap.
+            // 1) CAPTURE engine — tap only, identical to VoiceEdit (proven to deliver buffers).
+            //    format: nil = the input node's native format. Remove any stale tap first
+            //    so a retry after a failed start can't crash with a double-installTap.
+            let input = captureEngine.inputNode
             input.removeTap(onBus: 0)
             input.installTap(onBus: 0, bufferSize: 4096, format: nil, block: s.makeTapBlock())
             tapInstalled = true
+            captureEngine.prepare()
+            try captureEngine.start()
+            captureStarted = true
 
-            engine.prepare()
-            try engine.start()
-            player.play()
+            // 2) PLAYBACK engine — started LAZILY on the first AI audio (see playAI). Starting
+            //    both engines eagerly on a cold session was the likely cause of the "first entry
+            //    stuck" report; deferring playback makes record-start = capture-only (the proven
+            //    VoiceEdit path that works first time).
+            playbackStarted = false
 
             startDate = now
             isRecording = true
@@ -115,9 +117,10 @@ final class EngineRecorder: RecordingBackend {
             startTicking()
         } catch {
             // Transactional rollback so the graph/session is clean for the next attempt.
-            if tapInstalled { engine.inputNode.removeTap(onBus: 0) }
+            if tapInstalled { captureEngine.inputNode.removeTap(onBus: 0) }
+            if captureStarted && captureEngine.isRunning { captureEngine.stop() }
             player.stop()
-            if engine.isRunning { engine.stop() }
+            if playbackEngine.isRunning { playbackEngine.stop() }
             sink = nil
             currentURL = nil
             startInstant = nil
@@ -129,9 +132,11 @@ final class EngineRecorder: RecordingBackend {
     @discardableResult
     func stop() -> AudioRecorder.Recording? {
         guard isRecording, let url = currentURL, let start = startInstant else { return nil }
-        engine.inputNode.removeTap(onBus: 0)
+        captureEngine.inputNode.removeTap(onBus: 0)
+        if captureEngine.isRunning { captureEngine.stop() }
         player.stop()
-        if engine.isRunning { engine.stop() }
+        if playbackEngine.isRunning { playbackEngine.stop() }
+        playbackStarted = false
         sink = nil                    // release/close the file
         stopTicking()
         isRecording = false
@@ -144,9 +149,20 @@ final class EngineRecorder: RecordingBackend {
         return take
     }
 
-    /// Play a chunk of AI speech (mono Int16 LE @ 24 kHz) through the engine mixer.
+    /// Play a chunk of AI speech (mono Int16 LE @ 24 kHz). Starts the playback engine
+    /// lazily on the first chunk (keeps record-start capture-only for reliability).
     func playAI(_ pcm16le24k: Data) {
         guard isRecording, let buffer = EngineRecorder.makeAIBuffer(pcm16le24k) else { return }
+        if !playbackStarted {
+            do {
+                if player.engine == nil { playbackEngine.attach(player) }
+                playbackEngine.connect(player, to: playbackEngine.mainMixerNode, format: EngineRecorder.aiFormat)
+                playbackEngine.prepare()
+                try playbackEngine.start()
+                player.play()
+                playbackStarted = true
+            } catch { engineError = "播放引擎启动失败: \(error.localizedDescription)"; return }
+        }
         player.scheduleBuffer(buffer, completionHandler: nil)
         if !player.isPlaying { player.play() }
     }
