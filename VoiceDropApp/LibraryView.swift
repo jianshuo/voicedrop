@@ -553,7 +553,7 @@ struct LibraryView: View {
     private var recordButton: some View {
         VStack(spacing: 7) {
             if talking || commandReply != nil || !command.queue.isEmpty {
-                VoiceFeedbackStack(transcript: talking ? dictation.transcript : nil,
+                VoiceFeedbackStack(transcript: talking ? (dictation.error.map { "⚠️ " + $0 } ?? dictation.transcript) : nil,
                                    reply: commandReply, queue: command.queue)
                     .padding(.horizontal, 16)
             }

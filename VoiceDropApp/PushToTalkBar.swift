@@ -156,7 +156,7 @@ struct PushToTalkBar: View {
             // idle bar keeps its old zero-gap look (an always-present empty stack
             // would leave the VStack's 8pt spacing above the pill).
             if recording || agentReply != nil || !session.queue.isEmpty {
-                VoiceFeedbackStack(transcript: recording ? dictation.transcript : nil,
+                VoiceFeedbackStack(transcript: recording ? (dictation.error.map { "⚠️ " + $0 } ?? dictation.transcript) : nil,
                                    reply: agentReply, queue: session.queue, highlightLocators: highlightLocators)
             }
             if let wrapPill {

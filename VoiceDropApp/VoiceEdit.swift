@@ -18,10 +18,16 @@ private final class VolcAudioStreamer: @unchecked Sendable {
         self.task = task
     }
 
+    private var buffers = 0
+    private var bytes = 0
+
     func send(_ pcm: Data) {
         guard !pcm.isEmpty else { return }
         queue.async { [weak self] in
             guard let self, !self.stopped else { return }
+            self.buffers += 1
+            self.bytes += pcm.count
+            if self.buffers == 1 { EngineRecorder.trace("dictation: first mic buffer reached streamer") }
             self.sequence += 1
             self.task.send(.data(VolcASRProtocol.buildAudioPayload(pcm, sequence: self.sequence, isLast: false))) { _ in }
         }
@@ -31,6 +37,8 @@ private final class VolcAudioStreamer: @unchecked Sendable {
         queue.async { [weak self] in
             guard let self, !self.stopped else { return }
             self.stopped = true
+            // 定案数据:0 buffers = tap 哑(采集侧);有 buffers 但没识别出字 = 服务/网络侧。
+            EngineRecorder.trace("dictation: turn ended — \(self.buffers) buffers, \(self.bytes) bytes sent")
             self.sequence += 1
             self.task.send(.data(VolcASRProtocol.buildAudioPayload(Data(), sequence: self.sequence, isLast: true))) { _ in }
         }
@@ -150,6 +158,7 @@ final class SpeechDictation {
 
             openSocket()
             try startAudioEngine()
+            EngineRecorder.trace("dictation: START ok — input \(engine.inputNode.outputFormat(forBus: 0).sampleRate) Hz")
             isRecording = true
         } catch {
             self.error = error.localizedDescription
@@ -263,6 +272,7 @@ final class SpeechDictation {
                     if self.stopping {
                         self.stopping = false
                     } else {
+                        EngineRecorder.trace("dictation: WS FAILED mid-turn — \(err.localizedDescription)")
                         self.error = "语音识别连接中断：\(err.localizedDescription)"
                     }
                 case .success(let message):
@@ -284,6 +294,7 @@ final class SpeechDictation {
         do {
             let parsed = try VolcASRProtocol.parseServerMessage(data)
             if parsed.isError {
+                EngineRecorder.trace("dictation: VOLC ERROR \(parsed.errorCode.map(String.init) ?? "?") \(parsed.errorMessage ?? "")")
                 error = "语音识别错误 \(parsed.errorCode.map(String.init) ?? "")：\(parsed.errorMessage ?? "未知错误")"
                 stopping = false
                 return
