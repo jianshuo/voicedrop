@@ -6,16 +6,23 @@ import Observation
 /// valid AAC mono `recording-<ts>.m4a` (same staging name as `AudioRecorder`), so
 /// promote/upload downstream is unchanged. Additionally:
 ///   • tees the mic PCM (resampled to 24 kHz Int16) to `onPCM` for the AI uplink,
-///   • enables voice-processing AEC so the AI's loudspeaker audio is cancelled out
-///     of the mic before it's written to the file,
-///   • plays AI audio via an `AVAudioPlayerNode` routed through the engine mixer.
+///   • plays AI audio via a separate playback engine's `AVAudioPlayerNode`.
 ///
-/// CRITICAL (fixed 2026-07-08): the mic tap MUST use the input node's NATIVE format
-/// (read after enabling voice processing). Installing a tap with a mismatched format
-/// (e.g. the 24 kHz file format while hardware is 48 kHz) silently delivers ZERO
-/// buffers on iOS 26 — no crash, timer runs, but nothing is captured (no file, no
-/// PCM to OpenAI, so the AI never hears anything and stays silent). We therefore
-/// record the file at the native rate and hand-resample the 24 kHz tee separately.
+/// NO acoustic echo cancellation (AEC): enabling `setVoiceProcessingEnabled` silently
+/// killed the input tap on device (tap 0 buffers). Without AEC the AI's loudspeaker
+/// leaks into the recording → USE EARPHONES for a clean take. (AEC to be revisited.)
+///
+/// TWO engines: a capture-only engine (tap identical to VoiceEdit — proven to deliver
+/// buffers) + a separate playback-only engine. A single full-duplex engine left the
+/// input un-pulled (tap 0). The mic tap uses the input node's NATIVE format (format: nil).
+///
+/// KNOWN LIMITATIONS (deferred, tracked): the hand-rolled resampler resets phase per
+/// buffer — exact for the 48 kHz built-in mic (2:1 → 24 kHz) but imprecise for 44.1 kHz
+/// / Bluetooth routes; switch to a persistent `AVAudioConverter` when supporting those.
+/// The tap does file-write + resample synchronously on the audio thread and hops to the
+/// main actor per buffer — fine for built-in mic; move to a serial audio queue if it
+/// causes jitter. Only `interruptionNotification` is handled (no route-change / media-
+/// services-reset recovery yet).
 ///
 /// The tap runs on a realtime audio thread (NOT main actor): the file write + resample
 /// live in a `@unchecked Sendable` `Sink` (mirrors `VoiceEdit`'s `VolcAudioStreamer`).
@@ -61,47 +68,67 @@ final class EngineRecorder: RecordingBackend {
     static func ensurePermission() async -> Bool { await AudioRecorder.ensurePermission() }
 
     func start() throws {
-        let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .defaultToSpeaker])
-        try session.setActive(true)
-
-        // NOTE: no voice-processing AEC (it killed the input tap). Without AEC the AI's
-        // loudspeaker leaks into the recording → use earphones for a clean take.
-
-        let now = Date()
-        let url = AudioRecorder.stagingURL(start: now)
-        // Sink creates the AAC file LAZILY from the first buffer's own format.
-        let s = Sink(url: url, aiRate: EngineRecorder.aiRate)
-        s.onRawTap = { [weak self] in Task { @MainActor in self?.tapBuffers += 1 } }   // EVERY tap callback
-        s.onTee = { [weak self] pcm, lvl in
-            Task { @MainActor in self?.level = lvl; self?.onPCM?(pcm) }
-        }
-        s.onError = { [weak self] msg in Task { @MainActor in self?.engineError = msg } }
-        sink = s
-        currentURL = url
-        startInstant = now
-
-        // 1) CAPTURE engine — tap only, identical to VoiceEdit (proven to deliver buffers).
-        //    format: nil = the input node's native format.
-        let input = captureEngine.inputNode
-        input.installTap(onBus: 0, bufferSize: 4096, format: nil, block: s.makeTapBlock())
-        captureEngine.prepare()
-        try captureEngine.start()
-
-        // 2) PLAYBACK engine — player → mixer → output, fully separate graph. If this
-        //    fails, capture still runs (recording + AI uplink unaffected).
-        playbackEngine.attach(player)
-        playbackEngine.connect(player, to: playbackEngine.mainMixerNode, format: EngineRecorder.aiFormat)
-        playbackEngine.prepare()
-        do { try playbackEngine.start(); player.play() }
-        catch { engineError = "播放引擎启动失败: \(error.localizedDescription)" }
-
-        startDate = now
-        isRecording = true
-        elapsed = 0
+        // Reset diagnostics FIRST so a playback-start failure below stays visible
+        // (previously a trailing `engineError = nil` wiped it — real bug).
         tapBuffers = 0
         engineError = nil
-        startTicking()
+
+        var tapInstalled = false
+        var captureStarted = false
+        do {
+            let session = AVAudioSession.sharedInstance()
+            try session.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .defaultToSpeaker])
+            try session.setActive(true)
+
+            let now = Date()
+            let url = AudioRecorder.stagingURL(start: now)
+            // Sink creates the AAC file LAZILY from the first buffer's own format.
+            let s = Sink(url: url, aiRate: EngineRecorder.aiRate)
+            s.onRawTap = { [weak self] in Task { @MainActor in self?.tapBuffers += 1 } }   // EVERY tap callback
+            s.onTee = { [weak self] pcm, lvl in
+                Task { @MainActor in self?.level = lvl; self?.onPCM?(pcm) }
+            }
+            s.onError = { [weak self] msg in Task { @MainActor in self?.engineError = msg } }
+            sink = s
+            currentURL = url
+            startInstant = now
+
+            // 1) CAPTURE engine — tap only, identical to VoiceEdit (proven to deliver buffers).
+            //    format: nil = the input node's native format. Remove any stale tap first
+            //    so a retry after a failed start can't crash with a double-installTap.
+            let input = captureEngine.inputNode
+            input.removeTap(onBus: 0)
+            input.installTap(onBus: 0, bufferSize: 4096, format: nil, block: s.makeTapBlock())
+            tapInstalled = true
+            captureEngine.prepare()
+            try captureEngine.start()
+            captureStarted = true
+
+            // 2) PLAYBACK engine — player → mixer → output, fully separate graph. If this
+            //    fails, capture still runs (recording + AI uplink unaffected); the error
+            //    surfaces in the diagnostic line (no longer wiped).
+            if player.engine == nil { playbackEngine.attach(player) }
+            playbackEngine.connect(player, to: playbackEngine.mainMixerNode, format: EngineRecorder.aiFormat)
+            playbackEngine.prepare()
+            do { try playbackEngine.start(); player.play() }
+            catch { engineError = "播放引擎启动失败: \(error.localizedDescription)" }
+
+            startDate = now
+            isRecording = true
+            elapsed = 0
+            startTicking()
+        } catch {
+            // Transactional rollback so the graph/session is clean for the next attempt.
+            if tapInstalled { captureEngine.inputNode.removeTap(onBus: 0) }
+            if captureStarted && captureEngine.isRunning { captureEngine.stop() }
+            player.stop()
+            if playbackEngine.isRunning { playbackEngine.stop() }
+            sink = nil
+            currentURL = nil
+            startInstant = nil
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+            throw error
+        }
     }
 
     @discardableResult
@@ -242,7 +269,7 @@ final class EngineRecorder: RecordingBackend {
               let ch = buf.floatChannelData else { return nil }
         let samples = data.withUnsafeBytes { raw in Array(raw.bindMemory(to: Int16.self)) }
         buf.frameLength = AVAudioFrameCount(count)
-        for i in 0..<count { ch[0][i] = Float(samples[i]) / Float(Int16.max) }
+        for i in 0..<count { ch[0][i] = Float(samples[i]) / 32768.0 }   // /32768 so -32768 → -1.0 exactly
         return buf
     }
 }
