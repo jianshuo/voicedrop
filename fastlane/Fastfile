@@ -29,7 +29,9 @@ platform :ios do
     match(
       type:                    "appstore",
       app_identifier:          [BUNDLE_ID, EXT_BUNDLE_ID],
-      readonly:                true,
+      # 2026-07-08 临时 readonly:false：App ID 新开了 Push capability，旧 profile
+      # 已被 portal 置为 Invalid，match 需要重新生成一次。稳定后可改回 true。
+      readonly:                false,
       # CI sets MATCH_GIT_BASIC_AUTH; locally it's nil and match falls back to
       # the machine's own git credentials (credential helper / SSH).
       git_basic_authorization: ENV["MATCH_GIT_BASIC_AUTH"] && Base64.strict_encode64(ENV["MATCH_GIT_BASIC_AUTH"]),

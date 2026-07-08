@@ -40,6 +40,9 @@ targets:
     entitlements:
       path: VoiceDropApp/VoiceDrop.entitlements
       properties:
+        # APNs（文章挖好了推送 + 运维报警）。文件里写 development；App Store 导出
+        # re-sign 时按分发描述文件自动换成 production，无需双文件。
+        aps-environment: development
         com.apple.developer.applesignin:
           - Default
         com.apple.developer.icloud-container-identifiers:
