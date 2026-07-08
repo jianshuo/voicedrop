@@ -20,7 +20,8 @@ final class RealtimeSession {
     var onAudioDelta: ((Data) -> Void)?      // decoded PCM16 24k mono bytes of AI speech
     var onSpeechStarted: (() -> Void)?
     var onSpeechStopped: (() -> Void)?
-    var onResponseDone: (() -> Void)?        // AI finished a turn (used to clear "AI speaking")
+    var onResponseCreated: (() -> Void)?     // AI started a turn (used to set "AI speaking" → mute uplink)
+    var onResponseDone: (() -> Void)?        // AI finished a turn (clear "AI speaking" → resume uplink)
     var onStateChange: ((State) -> Void)?
 
     private(set) var state: State = .idle { didSet { if state != oldValue { onStateChange?(state) } } }
@@ -73,6 +74,8 @@ final class RealtimeSession {
         switch type {
         case "input_audio_buffer.speech_started": speechEvents += 1; onSpeechStarted?()
         case "input_audio_buffer.speech_stopped": speechEvents += 1; onSpeechStopped?()
+        case "response.created":
+            onResponseCreated?()
         case "response.output_audio.delta":
             audioDeltas += 1
             if let b64 = obj["delta"] as? String, let d = Data(base64Encoded: b64) { onAudioDelta?(d) }
