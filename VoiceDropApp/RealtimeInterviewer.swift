@@ -23,10 +23,14 @@ final class RealtimeInterviewer {
 
     private(set) var connState: RealtimeSession.State = .idle
 
-    /// One-line diagnostics for the on-screen overlay (realtime mode).
+    /// Diagnostics for the on-screen overlay (realtime mode). Includes the AEC report
+    /// (VPIO enable result, input format pre/post, tap-count timeline) for the AEC probe.
     var debugLine: String {
-        "tap \(engine.tapBuffers) · WS \(connState.rawValue) · 语音 \(session.speechEvents) · AI音 \(session.audioDeltas)"
-            + (engine.engineError.map { " · ⚠️\($0)" } ?? "")
+        var s = "WS \(connState.rawValue) · 语音 \(session.speechEvents) · AI音 \(session.audioDeltas)\n"
+        s += engine.vpioLine + " · " + engine.fmtLine + "\n"
+        s += engine.tapTimeline
+        if let e = engine.engineError { s += "\n⚠️ " + e }
+        return s
     }
 
     // Half-duplex: no AEC on device (VPIO killed the tap), so the AI's loudspeaker leaks
