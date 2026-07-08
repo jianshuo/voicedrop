@@ -36,13 +36,13 @@ final class EngineRecorder: RecordingBackend {
     nonisolated static let aiFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32,
                                                     sampleRate: 24_000, channels: 1, interleaved: false)!
 
-    // SINGLE engine (VPIO requires input+output coupled).
-    private let engine = AVAudioEngine()
-    private let player = AVAudioPlayerNode()
-    // Muted mixer that routes the mic into the render graph so the graph actively PULLS
-    // the input node → the tap fires. Without this, VPIO's input side is never pulled
-    // (the AI player is silent), so tap delivers 0 buffers. outputVolume 0 = no feedback.
-    private let micSink = AVAudioMixerNode()
+    // SINGLE engine (VPIO requires input+output coupled). CREATED LAZILY IN start(),
+    // AFTER the audio session is configured + active — a stored `let` engine is built
+    // while the session is still in its default state, and VPIO then binds to the wrong
+    // I/O so the tap delivers 0 buffers (Apple-forums fix: session first, THEN engine).
+    private var engine: AVAudioEngine!
+    private var player: AVAudioPlayerNode!
+    private var micSink: AVAudioMixerNode!
     private var sink: Sink?
     private var currentURL: URL?
     private var startInstant: Date?
@@ -62,9 +62,15 @@ final class EngineRecorder: RecordingBackend {
         let log = EngineRecorder.log
 
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playAndRecord, mode: .default, options: [.duckOthers, .defaultToSpeaker])
+        try session.setCategory(.playAndRecord, mode: .voiceChat, options: [.duckOthers, .defaultToSpeaker])
         try session.setActive(true)
         log.info("session: category=\(session.category.rawValue) mode=\(session.mode.rawValue) sr=\(session.sampleRate) inCh=\(session.inputNumberOfChannels)")
+
+        // Create the engine ONLY NOW — after the session is configured + active — so VPIO
+        // binds to the correct (voice-chat) I/O. Building it earlier gives tap 0 buffers.
+        engine = AVAudioEngine()
+        player = AVAudioPlayerNode()
+        micSink = AVAudioMixerNode()
 
         let input = engine.inputNode
         let pre = input.outputFormat(forBus: 0)
