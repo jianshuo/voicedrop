@@ -1,1 +1,1 @@
-voice memo,recorder,dictation,notes,ideas,transcribe,iCloud,geotag,quick capture
+drop,voice,memo,notes,recorder,dictation,transcribe,text,ai,writing,journal,blog,article,speech

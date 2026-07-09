@@ -3,6 +3,7 @@ import UIKit
 import Photos
 import PhotosUI
 import LinkPresentation
+import StoreKit
 
 /// 成文阅读：听录音 + 读挖出的文章 + 一键发布。暖灰阅读底（#F0EDE7）。
 /// 右上角 ⋯ 菜单（发布公众号草稿 / 分享）；底部常驻一条微信式按住说话 bar。
@@ -11,6 +12,7 @@ struct RecordingDetailView: View {
     let recording: Recording
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.requestReview) private var requestReview
 
     @State private var player = AudioPlayer()
     @State private var doc: ArticleDoc?
@@ -189,6 +191,7 @@ struct RecordingDetailView: View {
             if !articles.isEmpty {
                 communityShareId = await community.sharedShareId(recording)
                 sharedToCommunity = communityShareId != nil
+                ReviewPrompter.articleOpened { requestReview() }
             }
         }
         .onDisappear { player.stop(); dictation.stop(); agent.disconnect() }
