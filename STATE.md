@@ -2,7 +2,39 @@
 
 Last updated: 2026-07-09
 
-## 最近大改：Universal Links——voicedrop.cn 链接直接拉起 App（2026-07-09）
+## 最近大改：邀请奖励（referral，2026-07-09 上线）
+
+带来新装的作者和新用户双边得算力。spec = `docs/superpowers/specs/2026-07-09-referral-rewards-design.md`，
+plan = `docs/superpowers/plans/2026-07-09-referral-rewards.md`。**已部署 + 生产冒烟**（link 层与
+IP 层端到端验证过；剪贴板层待 TestFlight 真机）。
+
+- **归因三层**（新账号 24h 内 first-touch 一次，终身封笔）：① universal link 分享链接拉起 →
+  `AppRouter` 里 `ReferralManager.shared.noteShareToken(id)`；② App 首启 hello → worker 用
+  `CF-Connecting-IP` 反查 R2 `refhits/<ipHash>/<ts>`（落地页每次访问由 Pages 写入，HMAC 不存明文
+  IP，lifecycle 2 天）——**24h 窗口内唯一 owner 才算**（CGNAT 多 owner 放弃，宁漏不错）；
+  ③ 剪贴板兜底：落地页下载按钮点击写入本页 URL，App 端 `detectedPatterns` 先无感探测、疑似有
+  URL 才真读（此时才弹系统粘贴条）。iOS 全在 `ReferralManager.swift`（RootView.task 触发）。
+- **奖励 = 币记价、入账时刻实时汇率**：作者 12 币 / 新人 6 币（R2 `config/referral.json`
+  `{enabled,authorCoins,newUserCoins,dailyCapPerOwner:30,requireDeviceCheck}` 零部署可调），
+  入账走 mint 表 `kind='referral'`（subject_key=新账号 sub；唯一索引=每账号一生一次），
+  **与投币同池同分母同保险丝**（sumCoins7d 无 kind 过滤），钱走 grantBucket
+  `referral_author`/`referral_new`（账单显示「邀请奖励/受邀赠送」），90 天过期。
+  owner 日封顶 30 装/天，超出只发新人侧。核心 = `agent/src/referral.js`
+  （`POST /agent/referral/claim {source,token?,deviceCheckToken?}`）。
+- **判新防刷**：`account.created_at` < 24h（服务端时间）+ DeviceCheck 两 bit
+  （`agent/src/devicecheck.js`，复用 APNS .p8 的 ES256 JWT；**线上 requireDeviceCheck 暂 false**——
+  等真机验证 APNs key 是否开了 DeviceCheck 服务，没开就建新 key 加 secrets `DC_KEY_P8`/`DC_KEY_ID`
+  再改 true）+ owner==self 拒绝。
+- **落地页 CTA**（`functions/voicedrop/[token].js` `ctaHtml`）：「你约得 X 算力，作者约得 Y」按
+  访问时刻现价现算——现价 = R2 `config/mint-rate.json`（worker 每次投币/邀请铸币后 +6h cron 刷新，
+  `publishMintRate`），读不到显示无数字通用文案。voicedrop.cn 反代自动带上（同一 Function）。
+- 测试：`agent/test/referral.test.js`（21）+ `refhits.test.js`（6）+ `devicecheck.test.js`（9）+
+  `referral-landing.test.js`（4）+ mint-rate 用例；全量 73 文件 685 用例绿。
+- **已知遗留**：① requireDeviceCheck=false 期间重装刷币敞口（防线剩「每账号一次+判新」；验 key 后开回）；
+  ② 剪贴板层真机未验；③ iOS 端归因成功 alert 文案朴素（RootView）；④ 主动「邀请好友」入口/作者
+  主页 `/voicedrop/u/<token>` 二期。
+
+## 上一个大改：Universal Links——voicedrop.cn 链接直接拉起 App（2026-07-09）
 
 - **服务端（jianshuo.dev repo，已部署）**：AASA 文件两份——`voicedrop/.well-known/apple-app-site-association`（voicedrop.cn 经腾讯云 Caddy「补前缀」映射取到）+ 根 `.well-known/…`（jianshuo.dev 老分享链接，components 只声明 `/voicedrop/*`）；`_headers` 强制 `application/json`（Pages 对无扩展名文件默认 octet-stream）。策略 = voicedrop.cn 整站进 App，仅排除 `/files/*` 与 `/privacy/*`。已实测 voicedrop.cn / www / jianshuo.dev 三处 200 无跳转 + Apple CDN（`app-site-association.cdn-apple.com/a/v1/voicedrop.cn`）200。
 - **新公开 API `GET /files/api/link/<id>`** → `{type:"article"|"community",owner,stem,title,articles:[{title,body}],photos?}`——解析 + **直接带正文**（只读阅读页就地渲染，免二次请求；暴露面与公开 HTML 页等同）；shares/ 未命中回落 community/ 指针；被举报帖 404（对齐公开页）。分享指向非 articles 键 / 文章已删一律 404。测试 `agent/test/link-resolve.test.js`。
