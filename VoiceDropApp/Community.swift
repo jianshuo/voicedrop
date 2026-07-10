@@ -462,7 +462,10 @@ struct CommunityPostView: View {
     // MARK: Nav bar (⋯ menu)
 
     private var navBar: some View {
-        HStack {
+        // spacing 0：投喂/点赞是 38pt 热区里的 18pt 图标（自带 ~10pt 视觉留白），
+        // 相邻即得 ~20pt 视觉间隙；⋯ 是实心 38pt 方块（无留白），补 10pt 左边距
+        // 凑成同样的 ~20pt——否则点赞看起来左松右挤。
+        HStack(spacing: 0) {
             NavSquare(systemName: "chevron.left", stroke: Theme.inkRead, border: Theme.borderRead) { dismiss() }
                 .accessibilityLabel("返回")
             Spacer()
@@ -503,6 +506,7 @@ struct CommunityPostView: View {
                     }
                     .navButtonShadow()
             }
+            .padding(.leading, 10)
             .accessibilityLabel("更多")
         }
         .padding(.horizontal, 18).padding(.top, 8).padding(.bottom, 8)
