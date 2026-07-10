@@ -267,7 +267,8 @@ struct LibraryView: View {
                 // 先用本地快照立即打开(有的话),但必须再刷新一次换成新快照:「文章已生成」
                 // 推送到达时本地列表多半还停在挖矿前的状态(hasArticles=false),而详情页
                 // fetchDoc 会被这个旧 flag 挡住不问服务端,永远显示「还没成文」。刷新后
-                // Recording 值变了,navigationDestination 会重建详情页、重新拉 doc。
+                // 换入新 Recording:id(audioName)没变,视图不会重建,靠详情页
+                // .task(id: recording) 感知值变化重新拉 doc。
                 selectedRec = store.recordings.first { $0.stem == stem }
                 let opened = selectedRec
                 Task {

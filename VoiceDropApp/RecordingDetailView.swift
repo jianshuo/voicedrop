@@ -176,7 +176,12 @@ struct RecordingDetailView: View {
             RestyleSheet(versions: settings.styleVersions, currentStyleV: currentStyleV) { v in applyStyle(v) }
                 .presentationDetents([.medium, .large])
         }
-        .task {
+        // id: recording —— 推送深链先用旧快照(hasArticles=false)打开详情页，随后
+        // LibraryView 刷新列表换入新 Recording；id(audioName)相同所以视图不重建，
+        // 只有值变了。task 必须跟着值重跑，否则 fetchDoc 永远被旧 flag 挡住，
+        // 页面卡死在「还没成文」，只能退出重进。
+        .task(id: recording) {
+            if doc == nil { loadingDoc = true }
             if recording.isEmpty {
                 emptyReason = await store.fetchEmptyReason(recording)
             } else {
