@@ -264,12 +264,18 @@ struct LibraryView: View {
                 recordLaunch = RecordLaunch(tag: tag)
             case .article(let stem):
                 tab = .recordings; selectedPost = nil; showSettings = false; sharedArticle = nil
-                // 先用本地快照立即打开(有的话),但必须再刷新一次换成新快照:「文章已生成」
-                // 推送到达时本地列表多半还停在挖矿前的状态(hasArticles=false),而详情页
-                // fetchDoc 会被这个旧 flag 挡住不问服务端,永远显示「还没成文」。刷新后
-                // 换入新 Recording:id(audioName)没变,视图不会重建,靠详情页
-                // .task(id: recording) 感知值变化重新拉 doc。
-                selectedRec = store.recordings.first { $0.stem == stem }
+                // 深链即权威:article 深链只在成文后才会发出(「文章已生成」推送/分享链),
+                // 而本地快照多半还停在挖矿前(hasArticles=false),fetchDoc 会被旧 flag
+                // 挡住不问服务端。强行置位后详情页第一次 .task 就直接拉正文,点开约
+                // 1 秒见文章;不置位就得等下面整列表刷新换入新值、靠 .task(id:) 二次
+                // 拉取,要多等两三秒。若推送撒谎(文章其实没有),fetchDoc 404 → 仍显示
+                // 「还没成文」,和从前一样。
+                if var snap = store.recordings.first(where: { $0.stem == stem }) {
+                    snap.hasArticles = true
+                    selectedRec = snap
+                } else {
+                    selectedRec = nil   // 本地还没这条录音,等刷新后由下面的 fresh 补开
+                }
                 let opened = selectedRec
                 Task {
                     await refresh()

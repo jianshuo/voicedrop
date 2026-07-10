@@ -203,7 +203,7 @@ enum BlockReason: String { case noCredit = "no-credit", tooLong = "too-long"
 struct Recording: Identifiable, Hashable {
     let audioName: String        // relative key, e.g. "VoiceDrop-….m4a"
     let uploaded: String
-    let hasArticles: Bool
+    var hasArticles: Bool   // 服务端 list 算出;深链打开时会被强行置位(深链即成文的权威信号)
     let isEmpty: Bool            // a `articles/<stem>.empty` marker exists (no usable speech)
     var articleTitle: String?    // first mined article's title; fills the place slot once 已成文
     var tags: [String]?          // article tags (语音 tag_article 归类) — shown as small text under the meta line
