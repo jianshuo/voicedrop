@@ -1,11 +1,17 @@
 import SwiftUI
 
 private struct Balance: Decodable { let suanli: Double; let spent_suanli: Double }
-private struct LedgerResp: Decodable { let entries: [Entry] }
+private struct LedgerResp: Decodable { let entries: [Entry]; let has_more: Bool?; let next: String? }
 private struct Entry: Decodable, Identifiable {
-    var id: Int { ts }
+    let id: Int   // ledger 行号（服务端返回，稳定唯一——ts 同毫秒会撞，翻页拼接后不能再当 id）
     let ts: Int; let kind: String; let reason: String; let suanli: Double; let balance_suanli: Double
 }
+/// /usage/summary 的一组（来源或花费）：服务端全量 ledger 聚合，reason 已是中文。
+private struct SummaryRow: Decodable, Identifiable {
+    let reason_code: String; let reason: String; let suanli: Double; let count: Int
+    var id: String { reason_code + reason }
+}
+private struct SummaryResp: Decodable { let granted: [SummaryRow]; let spent: [SummaryRow] }
 
 /// 算力 ↔ 篇 estimate — single source so the 设置 list row and this page agree.
 /// A mine costs ~9 算力 (see the 明细 −9.1 / −8.4 entries), so 612 ≈ 68 篇.
@@ -20,6 +26,10 @@ struct UsageView: View {
     @State private var balance: Double = 0
     @State private var spent: Double = 0
     @State private var entries: [Entry] = []
+    @State private var sources: [SummaryRow] = []       // 算力来源（全量聚合）
+    @State private var spendSummary: [SummaryRow] = []  // 花费总结（全量聚合）
+    @State private var nextCursor: String? = nil        // 明细翻页游标；nil = 没有更早的了
+    @State private var loadingMore = false
     @State private var loaded = false
     @State private var showSubAlert = false
     private var token: String { AuthStore.shared.bearer }
@@ -32,8 +42,11 @@ struct UsageView: View {
             VStack(alignment: .leading, spacing: 22) {
                 heroCard
                 subscriptionCard
-                if !grantBuckets.isEmpty {
-                    section(String(localized: "算力来源")) { SettingsCard { bucketRows } }
+                if !sources.isEmpty {
+                    section(String(localized: "算力来源")) { SettingsCard { sourceRows } }
+                }
+                if !spendSummary.isEmpty {
+                    section(String(localized: "花费总结")) { SettingsCard { spendRows } }
                 }
                 section(String(localized: "明细")) { SettingsCard { ledgerRows } }
             }
@@ -104,37 +117,34 @@ struct UsageView: View {
         .overlay(RoundedRectangle(cornerRadius: 11).stroke(Color(hex: "EBD9B8"), lineWidth: 1))
     }
 
-    // MARK: 算力来源（分桶：从 ledger 的 grant 记录归类汇总，真实数据）
+    // MARK: 算力来源 / 花费总结（/usage/summary 全量聚合——以前在拉到的 50 条明细里
+    // 现算来源是错的：注册赠送等老 grant 早被挤出窗口，永远缺项）
 
-    private struct Bucket: Identifiable { let title: String; let total: Double; var id: String { title } }
-    private var grantBuckets: [Bucket] {
-        var sums: [String: Double] = [:]
-        for e in entries where e.kind == "grant" {
-            let key: String
-            if e.reason == "signup" { key = "注册赠送" }
-            else if e.reason.hasPrefix("campaign:") { key = "活动赠送" }
-            else if e.reason == "monthly" || e.reason == "subscription" { key = "包月发放" }
-            else { key = label(e) }
-            sums[key, default: 0] += e.suanli
+    @ViewBuilder private var sourceRows: some View {
+        ForEach(Array(sources.enumerated()), id: \.element.id) { i, r in
+            summaryRow(r, sign: "+", amountColor: Theme.ink)
+            if i < sources.count - 1 { settingsRowDivider }
         }
-        let order = ["包月发放", "活动赠送", "注册赠送"]
-        return sums.sorted { a, b in
-            let ia = order.firstIndex(of: a.key) ?? 99, ib = order.firstIndex(of: b.key) ?? 99
-            return ia == ib ? a.key < b.key : ia < ib
-        }.map { Bucket(title: $0.key, total: $0.value) }
     }
 
-    @ViewBuilder private var bucketRows: some View {
-        let buckets = grantBuckets
-        ForEach(Array(buckets.enumerated()), id: \.element.id) { i, b in
-            HStack {
-                Text(b.title).font(.system(size: 15)).foregroundStyle(Theme.ink)
-                Spacer()
-                Text("\(Int(b.total.rounded()))").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.ink)
-            }
-            .padding(.vertical, 14).padding(.horizontal, 15)
-            if i < buckets.count - 1 { settingsRowDivider }
+    @ViewBuilder private var spendRows: some View {
+        ForEach(Array(spendSummary.enumerated()), id: \.element.id) { i, r in
+            summaryRow(r, sign: "−", amountColor: Theme.accent)
+            if i < spendSummary.count - 1 { settingsRowDivider }
         }
+    }
+
+    private func summaryRow(_ r: SummaryRow, sign: String, amountColor: Color) -> some View {
+        HStack(spacing: 6) {
+            Text(r.reason).font(.system(size: 15)).foregroundStyle(Theme.ink)
+            if r.count > 1 {
+                Text("\(r.count) 笔").font(.system(size: 12)).foregroundStyle(Theme.faint)
+            }
+            Spacer()
+            Text("\(sign)\(Int(r.suanli.rounded()))")
+                .font(.system(size: 15, weight: .semibold)).foregroundStyle(amountColor)
+        }
+        .padding(.vertical, 14).padding(.horizontal, 15)
     }
 
     // MARK: 明细
@@ -159,6 +169,24 @@ struct UsageView: View {
                 }
                 .padding(.vertical, 13).padding(.horizontal, 15)
                 if i < entries.count - 1 { settingsRowDivider }
+            }
+            // 更早的记录：滚到底自动翻页（keyset 游标）；失败时留着按钮可手动重试。
+            if nextCursor != nil {
+                settingsRowDivider
+                Button { Task { await loadMore() } } label: {
+                    HStack {
+                        Spacer()
+                        if loadingMore {
+                            ProgressView().controlSize(.small).tint(Theme.secondary)
+                        } else {
+                            Text("加载更早的记录").font(.system(size: 14)).foregroundStyle(Theme.secondary)
+                        }
+                        Spacer()
+                    }
+                    .padding(.vertical, 13)
+                }
+                .buttonStyle(.plain)
+                .onAppear { Task { await loadMore() } }
             }
         }
     }
@@ -190,10 +218,21 @@ struct UsageView: View {
 
     private func load() async {
         async let b: Balance? = fetch("\(API.agentBase.absoluteString)/usage/balance")
+        async let s: SummaryResp? = fetch("\(API.agentBase.absoluteString)/usage/summary")
         async let l: LedgerResp? = fetch("\(API.agentBase.absoluteString)/usage/ledger?limit=50")
         if let b = await b { balance = b.suanli; spent = b.spent_suanli }
-        if let l = await l { entries = l.entries }
+        if let s = await s { sources = s.granted; spendSummary = s.spent }
+        if let l = await l { entries = l.entries; nextCursor = (l.has_more ?? false) ? l.next : nil }
         loaded = true
+    }
+
+    private func loadMore() async {
+        guard !loadingMore, let cur = nextCursor else { return }
+        loadingMore = true
+        defer { loadingMore = false }
+        guard let l: LedgerResp = await fetch("\(API.agentBase.absoluteString)/usage/ledger?limit=50&before=\(cur)") else { return }
+        entries += l.entries
+        nextCursor = (l.has_more ?? false) ? l.next : nil
     }
     private func fetch<T: Decodable>(_ urlStr: String) async -> T? {
         guard let url = URL(string: urlStr) else { return nil }
