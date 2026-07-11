@@ -1,8 +1,18 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-07-11
+Last updated: 2026-07-11（服务端已部署）
 
-## 新功能：指令分享码「魔法数字」（2026-07-11，代码齐，待部署+真机验证）
+## 新功能：指令分享码「魔法数字」（2026-07-11，服务端已上线，待真机手测+TestFlight）
+
+**2026-07-11 验证与部署（Mac 侧）**：agent 全量 75 文件 731 用例绿；iOS xcodebuild
+BUILD SUCCEEDED（含改名后二次构建）；jianshuo.dev 分支已合 main 并部署——worker
+版本 ded919c4 + Pages（jianshuo.dev/voicedrop/<码> 与 voicedrop.cn/<码> 均已线上
+冒烟：查无码 404「分享已停止」）。**产品措辞全面改名「AI 指令」→「提示词」**
+（用户拍板）：iOS 设置入口/编辑页（我的提示词/默认提示词）/分享卡「分享这条提示词」/
+分享文案/String Catalog 七个 key（英文同步 prompt 措辞），服务端落地页/注入块
+（【分享提示词开始/结束】、回复提「分享提示词」）/测试断言。R2 config/prompt-share.json
+未 seed（走代码默认值，需要调再 seed）。iOS 尚未合 main、未发 TestFlight——等下方
+真机手测通过。
 
 用户在 设置 → AI 指令 → 编辑页开「分享这条指令」开关 → 得 7 位数字码（同时就是
 voicedrop.cn/<码> 短链）；别人语音里说「用 <码> 改这段」→ 服务端识别、把共享指令
