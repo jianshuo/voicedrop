@@ -1,6 +1,47 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-07-10
+Last updated: 2026-07-11（服务端已部署）
+
+## 新功能：指令分享码「魔法数字」（2026-07-11，服务端已上线，真机手测通过，TestFlight 已发）
+
+**2026-07-11 验证与部署（Mac 侧）**：agent 全量 75 文件 731 用例绿；iOS xcodebuild
+BUILD SUCCEEDED（含改名后二次构建）；jianshuo.dev 分支已合 main 并部署——worker
+版本 ded919c4 + Pages（jianshuo.dev/voicedrop/<码> 与 voicedrop.cn/<码> 均已线上
+冒烟：查无码 404「分享已停止」）。**产品措辞全面改名「AI 指令」→「提示词」**
+（用户拍板）：iOS 设置入口/编辑页（我的提示词/默认提示词）/分享卡「分享这条提示词」/
+分享文案/String Catalog 七个 key（英文同步 prompt 措辞），服务端落地页/注入块
+（【分享提示词开始/结束】、回复提「分享提示词」）/测试断言。R2 config/prompt-share.json
+未 seed（走代码默认值，需要调再 seed）。iOS 已随真机手测通过合入 main 发 TestFlight。
+
+用户在 设置 → AI 指令 → 编辑页开「分享这条指令」开关 → 得 7 位数字码（同时就是
+voicedrop.cn/<码> 短链）；别人语音里说「用 <码> 改这段」→ 服务端识别、把共享指令
+一次性注入本轮 prompt（不改使用者设置）。spec =
+`docs/superpowers/specs/2026-07-11-prompt-share-magic-number-design.md`，plan 同名。
+两仓库同分支 `claude/ai-instruction-storage-8jf5u2`（jianshuo.dev + voicedrop）。
+
+- **一个注册表**：`shares/<码>` 与文章分享同命名空间——文章条目值是纯文本
+  articleKey，指令条目是 typed JSON **写穿副本**（label+instruction 当前生效文本）。
+  保存指令时 `ui-config-custom.js` 经 `refreshPromptShare` 同步重写（活绑定）；
+  开关关 = 删 `shares/<码>`，owner 索引 `users/<sub>/prompt-shares.json` 保留 →
+  再开**同码**复活。已知边界：运营改全局默认不推送到已分享的未自定义条目。
+- **服务端**（jianshuo.dev）：`agent/src/prompt-share.js`（POST/DELETE
+  /agent/prompt-share，铸码撞重摇、日上限/长度/开关走 R2 `config/prompt-share.json`
+  `{enabled,dailyCapPerUser:20,maxLength:4000,notFoundNote}`）；兑换识别在
+  `edit-turn.js`/`command-turn.js`（正则 `(?<![0-9])[1-9][0-9]{6}(?![0-9])`，先做
+  ASR 断句归一，8 位+/首位 0 不命中，每轮取首个；查无注入软备注）；落地页
+  `functions/voicedrop/[token].js` prompt 分支（纯数字码查无 → 「分享已停止」404）。
+  GET /agent/ui-config/custom 每条多 `shareCode`/`sharing` 两字段。
+  测试：`prompt-share.test.js`(31) + `prompt-share-landing.test.js`(5) + 两 turn 各 2；
+  全量 75 文件 731 用例绿。
+- **iOS**：只改 `InstructionSettingsView.swift`（分享卡 + setSharing + ShareSheet
+  文案）。兑换侧零 iOS 改动（老版本 App 服务端部署后立即可用）。
+- **部署顺序**：先 agent worker + Pages（`npx wrangler deploy`），可选 seed
+  config/prompt-share.json，再 iOS TestFlight。
+- **真机验证**（2026-07-11 全部通过）：① 开关 → 出码/关码/再开同码；② voicedrop.cn/<码> 落地页样式与
+  「分享已停止」；③ 改文本保存后落地页（≤5min 缓存）与兑换同步；④ 另一账号语音
+  「用 <码> …」按共享指令执行、回复提指令名、设置不变；⑤ 断句「123，4567」命中、
+  错码回复无效、库级命令同样生效。**Linux 容器没跑过 xcodebuild，iOS 需先真机构建。**
+- 二期挂起：VD社区原生提示词帖、一键导入收藏、中文数字码。
 
 ## 最近修复：采访者自顾自说个不停（2026-07-10）
 

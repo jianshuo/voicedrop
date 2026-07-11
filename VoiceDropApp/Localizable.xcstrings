@@ -1,3722 +1,3800 @@
 {
-  "sourceLanguage": "zh-Hans",
-  "strings": {
-    "": {},
-    "  录音中 · %@  ": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "  Recording · %@  "
+  "sourceLanguage" : "zh-Hans",
+  "strings" : {
+    "" : {
+
+    },
+    "  录音中 · %@  " : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "  Recording · %@  "
           }
         }
       }
     },
-    " 已拍 %lld 张 ": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": " %lld photos taken "
+    " 已拍 %lld 张 " : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : " %lld photos taken "
           }
         }
       }
     },
-    "%@": {},
-    "%@%@": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "new",
-            "value": "%1$@%2$@"
+    "，成文时各生成一篇，在阅读页顶部切换对比。最多选 3 个。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ", each will produce its own article at write-up — switch between them at the top of the reading page. Pick up to 3."
           }
         }
       }
     },
-    "%lld": {},
-    "%lld / %lld": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "new",
-            "value": "%1$lld / %2$lld"
+    "(无题)" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "(Untitled)"
           }
         }
       }
     },
-    "%lld / 3": {},
-    "%lld 字": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld characters"
-          }
-        }
-      }
-    },
-    "%lld 字 · %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld characters · %@"
+    "《%@》— %@\n来自 VoiceDrop 社区" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "\"%1$@\" — %2$@\nFrom the VoiceDrop community"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "new",
-            "value": "%1$lld 字 · %2$@"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "《%1$@》— %2$@\n来自 VoiceDrop 社区"
           }
         }
       }
     },
-    "%lld 条": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld items"
+    "「%@」标签下还没有文章。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No articles under \"%@\" yet."
           }
         }
       }
     },
-    "%lld 篇": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld articles"
+    "/月" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "/month"
           }
         }
       }
     },
-    "%lld 篇回应": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld replies"
+    "%@" : {
+
+    },
+    "%@%@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@%2$@"
           }
         }
       }
     },
-    "%lld/%lld": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "new",
-            "value": "%1$lld/%2$lld"
+    "%@%lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@%2$lld"
           }
         }
       }
     },
-    "(无题)": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "(Untitled)"
+    "%lld" : {
+
+    },
+    "%lld / %lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld / %2$lld"
           }
         }
       }
     },
-    "/月": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "/month"
+    "%lld / 3" : {
+
+    },
+    "%lld 字" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld characters"
           }
         }
       }
     },
-    "4 位": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "4 digits"
-          }
-        }
-      }
-    },
-    "6 位代码": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "6-digit code"
-          }
-        }
-      }
-    },
-    "AI 已断开 · 录音继续": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AI disconnected · Recording continues"
-          }
-        }
-      }
-    },
-    "AI 指令": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AI instructions"
-          }
-        }
-      }
-    },
-    "AI 连接中…": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connecting AI…"
-          }
-        }
-      }
-    },
-    "AI 采访中": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AI interview in progress"
-          }
-        }
-      }
-    },
-    "AI 采访中 · 再点一下结束": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AI interview in progress · Tap again to finish"
-          }
-        }
-      }
-    },
-    "AppID 无效，找不到这个公众号": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Invalid AppID — no such WeChat Official Account"
-          }
-        }
-      }
-    },
-    "AppID 格式不对（应为 wx 开头、共 18 位）": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AppID format looks wrong (should start with \"wx\" and be 18 characters)"
-          }
-        }
-      }
-    },
-    "AppID（wx...）": {},
-    "AppSecret": {},
-    "AppSecret 无效": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Invalid AppSecret"
-          }
-        }
-      }
-    },
-    "AppSecret 格式不对（应为 32 位小写十六进制，别把 AppID 填进来）": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "AppSecret format looks wrong (should be 32 lowercase hex characters — don't paste the AppID here)"
-          }
-        }
-      }
-    },
-    "IP 白名单": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "IP allowlist"
-          }
-        }
-      }
-    },
-    "VD社区": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "VD Community"
-          }
-        }
-      }
-    },
-    "VD社区可见": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Visible in VD Community"
-          }
-        }
-      }
-    },
-    "VD社区还没有分享": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No shares in VD Community yet"
-          }
-        }
-      }
-    },
-    "VoiceDrop 分享": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "VoiceDrop share"
-          }
-        }
-      }
-    },
-    "VoiceDrop 口述": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "VoiceDrop Dictation"
-          }
-        }
-      }
-    },
-    "VoiceDrop 要用麦克风录音。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "VoiceDrop needs the microphone to record."
-          }
-        }
-      }
-    },
-    "anon_…": {},
-    "iCloud 备份 · 导出数据": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iCloud backup · Export data"
-          }
-        }
-      }
-    },
-    "iCloud 钥匙串同步": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "iCloud Keychain sync"
-          }
-        }
-      }
-    },
-    "token 失效（HTTP %lld）": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Token expired (HTTP %lld)"
-          }
-        }
-      }
-    },
-    "v%lld": {},
-    "v%lld 风格": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "v%lld style"
-          }
-        }
-      }
-    },
-    "¥19.9": {},
-    "≈ %lld 篇": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "≈ %lld articles"
-          }
-        }
-      }
-    },
-    "⚠️ %@": {},
-    "《%@》— %@\n来自 VoiceDrop 社区": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "\"%1$@\" — %2$@\nFrom the VoiceDrop community"
+    "%lld 字 · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld characters · %@"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "new",
-            "value": "《%1$@》— %2$@\n来自 VoiceDrop 社区"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld 字 · %2$@"
           }
         }
       }
     },
-    "「%@」标签下还没有文章。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No articles under \"%@\" yet."
+    "%lld 条" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld items"
           }
         }
       }
     },
-    "上传失败 HTTP %lld": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Upload failed, HTTP %lld"
+    "%lld 笔" : {
+
+    },
+    "%lld 篇" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld articles"
+          }
+        }
+      }
+    },
+    "%lld 篇回应" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld replies"
+          }
+        }
+      }
+    },
+    "%lld/%lld" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld/%2$lld"
+          }
+        }
+      }
+    },
+    "≈ %lld 篇" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "≈ %lld articles"
+          }
+        }
+      }
+    },
+    "⚠️ %@" : {
+
+    },
+    "¥19.9" : {
+
+    },
+    "4 位" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "4 digits"
+          }
+        }
+      }
+    },
+    "6 位代码" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "6-digit code"
+          }
+        }
+      }
+    },
+    "AI 已断开 · 录音继续" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI disconnected · Recording continues"
+          }
+        }
+      }
+    },
+    "AI 连接中…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connecting AI…"
+          }
+        }
+      }
+    },
+    "AI 采访中" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI interview in progress"
+          }
+        }
+      }
+    },
+    "AI 采访中 · 再点一下结束" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AI interview in progress · Tap again to finish"
+          }
+        }
+      }
+    },
+    "anon_…" : {
+
+    },
+    "AppID 无效，找不到这个公众号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invalid AppID — no such WeChat Official Account"
+          }
+        }
+      }
+    },
+    "AppID 格式不对（应为 wx 开头、共 18 位）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AppID format looks wrong (should start with \"wx\" and be 18 characters)"
+          }
+        }
+      }
+    },
+    "AppID（wx...）" : {
+
+    },
+    "AppSecret" : {
+
+    },
+    "AppSecret 无效" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invalid AppSecret"
+          }
+        }
+      }
+    },
+    "AppSecret 格式不对（应为 32 位小写十六进制，别把 AppID 填进来）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "AppSecret format looks wrong (should be 32 lowercase hex characters — don't paste the AppID here)"
           }
         }
       }
     },
-    "上滑取消 · 松开放弃": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Slide up to cancel · Release to discard"
+    "iCloud 备份 · 导出数据" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud backup · Export data"
           }
         }
       }
     },
-    "下载失败": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Download failed"
+    "iCloud 钥匙串同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud Keychain sync"
           }
         }
       }
     },
-    "不是你本人操作？点「不是我」。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wasn't you? Tap \"Not me\"."
+    "IP 白名单" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "IP allowlist"
           }
         }
       }
     },
-    "不是我": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Not me"
+    "token 失效（HTTP %lld）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token expired (HTTP %lld)"
           }
         }
       }
     },
-    "不能给自己的文章投币": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You can't toss a coin to your own article"
+    "v%lld" : {
+
+    },
+    "v%lld 风格" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "v%lld style"
+          }
+        }
+      }
+    },
+    "VD社区" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VD Community"
+          }
+        }
+      }
+    },
+    "VD社区可见" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Visible in VD Community"
+          }
+        }
+      }
+    },
+    "VD社区还没有分享" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No shares in VD Community yet"
+          }
+        }
+      }
+    },
+    "VoiceDrop 分享" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceDrop share"
+          }
+        }
+      }
+    },
+    "VoiceDrop 口述" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceDrop Dictation"
+          }
+        }
+      }
+    },
+    "VoiceDrop 要用麦克风录音。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VoiceDrop needs the microphone to record."
+          }
+        }
+      }
+    },
+    "voicedrop.cn/%@" : {
+
+    },
+    "上传失败 HTTP %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Upload failed, HTTP %lld"
+          }
+        }
+      }
+    },
+    "上滑取消 · 松开放弃" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Slide up to cancel · Release to discard"
+          }
+        }
+      }
+    },
+    "下载失败" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download failed"
+          }
+        }
+      }
+    },
+    "不是你本人操作？点「不是我」。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wasn't you? Tap \"Not me\"."
+          }
+        }
+      }
+    },
+    "不是我" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not me"
+          }
+        }
+      }
+    },
+    "不能给自己的文章投币" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can't toss a coin to your own article"
           }
         }
       }
     },
-    "举报": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Report"
+    "举报" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Report"
           }
         }
       }
     },
-    "举报后这篇会立即从社区下架，并在 24 小时内由人工审核处理。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reporting takes this share off the community immediately; a human reviewer will handle it within 24 hours."
+    "举报后这篇会立即从社区下架，并在 24 小时内由人工审核处理。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reporting takes this share off the community immediately; a human reviewer will handle it within 24 hours."
           }
         }
       }
     },
-    "举报并下架": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Report & take down"
+    "举报并下架" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Report & take down"
           }
         }
       }
     },
-    "举报这篇分享？": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Report this share?"
+    "举报这篇分享？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Report this share?"
           }
         }
       }
     },
-    "云端留底，换机不丢": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Backed up in the cloud — nothing lost when you switch phones"
+    "云端留底，换机不丢" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Backed up in the cloud — nothing lost when you switch phones"
           }
         }
       }
     },
-    "今天发布次数到上限了，明天再试": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You've hit today's publishing limit — try again tomorrow"
+    "今天发布次数到上限了，明天再试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You've hit today's publishing limit — try again tomorrow"
           }
         }
       }
     },
-    "今日算力池已发完，明天再来": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Today's credit pool is used up — come back tomorrow"
+    "今天生成分享码的次数已达上限，明天再试" : {
+
+    },
+    "今日算力池已发完，明天再来" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Today's credit pool is used up — come back tomorrow"
           }
         }
       }
     },
-    "从社区移除？": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Remove from community?"
+    "从社区移除？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove from community?"
           }
         }
       }
     },
-    "令牌无效": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Invalid token"
+    "令牌无效" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Invalid token"
           }
         }
       }
     },
-    "余额不足": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Insufficient credits"
+    "余额不足" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Insufficient credits"
           }
         }
       }
     },
-    "余额与消耗明细": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Balance & usage details"
+    "余额与消耗明细" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Balance & usage details"
           }
         }
       }
     },
-    "你的 ID": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your ID"
+    "你的 ID" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your ID"
           }
         }
       }
     },
-    "你的名字": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your name"
+    "你的名字" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your name"
           }
         }
       }
     },
-    "保存": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Save"
+    "保存" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save"
           }
         }
       }
     },
-    "保存失败": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Save failed"
+    "保存失败" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save failed"
           }
         }
       }
     },
-    "保存失败，请重试": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Save failed, please try again"
+    "保存失败，请重试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Save failed, please try again"
           }
         }
       }
     },
-    "停止": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stop"
+    "停止" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop"
           }
         }
       }
     },
-    "停止录音": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stop recording"
+    "停止录音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop recording"
           }
         }
       }
     },
-    "公众号已连接": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "WeChat account connected"
+    "公众号已连接" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WeChat account connected"
           }
         }
       }
     },
-    "公众号配置有误，检查 AppID/Secret 或 IP 白名单": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "WeChat account misconfigured — check AppID/Secret or the IP allowlist"
+    "公众号配置有误，检查 AppID/Secret 或 IP 白名单" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WeChat account misconfigured — check AppID/Secret or the IP allowlist"
           }
         }
       }
     },
-    "共 %lld 版": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%lld versions total"
+    "共 %lld 版" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld versions total"
           }
         }
       }
     },
-    "关于": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "About"
+    "关于" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "About"
           }
         }
       }
     },
-    "其他": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Other"
+    "其他" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Other"
           }
         }
       }
     },
-    "写作": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Writing"
+    "写作" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Writing"
           }
         }
       }
     },
-    "写作风格": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Writing style"
+    "写作风格" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Writing style"
           }
         }
       }
     },
-    "写回应": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Write a reply"
+    "写回应" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Write a reply"
           }
         }
       }
     },
-    "写文件失败: %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Failed to write file: %@"
+    "写文件失败: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed to write file: %@"
           }
         }
       }
     },
-    "凭据": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Credentials"
+    "凭据" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Credentials"
           }
         }
       }
     },
-    "凭据已保存": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Credentials saved"
+    "凭据已保存" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Credentials saved"
           }
         }
       }
     },
-    "凭证只保存在你的设备与服务器的加密配置里，不会出现在文章中。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your credentials stay in your device and the server's encrypted config — they never appear in articles."
+    "凭证只保存在你的设备与服务器的加密配置里，不会出现在文章中。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your credentials stay in your device and the server's encrypted config — they never appear in articles."
           }
         }
       }
     },
-    "分享": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Share"
+    "分享" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Share"
           }
         }
       }
     },
-    "分享 / 保存到本地": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Share / Save locally"
+    "分享 / 保存到本地" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Share / Save locally"
           }
         }
       }
+    },
+    "分享…" : {
+
     },
-    "分享到小红书": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Share to Xiaohongshu (RED)"
+    "分享中，关闭后分享码立即失效" : {
+
+    },
+    "分享到小红书" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Share to Xiaohongshu (RED)"
           }
         }
       }
     },
-    "分享失败，请稍后再试": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Share failed, please try again later"
+    "分享失败，请稍后再试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Share failed, please try again later"
           }
         }
       }
+    },
+    "分享的始终是已保存的版本" : {
+
     },
-    "切换": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Switch"
+    "分享这条提示词" : {
+
+    },
+    "切换" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Switch"
           }
         }
       }
     },
-    "创建临时目录失败": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Failed to create temporary directory"
+    "创建临时目录失败" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed to create temporary directory"
           }
         }
       }
     },
-    "删掉当前文章、保留录音，立即重新挖一遍。生成的内容可能和原来不同。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Deletes the current article, keeps the recording, and mines it again right away. The result may differ from the original."
+    "删掉当前文章、保留录音，立即重新挖一遍。生成的内容可能和原来不同。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deletes the current article, keeps the recording, and mines it again right away. The result may differ from the original."
           }
         }
       }
     },
-    "删除": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Delete"
+    "删除" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete"
           }
         }
       }
     },
-    "删除失败": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Delete failed"
+    "删除失败" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete failed"
           }
         }
       }
     },
-    "删除账户": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Delete account"
+    "删除账户" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete account"
           }
         }
       }
     },
-    "删除这条录音？": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Delete this recording?"
+    "删除这条录音？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete this recording?"
           }
         }
       }
     },
-    "剩余算力": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Remaining credits"
+    "剩余算力" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remaining credits"
           }
         }
       }
     },
-    "加载中…": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Loading…"
+    "加载中…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Loading…"
           }
         }
       }
     },
-    "加载失败": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Load failed"
+    "加载失败" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Load failed"
           }
         }
       }
+    },
+    "加载更早的记录" : {
+
     },
-    "勾选 2–3 个版本": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Select 2–3 versions"
+    "勾选 2–3 个版本" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select 2–3 versions"
           }
         }
       }
     },
-    "勾选多个版本，成文时各生成一篇并排挑": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Select multiple versions — each writes up its own article so you can compare side by side"
+    "勾选多个版本，成文时各生成一篇并排挑" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Select multiple versions — each writes up its own article so you can compare side by side"
           }
         }
       }
     },
-    "包月算力": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Monthly credits"
+    "包月算力" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Monthly credits"
           }
         }
       }
     },
-    "包月算力还在开发中，敬请期待。现在的算力来自注册与活动赠送，足够日常使用。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Monthly credits are still in the works — stay tuned. For now, credits come from sign-up and event bonuses, plenty for daily use."
+    "包月算力还在开发中，敬请期待。现在的算力来自注册与活动赠送，足够日常使用。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Monthly credits are still in the works — stay tuned. For now, credits come from sign-up and event bonuses, plenty for daily use."
           }
         }
       }
     },
-    "包月订阅 · 即将上线": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Monthly plan · Coming soon"
+    "包月订阅 · 即将上线" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Monthly plan · Coming soon"
           }
         }
       }
     },
-    "包月订阅即将上线": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Monthly plan coming soon"
+    "包月订阅即将上线" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Monthly plan coming soon"
           }
         }
       }
     },
-    "匿名": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Anonymous"
+    "匿名" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anonymous"
           }
         }
       }
     },
-    "原文": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Original"
+    "原文" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Original"
           }
         }
       }
     },
-    "去哪里找 AppID / AppSecret？": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Where do I find the AppID / AppSecret?"
+    "去哪里找 AppID / AppSecret？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Where do I find the AppID / AppSecret?"
           }
         }
       }
     },
-    "去设置": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open Settings"
+    "去设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open Settings"
           }
         }
       }
     },
-    "发布": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Publish"
+    "发布" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Publish"
           }
         }
       }
     },
-    "发布公众号草稿": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Publish WeChat draft"
+    "发布公众号草稿" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Publish WeChat draft"
           }
         }
       }
     },
-    "发布到 VD社区，表示你同意以下社区公约：\n\n• 你对自己发布的内容负责，并拥有发布它的权利。\n• 严禁发布令人反感的内容——包括色情或露骨性内容、暴力血腥、仇恨或歧视、骚扰或欺凌、违法内容、自残等。VoiceDrop 对令人反感的内容和滥用行为零容忍。\n• 违规内容一经举报将被立即下架，并在 24 小时内处理；屡次或严重违规的账号将被移除。\n• 你可以随时举报不当内容、屏蔽不想看到的用户。\n\n继续即表示你已阅读并同意本社区公约与最终用户许可协议（EULA）。如需联系或投诉内容，请发邮件至 %@。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Posting to the VD Community means you agree to the community guidelines:\n\n• You are responsible for what you post and must have the right to post it.\n• Objectionable content is strictly prohibited — including pornographic or sexually explicit material, graphic violence, hate or discrimination, harassment or bullying, illegal content, self-harm, and the like. VoiceDrop has zero tolerance for objectionable content and abusive behavior.\n• Reported content is taken down immediately and handled within 24 hours; accounts with repeated or serious violations will be removed.\n• You can report inappropriate content or block users you don't want to see at any time.\n\nBy continuing, you confirm you have read and agree to these community guidelines and the End User License Agreement (EULA). To contact us or complain about content, email %@."
+    "发布到 VD社区，表示你同意以下社区公约：\n\n• 你对自己发布的内容负责，并拥有发布它的权利。\n• 严禁发布令人反感的内容——包括色情或露骨性内容、暴力血腥、仇恨或歧视、骚扰或欺凌、违法内容、自残等。VoiceDrop 对令人反感的内容和滥用行为零容忍。\n• 违规内容一经举报将被立即下架，并在 24 小时内处理；屡次或严重违规的账号将被移除。\n• 你可以随时举报不当内容、屏蔽不想看到的用户。\n\n继续即表示你已阅读并同意本社区公约与最终用户许可协议（EULA）。如需联系或投诉内容，请发邮件至 %@。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Posting to the VD Community means you agree to the community guidelines:\n\n• You are responsible for what you post and must have the right to post it.\n• Objectionable content is strictly prohibited — including pornographic or sexually explicit material, graphic violence, hate or discrimination, harassment or bullying, illegal content, self-harm, and the like. VoiceDrop has zero tolerance for objectionable content and abusive behavior.\n• Reported content is taken down immediately and handled within 24 hours; accounts with repeated or serious violations will be removed.\n• You can report inappropriate content or block users you don't want to see at any time.\n\nBy continuing, you confirm you have read and agree to these community guidelines and the End User License Agreement (EULA). To contact us or complain about content, email %@."
           }
         }
       }
     },
-    "发布失败": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Publish failed"
+    "发布失败" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Publish failed"
           }
         }
       }
     },
-    "发布失败：%@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Publish failed: %@"
+    "发布失败：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Publish failed: %@"
           }
         }
       }
     },
-    "发起失败": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Failed to start"
+    "发起失败" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed to start"
           }
         }
       }
     },
-    "取消": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Cancel"
+    "取消" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cancel"
           }
         }
       }
     },
-    "取消分享": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unshare"
+    "取消分享" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unshare"
           }
         }
       }
     },
-    "取消屏蔽": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unblock"
+    "取消屏蔽" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unblock"
           }
         }
       }
     },
-    "取消赞": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unlike"
+    "取消赞" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unlike"
           }
         }
       }
     },
-    "同意并发布": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Agree & publish"
+    "同意并发布" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Agree & publish"
           }
         }
       }
     },
-    "名字": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Name"
+    "名字" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name"
           }
         }
       }
     },
-    "听录音": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Listen"
+    "听录音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Listen"
           }
         }
       }
     },
-    "回应": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reply"
+    "回应" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reply"
           }
         }
       }
     },
-    "回应 · %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reply · %@"
+    "回应 · %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reply · %@"
           }
         }
       }
     },
-    "图%lld": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Image %lld"
+    "图%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image %lld"
           }
         }
       }
     },
-    "图片上传失败": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Image upload failed"
+    "图片上传失败" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image upload failed"
           }
         }
       }
     },
-    "图片已上传，AI正在插入…": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Image uploaded — AI is inserting it…"
+    "图片已上传，AI正在插入…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Image uploaded — AI is inserting it…"
           }
         }
       }
     },
-    "在公众号后台 → 开发 → 基本配置 → IP 白名单中加入以下地址，服务器才能正常调用接口推草稿。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "In your WeChat Official Account console, go to Development → Basic Settings → IP Whitelist and add the addresses below, so the server can call the API to push drafts."
+    "在公众号后台 → 开发 → 基本配置 → IP 白名单中加入以下地址，服务器才能正常调用接口推草稿。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In your WeChat Official Account console, go to Development → Basic Settings → IP Whitelist and add the addresses below, so the server can call the API to push drafts."
           }
         }
       }
     },
-    "在听…": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Listening…"
+    "在听…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Listening…"
           }
         }
       }
     },
-    "在文章右上角 ⋯ 里点「分享到 VD社区」，大家就能看到。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tap ⋯ at the top right of an article and choose \"Share to VD Community\" so everyone can see it."
+    "在文章右上角 ⋯ 里点「分享到 VD社区」，大家就能看到。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap ⋯ at the top right of an article and choose \"Share to VD Community\" so everyone can see it."
           }
         }
       }
     },
-    "在新设备上输入下面的验证码": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enter the code below on your new device"
+    "在新设备上输入下面的验证码" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter the code below on your new device"
           }
         }
       }
     },
-    "在老设备「设置 → 账户」看到的 6 位代码": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The 6-digit code shown in Settings → Account on your old device"
+    "在老设备「设置 → 账户」看到的 6 位代码" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The 6-digit code shown in Settings → Account on your old device"
           }
         }
       }
     },
-    "在菜单中隐藏": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hide from menu"
+    "在菜单中隐藏" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hide from menu"
           }
         }
       }
     },
-    "在这台设备上自动生成，不需要用户名或密码。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Generated automatically on this device — no username or password needed."
+    "在这台设备上自动生成，不需要用户名或密码。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Generated automatically on this device — no username or password needed."
           }
         }
       }
     },
-    "填入公众号 AppID / AppSecret 即可连接。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enter your Official Account AppID / AppSecret to connect."
+    "填入公众号 AppID / AppSecret 即可连接。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter your Official Account AppID / AppSecret to connect."
           }
         }
       }
     },
-    "备份到 iCloud": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Back up to iCloud"
+    "备份到 iCloud" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back up to iCloud"
           }
         }
       }
     },
-    "复制": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Copy"
+    "复制" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy"
           }
         }
       }
+    },
+    "复制数字" : {
+
+    },
+    "复制链接" : {
+
     },
-    "多风格对比": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Multi-style comparison"
+    "多风格对比" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Multi-style comparison"
           }
         }
       }
     },
-    "好": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "OK"
+    "好" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
           }
         }
       }
     },
-    "完成": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Done"
+    "完成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Done"
           }
         }
       }
     },
-    "完成后将分别用 ": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "When done, it will be written up separately in "
+    "完成后将分别用 " : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When done, it will be written up separately in "
           }
         }
       }
     },
-    "对方已拒绝": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Declined on the other device"
+    "对方已拒绝" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Declined on the other device"
           }
         }
       }
     },
-    "对比": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Compare"
+    "对比" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Compare"
           }
         }
       }
     },
-    "导出失败": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Export failed"
+    "导出失败" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export failed"
           }
         }
       }
     },
-    "导出完成": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Export complete"
+    "导出完成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export complete"
           }
         }
       }
     },
-    "导出数据": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Export data"
+    "导出数据" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Export data"
           }
         }
       }
     },
-    "将永久删除你的全部数据：云端录音、文章、照片、设置、社区分享和 Apple 登录绑定，本机数据也会清空。此操作不可恢复。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This will permanently delete all your data: cloud recordings, articles, photos, settings, community shares, and your Apple sign-in link. Local data on this device will also be erased. This cannot be undone."
+    "将永久删除你的全部数据：云端录音、文章、照片、设置、社区分享和 Apple 登录绑定，本机数据也会清空。此操作不可恢复。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This will permanently delete all your data: cloud recordings, articles, photos, settings, community shares, and your Apple sign-in link. Local data on this device will also be erased. This cannot be undone."
           }
         }
       }
     },
-    "小红书文案生成失败，稍后再试": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Failed to generate Xiaohongshu (RED) copy. Try again later"
+    "小红书文案生成失败，稍后再试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed to generate Xiaohongshu (RED) copy. Try again later"
           }
         }
       }
     },
-    "屏蔽": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Block"
+    "屏蔽" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Block"
           }
         }
       }
     },
-    "屏蔽后，你将不再看到 %@ 的任何社区内容。可在「设置」里取消屏蔽。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "After blocking, you won't see any community content from %@. You can unblock in Settings."
+    "屏蔽后，你将不再看到 %@ 的任何社区内容。可在「设置」里取消屏蔽。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "After blocking, you won't see any community content from %@. You can unblock in Settings."
           }
         }
       }
     },
-    "屏蔽此用户": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Block this user"
+    "屏蔽此用户" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Block this user"
           }
         }
       }
     },
-    "屏蔽此用户？": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Block this user?"
+    "屏蔽此用户？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Block this user?"
           }
         }
       }
     },
-    "已举报，内容已下架待审核": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Reported. The content has been taken down pending review"
+    "已举报，内容已下架待审核" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reported. The content has been taken down pending review"
           }
         }
       }
     },
-    "已从 VD社区隐藏": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hidden from VD Community"
+    "已从 VD社区隐藏" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hidden from VD Community"
           }
         }
       }
     },
-    "已从菜单隐藏": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hidden from menu"
+    "已从菜单隐藏" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hidden from menu"
           }
         }
       }
     },
-    "已保存": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Saved"
+    "已保存" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saved"
           }
         }
       }
     },
-    "已到草稿箱": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sent to Drafts"
+    "已到草稿箱" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sent to Drafts"
           }
         }
       }
     },
-    "已在 VD社区可见": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Now visible in VD Community"
+    "已在 VD社区可见" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Now visible in VD Community"
           }
         }
       }
     },
-    "已在新设备登录": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Signed in on new device"
+    "已在新设备登录" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signed in on new device"
           }
         }
       }
     },
-    "已复制": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Copied"
+    "已复制" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copied"
           }
         }
       }
     },
-    "已屏蔽用户": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Blocked users"
+    "已屏蔽，TA 的内容将不再显示" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blocked. Their content will no longer be shown"
           }
         }
       }
     },
-    "已屏蔽，TA 的内容将不再显示": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Blocked. Their content will no longer be shown"
+    "已屏蔽用户" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blocked users"
           }
         }
       }
     },
-    "已开启": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "On"
+    "已开启" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "On"
           }
         }
       }
     },
-    "已成文": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Article ready"
+    "已成文" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Article ready"
           }
         }
       }
     },
-    "已投币": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Coin tossed"
+    "已投币" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coin tossed"
           }
         }
       }
     },
-    "已投币：你 +%@，作者 +%@ 算力": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Coin tossed: you +%@, author +%@ credits"
+    "已投币：你 +%@，作者 +%@ 算力" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coin tossed: you +%@, author +%@ credits"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "new",
-            "value": "已投币：你 +%1$@，作者 +%2$@ 算力"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "已投币：你 +%1$@，作者 +%2$@ 算力"
           }
         }
       }
     },
-    "已更新草稿": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Draft updated"
+    "已更新草稿" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Draft updated"
           }
         }
       }
     },
-    "已用 Apple 登录": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Signed in with Apple"
+    "已用 Apple 登录" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signed in with Apple"
           }
         }
       }
     },
-    "已经投过这篇了": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You've already tossed a coin for this one"
+    "已经投过这篇了" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You've already tossed a coin for this one"
           }
         }
       }
     },
-    "已自定义": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Customized"
+    "已自定义" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Customized"
           }
         }
       }
     },
-    "已超时，请重新发起": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Timed out. Please start again"
+    "已超时，请重新发起" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Timed out. Please start again"
           }
         }
       }
     },
-    "已连接": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connected"
+    "已连接" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connected"
           }
         }
       }
     },
-    "已选 ": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Selected "
+    "已选 " : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selected "
           }
         }
       }
     },
-    "开始录音": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Start recording"
+    "开启后，任何人对 VoiceDrop 说出分享码，或打开链接，就能看到并一次性使用这条提示词" : {
+
+    },
+    "开始录音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start recording"
+          }
+        }
+      }
+    },
+    "开始采访" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start interview"
+          }
+        }
+      }
+    },
+    "当前" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Current"
+          }
+        }
+      }
+    },
+    "当前生效的就是默认提示词。想微调可以长按上方文本框，把默认提示词粘贴进去再改。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The default prompt is what's in effect now. To tweak it, long-press the text box above, paste in the default prompt, and edit."
           }
         }
       }
     },
-    "开始采访": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Start interview"
+    "录得太短" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording too short"
           }
         }
       }
     },
-    "当前": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Current"
+    "录音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording"
           }
         }
       }
     },
-    "当前生效的就是默认指令。想微调可以长按上方文本框，把默认指令粘贴进去再改。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The default instructions are what's in effect now. To tweak them, long-press the text box above, paste in the default instructions, and edit."
+    "录音出错" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording error"
           }
         }
       }
     },
-    "录得太短": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recording too short"
+    "录音只上传到你自己的云端空间；麦克风仅在录音和语音修改时使用；身份是本机生成的匿名 ID，随 iCloud 钥匙串备份。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recordings are uploaded only to your own cloud space; the microphone is used only for recording and voice edits; your identity is an anonymous ID generated on this device, backed up with iCloud Keychain."
           }
         }
       }
     },
-    "录音": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recording"
+    "录音失败：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording failed: %@"
           }
         }
       }
     },
-    "录音出错": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recording error"
+    "录音异常时打开（关闭 AI 采访）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turn on if recording misbehaves (disables AI interview)"
           }
         }
       }
     },
-    "录音只上传到你自己的云端空间；麦克风仅在录音和语音修改时使用；身份是本机生成的匿名 ID，随 iCloud 钥匙串备份。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recordings are uploaded only to your own cloud space; the microphone is used only for recording and voice edits; your identity is an anonymous ID generated on this device, backed up with iCloud Keychain."
+    "录音文件损坏，已跳过上传" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording file corrupted; upload skipped"
           }
         }
       }
     },
-    "录音失败：%@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recording failed: %@"
+    "录音文件未生成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording file was not created"
           }
         }
       }
     },
-    "录音异常时打开（关闭 AI 采访）": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Turn on if recording misbehaves (disables AI interview)"
+    "录音过长" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording too long"
           }
         }
       }
     },
-    "录音文件损坏，已跳过上传": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recording file corrupted; upload skipped"
+    "待处理" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Queued"
           }
         }
       }
     },
-    "录音文件未生成": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recording file was not created"
+    "微信公众号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "WeChat Official Account"
           }
         }
       }
     },
-    "录音过长": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recording too long"
+    "恢复默认" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restore defaults"
           }
         }
       }
     },
-    "待处理": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Queued"
+    "成文" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Write up"
           }
         }
       }
     },
-    "微信公众号": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "WeChat Official Account"
+    "成文一键推送到草稿箱" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Push articles to Drafts in one tap"
           }
         }
       }
     },
-    "恢复默认": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Restore defaults"
+    "成文时模仿这套语气" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mimic this tone when writing up"
           }
         }
       }
     },
-    "成文": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Write up"
+    "我在 VoiceDrop 调了一条提示词「%@」。打开 VoiceDrop，对 AI 说「用 %@」就能直接用。看看内容：%@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "我在 VoiceDrop 调了一条提示词「%1$@」。打开 VoiceDrop，对 AI 说「用 %2$@」就能直接用。看看内容：%3$@"
           }
         }
       }
     },
-    "成文一键推送到草稿箱": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Push articles to Drafts in one tap"
+    "我的录音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "My recordings"
           }
         }
       }
     },
-    "成文时模仿这套语气": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mimic this tone when writing up"
+    "我的提示词" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "My prompt"
           }
         }
       }
     },
-    "我的录音": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "My recordings"
+    "所有录音和文章打包下载" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Download all recordings and articles as one package"
           }
         }
       }
     },
-    "我的指令": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "My instructions"
+    "打包失败：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Packaging failed: %@"
           }
         }
       }
     },
-    "所有录音和文章打包下载": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Download all recordings and articles as one package"
+    "打开 VoiceDrop 直接开始录音。可选一个标签，这条录音挖出的文章会自动归入该标签页。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Open VoiceDrop and start recording right away. Optionally pick a tag — articles mined from this recording will be filed under that tab automatically."
           }
         }
       }
     },
-    "打包失败：%@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Packaging failed: %@"
+    "投币" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toss a coin"
           }
         }
       }
     },
-    "打开 VoiceDrop 直接开始录音。可选一个标签，这条录音挖出的文章会自动归入该标签页。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Open VoiceDrop and start recording right away. Optionally pick a tag — articles mined from this recording will be filed under that tab automatically."
+    "投币失败，稍后再试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Coin toss failed. Try again later"
           }
         }
       }
     },
-    "投币": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Toss a coin"
+    "投币需要先用 Apple 登录" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in with Apple to toss coins"
           }
         }
       }
     },
-    "投币失败，稍后再试": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Coin toss failed. Try again later"
+    "拍照" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Take photo"
           }
         }
       }
     },
-    "投币需要先用 Apple 登录": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sign in with Apple to toss coins"
+    "拷贝" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Copy"
           }
         }
       }
     },
-    "拍照": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Take photo"
+    "按住 说话 修改" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold to Speak · Edit"
           }
         }
       }
     },
-    "拷贝": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Copy"
+    "按住 说话 回答" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hold to Speak · Answer"
           }
         }
       }
     },
-    "指令": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Instructions"
+    "挖出新文章后自动发到公众号草稿箱" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-send newly mined articles to your WeChat drafts"
           }
         }
       }
     },
-    "按住 说话 修改": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hold to Speak · Edit"
+    "挖出新文章后自动发到社区" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-share newly mined articles to the community"
           }
         }
       }
     },
-    "按住 说话 回答": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Hold to Speak · Answer"
+    "挖文章" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mine articles"
           }
         }
       }
     },
-    "挖出新文章后自动发到公众号草稿箱": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Auto-send newly mined articles to your WeChat drafts"
+    "换个风格重写" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rewrite in a different style"
           }
         }
       }
     },
-    "挖出新文章后自动发到社区": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Auto-share newly mined articles to the community"
+    "换新机时，登录同一 Apple 账户即可自动恢复；ID 随 iCloud 钥匙串备份。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "When you switch to a new phone, sign in with the same Apple account to restore automatically; your ID is backed up with iCloud Keychain."
           }
         }
       }
     },
-    "挖文章": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mine articles"
+    "推送失败，请稍后再试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Push failed. Please try again later"
           }
         }
       }
     },
-    "换个风格重写": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rewrite in a different style"
+    "提示词" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prompt"
           }
         }
       }
     },
-    "换新机时，登录同一 Apple 账户即可自动恢复；ID 随 iCloud 钥匙串备份。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "When you switch to a new phone, sign in with the same Apple account to restore automatically; your ID is backed up with iCloud Keychain."
+    "插入照片" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Insert photo"
           }
         }
       }
     },
-    "推送失败，请稍后再试": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Push failed. Please try again later"
+    "摘要太短，正文写长一点再发" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Summary too short. Make the article longer before sending"
           }
         }
       }
     },
-    "插入照片": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Insert photo"
+    "撤销" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Undo"
           }
         }
       }
     },
-    "摘要太短，正文写长一点再发": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Summary too short. Make the article longer before sending"
+    "播放" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Play"
           }
         }
       }
     },
-    "撤销": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Undo"
+    "播放引擎启动失败: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Playback engine failed to start: %@"
           }
         }
       }
     },
-    "播放": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Play"
+    "操作失败，请稍后再试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Something went wrong. Please try again later"
           }
         }
       }
     },
-    "播放引擎启动失败: %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Playback engine failed to start: %@"
+    "操作失败，请重试" : {
+
+    },
+    "数据" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Data"
           }
         }
       }
     },
-    "操作失败，请稍后再试": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Something went wrong. Please try again later"
+    "数据与备份" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Data & Backup"
           }
         }
       }
     },
-    "数据": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Data"
+    "文件损坏" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "File corrupted"
           }
         }
       }
     },
-    "数据与备份": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Data & Backup"
+    "文案已复制" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Caption copied"
           }
         }
       }
     },
-    "文件损坏": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "File corrupted"
+    "文案已复制，%lld 张图文卡已存入相册" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Caption copied; %lld image cards saved to Photos"
           }
         }
       }
     },
-    "文案已复制": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Caption copied"
+    "断开连接" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Disconnect"
           }
         }
       }
     },
-    "文案已复制，%lld 张图文卡已存入相册": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Caption copied; %lld image cards saved to Photos"
+    "无法开始录音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can't start recording"
           }
         }
       }
     },
-    "断开连接": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Disconnect"
+    "无法开始录音：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can't start recording: %@"
           }
         }
       }
     },
-    "无法开始录音": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Can't start recording"
+    "无法插入图片" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can't insert image"
           }
         }
       }
     },
-    "无法开始录音：%@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Can't start recording: %@"
+    "无语音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No speech"
           }
         }
       }
     },
-    "无法插入图片": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Can't insert image"
+    "无需登录 · ID 已随 iCloud 钥匙串备份" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No sign-in needed · ID backed up with iCloud Keychain"
           }
         }
       }
     },
-    "无语音": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No speech"
+    "明细" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Details"
           }
         }
       }
     },
-    "无需登录 · ID 已随 iCloud 钥匙串备份": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No sign-in needed · ID backed up with iCloud Keychain"
+    "暂停" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pause"
           }
         }
       }
     },
-    "明细": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Details"
+    "暂无记录" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No records yet"
           }
         }
       }
     },
-    "暂停": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pause"
+    "暂时无法显示" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can't display right now"
           }
         }
       }
     },
-    "暂无记录": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No records yet"
+    "更多" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "More"
           }
         }
       }
     },
-    "暂时无法显示": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Can't display right now"
+    "更新公众号草稿" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Update WeChat draft"
           }
         }
       }
     },
-    "更多": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "More"
+    "有新设备想登录你的账号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A new device wants to sign in to your account"
           }
         }
       }
+    },
+    "朋友的邀请已到账" : {
+
     },
-    "更新公众号草稿": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Update WeChat draft"
+    "服务器每小时自动处理一次，过会儿再来看。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server runs once every hour. Check back in a bit."
           }
         }
       }
     },
-    "有新设备想登录你的账号": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "A new device wants to sign in to your account"
+    "服务器返回 %lld，请稍后再试。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Server returned %lld. Please try again later."
           }
         }
       }
     },
-    "服务器每小时自动处理一次，过会儿再来看。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The server runs once every hour. Check back in a bit."
+    "未登录，无法连接语音识别服务。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not signed in — can't connect to the speech recognition service."
           }
         }
       }
     },
-    "服务器返回 %lld，请稍后再试。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Server returned %lld. Please try again later."
+    "未知错误" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Unknown error"
           }
         }
       }
     },
-    "未登录，无法连接语音识别服务。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Not signed in — can't connect to the speech recognition service."
+    "未设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not set"
           }
         }
       }
     },
-    "未知错误": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Unknown error"
+    "未选版本" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No version selected"
           }
         }
       }
     },
-    "未设置": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Not set"
+    "未配置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Not configured"
           }
         }
       }
     },
-    "未选版本": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No version selected"
+    "松开 发送 · 上滑取消" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release to Send · Swipe up to Cancel"
           }
         }
       }
     },
-    "未配置": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Not configured"
+    "松开发送 · 上滑取消" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Release to send · Swipe up to cancel"
           }
         }
       }
     },
-    "松开 发送 · 上滑取消": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Release to Send · Swipe up to Cancel"
+    "标准 · AAC" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Standard · AAC"
           }
         }
       }
     },
-    "松开发送 · 上滑取消": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Release to send · Swipe up to cancel"
+    "标签" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tags"
           }
         }
       }
     },
-    "标准 · AAC": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Standard · AAC"
+    "正在上传" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uploading"
           }
         }
       }
     },
-    "标签": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tags"
+    "正在上传图片…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uploading image…"
           }
         }
       }
     },
-    "正在上传": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Uploading"
+    "正在准备…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Preparing…"
           }
         }
       }
     },
-    "正在上传图片…": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Uploading image…"
+    "正在制作中" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In progress"
           }
         }
       }
     },
-    "正在准备…": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Preparing…"
+    "正在导出数据" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exporting data"
           }
         }
       }
     },
-    "正在制作中": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "In progress"
+    "正在录音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording"
           }
         }
       }
     },
-    "正在导出数据": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Exporting data"
+    "正在打包…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Packaging…"
           }
         }
       }
     },
-    "正在录音": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recording"
+    "正在接收账号…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Receiving account…"
           }
         }
       }
     },
-    "正在打包…": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Packaging…"
+    "正在改…按住继续说" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Editing… Hold to keep talking"
           }
         }
       }
     },
-    "正在接收账号…": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Receiving account…"
+    "正在用新风格重写…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rewriting with the new style…"
           }
         }
       }
     },
-    "正在改…按住继续说": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Editing… Hold to keep talking"
+    "每月 200 算力 · 月底清零 · 随时可取消" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "200 credits per month · Resets at month end · Cancel anytime"
           }
         }
       }
     },
-    "正在用新风格重写…": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rewriting with the new style…"
+    "永久删除" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete permanently"
           }
         }
       }
     },
-    "每月 200 算力 · 月底清零 · 随时可取消": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "200 credits per month · Resets at month end · Cancel anytime"
+    "永久删除云端与本机的全部数据（录音、文章、照片、设置、社区分享、Apple 登录绑定），不可恢复。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permanently deletes all data in the cloud and on this device (recordings, articles, photos, settings, community shares, Apple sign-in binding). This cannot be undone."
           }
         }
       }
     },
-    "永久删除": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Delete permanently"
+    "永久删除账户？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Permanently delete account?"
           }
         }
       }
     },
-    "永久删除云端与本机的全部数据（录音、文章、照片、设置、社区分享、Apple 登录绑定），不可恢复。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Permanently deletes all data in the cloud and on this device (recordings, articles, photos, settings, community shares, Apple sign-in binding). This cannot be undone."
+    "没找到这个账号，确认老设备设置页的 6 位码" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account not found. Check the 6-digit code on your old device's Settings page"
           }
         }
       }
     },
-    "永久删除账户？": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Permanently delete account?"
+    "没挖出文章" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No articles mined"
           }
         }
       }
     },
-    "没找到这个账号，确认老设备设置页的 6 位码": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Account not found. Check the 6-digit code on your old device's Settings page"
+    "没有录音可以导出" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No recordings to export"
           }
         }
       }
     },
-    "没挖出文章": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No articles mined"
+    "没检测到小红书 App，文案在剪贴板里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Xiaohongshu (RED) app not found — the text is in your clipboard"
           }
         }
       }
     },
-    "没有录音可以导出": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No recordings to export"
+    "没检测到语音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No speech detected"
           }
         }
       }
     },
-    "没检测到小红书 App，文案在剪贴板里": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Xiaohongshu (RED) app not found — the text is in your clipboard"
+    "注册赠送" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign-up bonus"
           }
         }
       }
     },
-    "没检测到语音": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No speech detected"
+    "活动赠送" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Promo bonus"
           }
         }
       }
     },
-    "注册赠送": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sign-up bonus"
+    "点下面的红键录一条，过会儿服务器会自动转写并挖成文章。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap the red button below to record one. The server will transcribe it and mine it into articles shortly."
           }
         }
       }
     },
-    "活动赠送": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Promo bonus"
+    "点击停止" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap to stop"
           }
         }
       }
     },
-    "点下面的红键录一条，过会儿服务器会自动转写并挖成文章。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tap the red button below to record one. The server will transcribe it and mine it into articles shortly."
+    "点照片右上角 ✕ 删除" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap ✕ in a photo's top-right corner to delete it"
           }
         }
       }
     },
-    "点击停止": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tap to stop"
+    "照片会附在这条录音里" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Photos will be attached to this recording"
           }
         }
       }
     },
-    "点照片右上角 ✕ 删除": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tap ✕ in a photo's top-right corner to delete it"
+    "用 Apple 登录（同步设备 · 参与社区）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in with Apple (sync devices · join the community)"
           }
         }
       }
     },
-    "照片会附在这条录音里": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Photos will be attached to this recording"
+    "用 v%lld 重写本文" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rewrite this article with v%lld"
           }
         }
       }
     },
-    "用 Apple 登录（同步设备 · 参与社区）": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sign in with Apple (sync devices · join the community)"
+    "留空 = 使用默认名「%@」" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leave blank = use default name \"%@\""
           }
         }
       }
     },
-    "用 v%lld 重写本文": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rewrite this article with v%lld"
+    "留空 = 使用默认提示词" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leave blank = use default prompt"
           }
         }
       }
     },
-    "留空 = 使用默认名「%@」": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Leave blank = use default name \"%@\""
+    "登录失败" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign-in failed"
           }
         }
       }
     },
-    "留空 = 使用默认指令": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Leave blank = use default instructions"
+    "登录已有账号" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign in to an existing account"
           }
         }
       }
     },
-    "登录失败": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sign-in failed"
+    "登录成功" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Signed in"
           }
         }
       }
     },
-    "登录已有账号": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sign in to an existing account"
+    "确认操作" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Confirm action"
           }
         }
       }
     },
-    "登录成功": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Signed in"
+    "社区公约" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Community guidelines"
           }
         }
       }
     },
-    "确认操作": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Confirm action"
+    "社区里将看不到这篇；你的原文章不受影响，以后还能再分享。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "It will no longer appear in the community. Your original article isn't affected, and you can share it again later."
           }
         }
       }
     },
-    "社区公约": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Community guidelines"
+    "移除" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remove"
           }
         }
       }
     },
-    "社区里将看不到这篇；你的原文章不受影响，以后还能再分享。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "It will no longer appear in the community. Your original article isn't affected, and you can share it again later."
+    "算力" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Credits"
           }
         }
       }
     },
-    "移除": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Remove"
+    "算力来源" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Credit sources"
           }
         }
       }
     },
-    "算力": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Credits"
+    "粘贴另一台设备「账户 → 访问令牌」复制的 anon_ 令牌，本机将切换到该账号（当前身份会被替换）。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Paste the anon_ token copied from the other device's \"Account → Access Token\". This device will switch to that account (your current identity will be replaced)."
           }
         }
       }
     },
-    "算力来源": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Credit sources"
+    "约 1 分钟完成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Takes about 1 minute"
           }
         }
       }
     },
-    "粘贴另一台设备「账户 → 访问令牌」复制的 anon_ 令牌，本机将切换到该账号（当前身份会被替换）。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Paste the anon_ token copied from the other device's \"Account → Access Token\". This device will switch to that account (your current identity will be replaced)."
+    "约可成文 %lld 篇" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enough for about %lld articles"
           }
         }
       }
     },
-    "累计获赠 %lld · 已用 %lld": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Total granted %lld · Used %lld"
+    "累计获赠 %lld · 已用 %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Total granted %lld · Used %lld"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "new",
-            "value": "累计获赠 %1$lld · 已用 %2$lld"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "累计获赠 %1$lld · 已用 %2$lld"
           }
         }
       }
     },
-    "约 1 分钟完成": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Takes about 1 minute"
+    "经典录音引擎" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Classic recording engine"
           }
         }
       }
     },
-    "约可成文 %lld 篇": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enough for about %lld articles"
+    "结束采访" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "End interview"
           }
         }
       }
     },
-    "经典录音引擎": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Classic recording engine"
+    "继续" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue"
           }
         }
       }
     },
-    "结束采访": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "End interview"
+    "继续阅读 ↓" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Continue reading ↓"
           }
         }
       }
     },
-    "继续": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Continue"
+    "编码失败" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Encoding failed"
           }
         }
       }
     },
-    "继续阅读 ↓": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Continue reading ↓"
+    "缺少 AppID" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Missing AppID"
           }
         }
       }
     },
-    "编码失败": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Encoding failed"
+    "缺少 AppSecret" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Missing AppSecret"
           }
         }
       }
     },
-    "缺少 AppID": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Missing AppID"
+    "网络出错，请重试" : {
+
+    },
+    "网络错误" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Network error"
           }
         }
       }
     },
-    "缺少 AppSecret": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Missing AppSecret"
+    "署名和挖文章时对你的称呼" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Your byline, and how you're addressed when mining articles"
           }
         }
       }
     },
-    "网络错误": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Network error"
+    "老设备上弹出的 4 位验证码" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The 4-digit code shown on your old device"
           }
         }
       }
     },
-    "署名和挖文章时对你的称呼": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your byline, and how you're addressed when mining articles"
+    "联系我们 / 内容投诉" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contact us / Report content"
           }
         }
       }
     },
-    "老设备上弹出的 4 位验证码": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The 4-digit code shown on your old device"
+    "自动分享到 VD社区" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-share to VD Community"
           }
         }
       }
     },
-    "联系我们 / 内容投诉": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Contact us / Report content"
+    "自动推草稿" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Auto-push drafts"
           }
         }
       }
     },
-    "自动分享到 VD社区": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Auto-share to VD Community"
+    "自定义长按菜单里的每个动作" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Customize each action in the long-press menu"
           }
         }
       }
     },
-    "自动推草稿": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Auto-push drafts"
+    "花费总结" : {
+
+    },
+    "草稿已失效，已重建一份" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Draft expired — a new one was created"
           }
         }
       }
     },
-    "自定义长按菜单里的每个动作": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Customize each action in the long-press menu"
+    "获得约 %lld 算力，可在设置 → 算力明细查看。" : {
+
+    },
+    "菜单里的名字" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Name shown in the menu"
           }
         }
       }
     },
-    "草稿已失效，已重建一份": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Draft expired — a new one was created"
+    "解密失败" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Decryption failed"
           }
         }
       }
     },
-    "菜单里的名字": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Name shown in the menu"
+    "记一条" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Record a note"
           }
         }
       }
     },
-    "解密失败": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Decryption failed"
+    "设置" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Settings"
           }
         }
       }
     },
-    "记一条": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Record a note"
+    "访问令牌" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Access Token"
           }
         }
       }
     },
-    "设置": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Settings"
+    "该用户" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This user"
           }
         }
       }
     },
-    "访问令牌": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Access Token"
+    "语音修改" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voice edits"
           }
         }
       }
     },
-    "该用户": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This user"
+    "语音识别初始化失败：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speech recognition failed to initialize: %@"
           }
         }
       }
     },
-    "语音修改": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Voice edits"
+    "语音识别响应解析失败：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Failed to parse speech recognition response: %@"
           }
         }
       }
     },
-    "语音识别初始化失败：%@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Speech recognition failed to initialize: %@"
+    "语音识别连接中断：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speech recognition connection lost: %@"
           }
         }
       }
     },
-    "语音识别响应解析失败：%@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Failed to parse speech recognition response: %@"
+    "语音识别连接尚未初始化" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speech recognition connection not initialized"
           }
         }
       }
     },
-    "语音识别连接中断：%@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Speech recognition connection lost: %@"
-          }
-        }
-      }
-    },
-    "语音识别连接尚未初始化": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Speech recognition connection not initialized"
-          }
-        }
-      }
-    },
-    "语音识别错误 %@：%@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Speech recognition error %@: %@"
+    "语音识别错误 %@：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speech recognition error %@: %@"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "new",
-            "value": "语音识别错误 %1$@：%2$@"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "语音识别错误 %1$@：%2$@"
           }
         }
       }
     },
-    "语音转写": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Speech transcription"
+    "语音转写" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Speech transcription"
           }
         }
       }
     },
-    "请先用 Apple 登录": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Please sign in with Apple first"
+    "请先用 Apple 登录" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Please sign in with Apple first"
           }
         }
       }
     },
-    "请先登录": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Please sign in first"
+    "请先登录" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Please sign in first"
           }
         }
       }
     },
-    "请在设置里开启麦克风权限": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Please enable microphone access in Settings"
+    "请在设置里开启麦克风权限" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Please enable microphone access in Settings"
           }
         }
       }
     },
-    "请粘贴以 anon_ 开头的完整访问令牌。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Please paste the full access token starting with anon_."
+    "请粘贴以 anon_ 开头的完整访问令牌。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Please paste the full access token starting with anon_."
           }
         }
       }
     },
-    "请输入 4 位验证码": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enter the 4-digit code"
+    "请输入 4 位验证码" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter the 4-digit code"
           }
         }
       }
     },
-    "请输入 6 位代码（设置→账户里那串）": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enter the 6-digit code (the one in Settings → Account)"
+    "请输入 6 位代码（设置→账户里那串）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter the 6-digit code (the one in Settings → Account)"
           }
         }
       }
     },
-    "账户": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Account"
+    "账户" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account"
           }
         }
       }
     },
-    "账户管理": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Account management"
+    "账户管理" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Account management"
           }
         }
       }
     },
-    "赞": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Like"
+    "赞" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Like"
           }
         }
       }
     },
-    "路由切换后录音引擎重启失败: %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recording engine failed to restart after audio route change: %@"
+    "路由切换后录音引擎重启失败: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Recording engine failed to restart after audio route change: %@"
           }
         }
       }
     },
-    "跳过": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Skip"
+    "跳过" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Skip"
           }
         }
       }
     },
-    "转写没成": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Transcription failed"
+    "转写没成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transcription failed"
           }
         }
       }
     },
-    "转移与同步": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Transfer & sync"
+    "转移与同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transfer & sync"
           }
         }
       }
     },
-    "轻点录音 · 长按说话": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Tap to Record · Hold to Talk"
+    "轻点录音 · 长按说话" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap to Record · Hold to Talk"
           }
         }
       }
     },
-    "输入访问令牌": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enter access token"
+    "输入访问令牌" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter access token"
           }
         }
       }
     },
-    "输入访问令牌（切换到已有账号）": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enter access token (switch to an existing account)"
+    "输入访问令牌（切换到已有账号）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter access token (switch to an existing account)"
           }
         }
       }
     },
-    "输入验证码": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Enter verification code"
+    "输入验证码" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enter verification code"
           }
         }
       }
     },
-    "边录边拍": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Take photos while recording"
+    "边录边拍" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Take photos while recording"
           }
         }
       }
     },
-    "返回": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Back"
+    "返回" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Back"
           }
         }
       }
     },
-    "还没成文": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No article yet"
+    "还没成文" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No article yet"
           }
         }
       }
     },
-    "还没有写作风格。\n\n把蒸馏好的文风贴进来，挖文章时会带上它、让文章更像你；或者让 Claude 用「蒸馏文风」从你已发的文章里提炼一份。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No writing style yet.\n\nPaste in a distilled writing style — mining will use it so articles sound more like you. Or have Claude distill one from articles you've already published."
+    "还没有写作风格。\n\n把蒸馏好的文风贴进来，挖文章时会带上它、让文章更像你；或者让 Claude 用「蒸馏文风」从你已发的文章里提炼一份。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No writing style yet.\n\nPaste in a distilled writing style — mining will use it so articles sound more like you. Or have Claude distill one from articles you've already published."
           }
         }
       }
     },
-    "还没有写作风格版本。\n先去设置 → 写作风格里保存一份。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No writing style versions yet.\nSave one first in Settings → Writing Style."
+    "还没有写作风格版本。\n先去设置 → 写作风格里保存一份。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No writing style versions yet.\nSave one first in Settings → Writing Style."
           }
         }
       }
     },
-    "还没有屏蔽任何人": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No one blocked yet"
+    "还没有屏蔽任何人" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No one blocked yet"
           }
         }
       }
     },
-    "还没有录音": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No recordings yet"
+    "还没有录音" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No recordings yet"
           }
         }
       }
     },
-    "还没有文章": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No articles yet"
+    "还没有文章" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No articles yet"
           }
         }
       }
     },
-    "这个名字会出现在文章署名，以及挖文章时对你的称呼。随时可改。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This name appears in your article byline, and it's what we call you when mining articles. Change it anytime."
+    "这个名字会出现在文章署名，以及挖文章时对你的称呼。随时可改。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This name appears in your article byline, and it's what we call you when mining articles. Change it anytime."
           }
         }
       }
     },
-    "这条录音的文件损坏了，没法转写。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This recording's file is corrupted and can't be transcribed."
+    "这条录音的文件损坏了，没法转写。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This recording's file is corrupted and can't be transcribed."
           }
         }
       }
     },
-    "这条录音里没有识别到说话声。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No speech was detected in this recording."
+    "这条录音里没有识别到说话声。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No speech was detected in this recording."
           }
         }
       }
     },
-    "这段录音听到了，只是没找到能单独成篇的内容——可能太零碎，或者还没说成一件事。把想法讲完整一点、重录一段试试。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "We heard this recording, but couldn't find anything that stands on its own as an article — it may be too fragmented, or not yet shaped into one idea. Try recording again with a more complete thought."
+    "这段录音听到了，只是没找到能单独成篇的内容——可能太零碎，或者还没说成一件事。把想法讲完整一点、重录一段试试。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "We heard this recording, but couldn't find anything that stands on its own as an article — it may be too fragmented, or not yet shaped into one idea. Try recording again with a more complete thought."
           }
         }
       }
     },
-    "这段录音太短，没攒够能成文的内容。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This recording is too short — not enough content to write up."
+    "这段录音太短，没攒够能成文的内容。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This recording is too short — not enough content to write up."
           }
         }
       }
     },
-    "这段录音转写时出错了，过会儿再试或重录一段。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Something went wrong transcribing this recording. Try again later or record a new one."
+    "这段录音转写时出错了，过会儿再试或重录一段。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Something went wrong transcribing this recording. Try again later or record a new one."
           }
         }
       }
     },
-    "这篇分享已不可用": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This shared article is no longer available"
+    "这篇分享已不可用" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This shared article is no longer available"
           }
         }
       }
     },
-    "连接断开，请重新发起": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Connection lost — please start again"
+    "连接断开，请重新发起" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Connection lost — please start again"
           }
         }
       }
     },
-    "追问 %lld/%lld": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Follow-up %lld/%lld"
+    "追问 %lld/%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Follow-up %lld/%lld"
           }
         },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "new",
-            "value": "追问 %1$lld/%2$lld"
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "追问 %1$lld/%2$lld"
           }
         }
       }
     },
-    "退出登录": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sign Out"
+    "退出登录" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sign Out"
           }
         }
       }
     },
-    "选一个版本": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose a version"
+    "选一个版本" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a version"
           }
         }
       }
     },
-    "选一个范文版本，把本文重写一遍。原文不变，可随时换回。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Pick a sample version to rewrite this article in that style. The original stays unchanged — switch back anytime."
+    "选一个范文版本，把本文重写一遍。原文不变，可随时换回。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pick a sample version to rewrite this article in that style. The original stays unchanged — switch back anytime."
           }
         }
       }
     },
-    "选风格": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Choose Style"
+    "选风格" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose Style"
           }
         }
       }
     },
-    "采访": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Interview"
+    "采访" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interview"
           }
         }
       }
     },
-    "重做": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Redo"
+    "重做" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Redo"
           }
         }
       }
     },
-    "重写": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rewrite"
+    "重写" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rewrite"
           }
         }
       }
     },
-    "重写中": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rewriting…"
+    "重写中" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rewriting…"
           }
         }
       }
     },
-    "重写失败": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rewrite failed"
+    "重写失败" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rewrite failed"
           }
         }
       }
     },
-    "重写失败，稍后再试": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Rewrite failed — try again later"
+    "重写失败，稍后再试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rewrite failed — try again later"
           }
         }
       }
     },
-    "重新生成": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Regenerate"
+    "重新生成" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regenerate"
           }
         }
       }
     },
-    "重新生成这篇文章？": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Regenerate this article?"
+    "重新生成这篇文章？" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Regenerate this article?"
           }
         }
       }
     },
-    "重试": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Retry"
+    "重试" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retry"
           }
         }
       }
     },
-    "长按菜单里不再出现这一项，可随时恢复": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This item will no longer appear in the long-press menu. You can restore it anytime"
+    "长按菜单里不再出现这一项，可随时恢复" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This item will no longer appear in the long-press menu. You can restore it anytime"
           }
         }
       }
     },
-    "长按菜单里每个动作的名字和指令都可以改成你自己的说法。留空即恢复默认；不想要的可以从菜单里隐藏。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "You can rename each action in the long-press menu and rewrite its instruction in your own words. Leave a field blank to restore the default; hide the ones you don't want from the menu."
+    "长按菜单里每个动作的名字和提示词都可以改成你自己的说法。留空即恢复默认；不想要的可以从菜单里隐藏。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "You can rename each action in the long-press menu and rewrite its prompt in your own words. Leave a field blank to restore the default; hide the ones you don't want from the menu."
           }
         }
       }
     },
-    "隐私 · 公约 · 联系 · 版本 %@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Privacy · Guidelines · Contact · Version %@"
+    "隐私 · 公约 · 联系 · 版本 %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privacy · Guidelines · Contact · Version %@"
           }
         }
       }
     },
-    "隐私说明": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Privacy Notice"
+    "隐私说明" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privacy Notice"
           }
         }
       }
     },
-    "需要在设置里允许麦克风权限。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Please allow microphone access in Settings."
+    "需要在设置里允许麦克风权限。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Please allow microphone access in Settings."
           }
         }
       }
     },
-    "需要麦克风权限": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Microphone Access Needed"
+    "需要麦克风权限" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Microphone Access Needed"
           }
         }
       }
     },
-    "音频和已挖出的文章都会从云端删除，不可恢复。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "The audio and any mined articles will be deleted from the cloud. This can't be undone."
+    "音频和已挖出的文章都会从云端删除，不可恢复。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The audio and any mined articles will be deleted from the cloud. This can't be undone."
           }
         }
       }
     },
-    "音频格式转换失败（路由切换后）": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Audio format conversion failed (after route change)"
+    "音频格式转换失败（路由切换后）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Audio format conversion failed (after route change)"
           }
         }
       }
     },
-    "验证": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Verify"
+    "验证" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verify"
           }
         }
       }
     },
-    "验证失败：%@": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Verification failed: %@"
+    "验证失败：%@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verification failed: %@"
           }
         }
       }
     },
-    "验证已失效，请重新发起": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Verification expired — please start again"
+    "验证已失效，请重新发起" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verification expired — please start again"
           }
         }
       }
     },
-    "验证码不对，还可试 %lld 次": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Incorrect code — %lld attempts left"
+    "验证码不对，还可试 %lld 次" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Incorrect code — %lld attempts left"
           }
         }
       }
     },
-    "高 · AAC": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "High · AAC"
+    "高 · AAC" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "High · AAC"
           }
         }
       }
     },
-    "麦克风输入不可用，请检查模拟器或系统麦克风权限。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Microphone input unavailable. Check the simulator or system microphone permission."
+    "麦克风输入不可用，请检查模拟器或系统麦克风权限。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Microphone input unavailable. Check the simulator or system microphone permission."
           }
         }
       }
     },
-    "默认指令": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Default instruction"
-          }
-        }
-      }
-    },
-    "，成文时各生成一篇，在阅读页顶部切换对比。最多选 3 个。": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": ", each will produce its own article at write-up — switch between them at the top of the reading page. Pick up to 3."
+    "默认提示词" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Default prompt"
           }
         }
       }
     }
   },
-  "version": "1.0"
+  "version" : "1.0"
 }

@@ -449,7 +449,7 @@ struct SettingsView: View {
                         }.buttonStyle(.plain)
                     }
 
-                    // 写作 — 名字（新）· 写作风格（含成文后追问）· AI 指令
+                    // 写作 — 名字（新）· 写作风格（含成文后追问）· 提示词
                     group(String(localized: "写作")) {
                         SettingsCard {
                             Button { showName = true } label: {
@@ -471,7 +471,7 @@ struct SettingsView: View {
                             settingsRowDivider
                             NavigationLink { InstructionSettingsView() } label: {
                                 SettingsRow(tileBG: Theme.tileNeutral, symbol: "wand.and.stars", tileFG: Theme.secondary,
-                                            title: String(localized: "AI 指令"), subtitle: String(localized: "自定义长按菜单里的每个动作")) { settingsChevron }
+                                            title: String(localized: "提示词"), subtitle: String(localized: "自定义长按菜单里的每个动作")) { settingsChevron }
                             }.buttonStyle(.plain)
                         }
                     }
