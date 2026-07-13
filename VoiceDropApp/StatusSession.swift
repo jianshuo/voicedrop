@@ -26,6 +26,14 @@ final class StatusSession {
     }
 
     private func open() {
+        // reconnect() 会先把 task 设为 nil，再睡 3 秒才调 open()。这 3 秒里 task 正是 nil，
+        // 所以 connect()（scenePhase → .active）的 `guard task == nil` 会放行、开出一条 socket；
+        // 3 秒后那个延迟的 open() 再开第二条，直接覆盖 task 而不取消前一条 —— 两条活 socket、
+        // 每条消息收两遍。重复的 link_request 会让 present() 造出新 UUID 的 Pending，
+        // .sheet(item:) 的身份在展示途中被换掉 → 强制 dismiss + 重新 present。
+        // 这就是「4 位码显示出来、然后 App 崩了」最可能的成因。
+        guard task == nil else { return }
+
         let token = AuthStore.shared.bearer
         guard !token.isEmpty, let url = URL(string: base) else { return }
         var req = URLRequest(url: url)

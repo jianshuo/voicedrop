@@ -222,7 +222,9 @@ struct LibraryView: View {
             command.connect()
             await dictation.requestAuth()
         }
-        .sheet(item: $linkResponder.pending) { p in
+        // 划走 = 拒绝这次登录。以前划走只是静默置空 pending，服务端还以为配对活着，
+        // 手机却已经把 pubkey 扔了 —— 无声僵死到超时。
+        .sheet(item: $linkResponder.pending, onDismiss: { linkResponder.sheetDismissed() }) { p in
             DeviceLinkApprovalSheet(responder: linkResponder, pending: p)
         }
         .sheet(item: $webSheet) { item in
