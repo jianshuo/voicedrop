@@ -81,10 +81,57 @@ final class CommunityStore {
     var coinPrice: Double = 0
 
     /// All shared posts, newest-first by first-share time.
+    /// 2026-07-14 起首选 /reco/feed（D1 展示索引）：列表 + 推荐序 + 红心 + 回应数 +
+    /// 我赞过的一次带回（老路径的 list+rank 两步、每帖 2 次 R2 读全省了）。
+    /// feed 不可用（reco 挂了 / 索引空）→ 回退 R2 真源老路径，社区永远有的看。
     func load() async {
         guard !token.isEmpty else { return }
         loading = true; error = nil
         defer { loading = false }
+        if await loadViaFeed() { return }
+        await loadViaListAndRank()
+    }
+
+    /// /reco/feed 的行：CommunityPost 的字段 + 每帖互动数。
+    private struct FeedRow: Decodable {
+        let shareId: String; let author: String?; let title: String?
+        let preview: String?; let coverPhotoKey: String?; let hasPhoto: Bool?
+        let count: Int?; let firstSharedAt: Double?; let updatedAt: Double?
+        let replyTo: String?; let mine: Bool?
+        let likes: Int?; let replies: Int?; let liked: Bool?
+    }
+
+    private func loadViaFeed() async -> Bool {
+        var req = URLRequest(url: recoBase.appending(path: "feed"))
+        req.timeoutInterval = 5
+        req.setBearer(token)
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            guard resp.isOK else { return false }
+            struct R: Decodable { let posts: [FeedRow]; let order: [String] }
+            let r = try JSONDecoder().decode(R.self, from: data)
+            let rows = r.posts.filter { !BlockStore.isBlocked($0.author) }   // local block list (Apple 1.2)
+            guard !rows.isEmpty else { return false }   // 索引空（未回填/漂移）→ 老路径兜底
+            let mapped = rows.map { row in
+                CommunityPost(shareId: row.shareId, author: row.author, title: row.title,
+                              firstSharedAt: row.firstSharedAt, updatedAt: row.updatedAt,
+                              count: row.count, mine: row.mine, replyTo: row.replyTo,
+                              hasPhoto: row.hasPhoto, coverPhotoKey: row.coverPhotoKey,
+                              preview: row.preview)
+            }
+            timeOrdered = mapped                        // feed 本身就是时间倒序
+            let byId = Dictionary(uniqueKeysWithValues: mapped.map { ($0.shareId, $0) })
+            let reordered = r.order.compactMap { byId[$0] }
+            posts = reordered.count == mapped.count ? reordered : mapped
+            likeCounts = rows.reduce(into: [:]) { $0[$1.shareId] = $1.likes ?? 0 }
+            replyCounts = rows.reduce(into: [:]) { if let n = $1.replies, n > 0 { $0[$1.shareId] = n } }
+            likedShareIds = Set(rows.filter { $0.liked == true }.map(\.shareId))
+            return true
+        } catch { return false }
+    }
+
+    /// 老路径（R2 真源 community/list + /reco/rank），feed 兜底与老服务端兼容。
+    private func loadViaListAndRank() async {
         var req = URLRequest(url: base.appending(path: "community").appending(path: "list"))
         req.setBearer(token)
         do {
