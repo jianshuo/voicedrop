@@ -168,6 +168,57 @@ final class PromptStoreTests: XCTestCase {
         XCTAssertNotEqual(a.id, b.id)
     }
 
+    // MARK: - removing（MINOR 4：删除的位置逻辑抽成纯函数，单测覆盖）
+
+    func testRemovingTopLevelAction() {
+        let items = [
+            PromptNode(id: "a", type: "action", label: "A", origin: "user", prompt: "p", appliesTo: ["text"]),
+            PromptNode(id: "b", type: "action", label: "B", origin: "user", prompt: "p", appliesTo: ["text"]),
+        ]
+        let (newItems, removed) = PromptLogic.removing(items, id: "a")
+        XCTAssertEqual(newItems.map(\.id), ["b"])
+        XCTAssertEqual(removed?.id, "a")
+    }
+
+    func testRemovingChildFromGroupKeepsOtherChildren() {
+        let items = [
+            PromptNode(id: "g", type: "group", label: "组", origin: "user", children: [
+                PromptNode(id: "c1", type: "action", label: "C1", origin: "user", prompt: "p", appliesTo: ["text"]),
+                PromptNode(id: "c2", type: "action", label: "C2", origin: "user", prompt: "p", appliesTo: ["text"]),
+            ]),
+        ]
+        let (newItems, removed) = PromptLogic.removing(items, id: "c1")
+        XCTAssertEqual(removed?.id, "c1")
+        XCTAssertEqual(newItems.count, 1)
+        XCTAssertEqual(newItems[0].id, "g")
+        XCTAssertEqual(newItems[0].children?.map(\.id), ["c2"])
+    }
+
+    func testRemovingGroupRemovesItsChildrenToo() {
+        let items = [
+            PromptNode(id: "g", type: "group", label: "组", origin: "user", children: [
+                PromptNode(id: "c1", type: "action", label: "C1", origin: "user", prompt: "p", appliesTo: ["text"]),
+            ]),
+            PromptNode(id: "a", type: "action", label: "A", origin: "user", prompt: "p", appliesTo: ["text"]),
+        ]
+        let (newItems, removed) = PromptLogic.removing(items, id: "g")
+        XCTAssertEqual(removed?.id, "g")
+        XCTAssertEqual(removed?.children?.map(\.id), ["c1"])
+        XCTAssertEqual(newItems.map(\.id), ["a"])
+    }
+
+    func testRemovingNonexistentIdLeavesItemsUnchangedAndReturnsNil() {
+        let items = [
+            PromptNode(id: "a", type: "action", label: "A", origin: "user", prompt: "p", appliesTo: ["text"]),
+            PromptNode(id: "g", type: "group", label: "组", origin: "user", children: [
+                PromptNode(id: "c1", type: "action", label: "C1", origin: "user", prompt: "p", appliesTo: ["text"]),
+            ]),
+        ]
+        let (newItems, removed) = PromptLogic.removing(items, id: "does-not-exist")
+        XCTAssertNil(removed)
+        XCTAssertEqual(newItems, items)
+    }
+
     // MARK: - filter
 
     func testFilterTextOnlyAppearsOnlyInText() {

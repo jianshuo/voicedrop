@@ -21,7 +21,7 @@ struct PromptManagerView: View {
     @State private var showRestoreConfirm = false
     @State private var showNewSheet = false
     @State private var showImportSheet = false
-    @State private var saveError: String?
+    @State private var toast: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -38,11 +38,6 @@ struct PromptManagerView: View {
                     Text("一套指令，长按文字或图片时按『适用于』自动筛选。改过的系统项标『已自定义』，自己建的标『自建』。")
                         .font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
                         .padding(.horizontal, 4).padding(.bottom, 2)
-
-                    if let err = saveError {
-                        Text(err).font(.system(size: 12.5)).foregroundStyle(Theme.accent)
-                            .padding(.horizontal, 4)
-                    }
 
                     if store.loading && store.items.isEmpty {
                         HStack { Spacer(); ProgressView().tint(Theme.accent).padding(.top, 40); Spacer() }
@@ -72,12 +67,14 @@ struct PromptManagerView: View {
             }
         }
         .background(Theme.appBG.ignoresSafeArea())
+        .overlay(alignment: .bottom) { toastView }
         .toolbar(.hidden, for: .navigationBar)
         .task { await store.refresh() }
         .confirmationDialog(deleteDialogTitle, isPresented: deleteDialogBinding, titleVisibility: .visible) {
             Button(String(localized: "删除"), role: .destructive) {
                 if let node = deleteTarget { Task { await performDelete(node) } }
             }
+            .disabled(store.isMutating)
             Button(String(localized: "取消"), role: .cancel) {}
         }
         .confirmationDialog(String(localized: "把系统自带的提示词补回列表？你自建和改过的都不受影响。"),
@@ -163,6 +160,7 @@ struct PromptManagerView: View {
             Button(role: .destructive) { deleteTarget = node } label: {
                 Label(String(localized: "删除"), systemImage: "trash")
             }
+            .disabled(store.isMutating)
         }
     }
 
@@ -177,6 +175,7 @@ struct PromptManagerView: View {
                 iconTile(bg: Theme.tileNeutral, symbol: "folder", fg: Theme.secondary)
                 HStack(spacing: 6) {
                     Text(node.label).font(.system(size: 15)).foregroundStyle(Theme.ink)
+                    originBadge(node.origin)
                     Text("分组 · \(node.children?.count ?? 0) 项")
                         .font(.system(size: 12)).foregroundStyle(Theme.sectionLabel)
                 }
@@ -191,6 +190,7 @@ struct PromptManagerView: View {
             Button(role: .destructive) { deleteTarget = node } label: {
                 Label(String(localized: "删除分组"), systemImage: "trash")
             }
+            .disabled(store.isMutating)
         }
     }
 
@@ -289,12 +289,36 @@ struct PromptManagerView: View {
     }
 
     private func performDelete(_ node: PromptNode) async {
-        expandedGroups.remove(node.id)
-        guard let err = await store.delete(id: node.id) else { return }
-        saveError = err
+        guard !store.isMutating else { return }
+        guard let err = await store.delete(id: node.id) else {
+            // 只有确认成功之后才收起展开态（MINOR 3）——回滚的组要带着原来的展开状态重新出现，
+            // 不能在还不知道 save() 成不成功时就先收起。
+            expandedGroups.remove(node.id)
+            return
+        }
+        showToast(String(localized: "删除失败，已恢复（\(err)）"))
+    }
+
+    // MARK: - Toast（拷贝 Community.swift / RecordingDetailView.swift 的 toast 惯例——
+    // 这条页原来在 ScrollView 顶部塞一行内联错误文字，删除下滑一屏后的行时用户根本看不到）
+
+    private func showToast(_ msg: String) {
+        toast = msg
         Task {
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            if saveError == err { saveError = nil }
+            try? await Task.sleep(nanoseconds: 2_800_000_000)
+            if toast == msg { toast = nil }
+        }
+    }
+
+    @ViewBuilder private var toastView: some View {
+        if let toast {
+            Text(toast)
+                .font(.system(size: 15)).foregroundStyle(Theme.ink)
+                .padding(.horizontal, 18).padding(.vertical, 12)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().stroke(Theme.borderChrome, lineWidth: 1))
+                .padding(.bottom, 32)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
         }
     }
 }

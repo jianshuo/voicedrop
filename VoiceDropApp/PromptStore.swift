@@ -89,6 +89,28 @@ enum PromptLogic {
         return "p_" + String(suffix)
     }
 
+    /// 纯函数删除：在整棵树（顶层 + 组内子项）里找到 id 对应节点并摘除，返回新数组 +
+    /// 被删的节点；删除一个分组连它的 children 一起带走（组本身就是一个节点）；
+    /// 找不到该 id → 原数组原样返回 + nil。零索引状态——调用方（PromptStore.delete）
+    /// 靠这个纯函数 + 整树快照做删除/回滚，不用自己记 (topIndex, childIndex)。
+    static func removing(_ items: [PromptNode], id: String) -> ([PromptNode], PromptNode?) {
+        if let i = items.firstIndex(where: { $0.id == id }) {
+            var copy = items
+            let node = copy.remove(at: i)
+            return (copy, node)
+        }
+        for (gi, group) in items.enumerated() where group.type == "group" {
+            if let ci = group.children?.firstIndex(where: { $0.id == id }) {
+                var copy = items
+                var children = copy[gi].children ?? []
+                let node = children.remove(at: ci)
+                copy[gi].children = children
+                return (copy, node)
+            }
+        }
+        return (items, nil)
+    }
+
     /// 5b 过滤：action 按 appliesTo 命中锚点；group 保留命中的子项，全不命中则整组消失。
     static func filter(_ items: [PromptNode], for anchor: PromptAnchor) -> [PromptNode] {
         items.compactMap { filterNode($0, for: anchor) }
@@ -353,6 +375,11 @@ final class PromptStore {
     private(set) var items: [PromptNode]
     var loading = false
     var error: String?
+    /// 删除在途（从摘除节点到 save() 网络往返落定）。视图应在此为 true 时禁用删除
+    /// 入口/忽略确认——不是性能优化，是防止两个几乎同时的删除并发跑：没有它，第二个
+    /// 删除会在第一个的快照之上再摘一次，第一个失败回滚时会用自己那份旧快照整体
+    /// 覆盖掉第二个已经成功的改动。
+    private(set) var isMutating = false
 
     private static let cacheKey = "promptsCache.v1"
     private var token: String { AuthStore.shared.bearer }
@@ -403,41 +430,28 @@ final class PromptStore {
         return nil
     }
 
-    /// 1b 左滑/长按删除：本地先移除该节点（顶层项，或组内子项——组被删连子项一起，
-    /// 因为组本身就是一个节点），再 PUT 整树保存；失败把节点恢复回原位置。
+    /// 1b 左滑/长按删除：`PromptLogic.removing` 摘除该节点（顶层项，或组内子项——组被删
+    /// 连子项一起，因为组本身就是一个节点），再 PUT 整树保存；失败**整体恢复删除前的
+    /// 树快照**（不是按 (topIndex, childIndex) 单点插回——两个几乎同时的删除会让索引
+    /// 在 await save() 网络往返期间悄悄挪位，按旧索引插回可能插进另一个节点里；
+    /// `rawItem` 只序列化 group 的 children，插进 action 节点的子项下次 save 会静默消失）。
+    /// `isMutating` 关住重入窗口：删除在途时忽略新的 delete 调用，视图对应地在此为 true
+    /// 时禁用删除入口，两个删除永远不会重叠，索引/快照错位从根上不可能发生。
     /// nil = 成功；非 nil = 给用户看的错误文案（此时 items 已经恢复原状）。
     func delete(id: String) async -> String? {
-        guard let removed = removeNode(id: id) else { return nil }
-        if let err = await save() {
-            restoreNode(removed.node, topIndex: removed.topIndex, childIndex: removed.childIndex)
+        guard !isMutating else { return nil }
+        let (newItems, removed) = PromptLogic.removing(items, id: id)
+        guard removed != nil else { return nil }
+        let snapshot = items
+        isMutating = true
+        items = newItems
+        let err = await save()
+        isMutating = false
+        if let err {
+            items = snapshot
             return err
         }
         return nil
-    }
-
-    private func removeNode(id: String) -> (node: PromptNode, topIndex: Int, childIndex: Int?)? {
-        if let i = items.firstIndex(where: { $0.id == id }) {
-            let node = items.remove(at: i)
-            return (node, i, nil)
-        }
-        for (gi, group) in items.enumerated() where group.type == "group" {
-            if let ci = group.children?.firstIndex(where: { $0.id == id }) {
-                let node = items[gi].children!.remove(at: ci)
-                return (node, gi, ci)
-            }
-        }
-        return nil
-    }
-
-    private func restoreNode(_ node: PromptNode, topIndex: Int, childIndex: Int?) {
-        if let childIndex {
-            guard topIndex < items.count else { items.append(node); return }
-            let insertAt = min(childIndex, items[topIndex].children?.count ?? 0)
-            items[topIndex].children = items[topIndex].children ?? []
-            items[topIndex].children!.insert(node, at: insertAt)
-        } else {
-            items.insert(node, at: min(topIndex, items.count))
-        }
     }
 
     /// POST /agent/prompts/import {code}。成功后刷新整树（服务端已经把新条目
