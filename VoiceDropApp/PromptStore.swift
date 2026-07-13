@@ -1,9 +1,10 @@
 import Foundation
 import Observation
 
-/// 让 `Result<T, String>` 能直接把错误文案当 Error 用（importPrompt 的返回类型）——
-/// 这里的错误全是给用户看的本地化文案，不需要一个专门的 Error 类型来包一层。
-extension String: @retroactive Error {}
+/// importPrompt 返回类型中的错误。
+struct PromptError: Error, Equatable {
+    let message: String
+}
 
 // Prompt Manager Phase 2（iOS）—— 模型 + 纯逻辑（Task 2）+ 网络/缓存层（Task 3）。
 // spec: docs/superpowers/specs/2026-07-13-prompt-manager-redesign.md §9
@@ -404,8 +405,8 @@ final class PromptStore {
 
     /// POST /agent/prompts/import {code}。成功后刷新整树（服务端已经把新条目
     /// 追加进用户的 prompts.json，本地需要重新 GET 才能拿到完整、带派生字段的列表）。
-    func importPrompt(code: String) async -> Result<PromptNode, String> {
-        guard !token.isEmpty else { return .failure(String(localized: "请先登录")) }
+    func importPrompt(code: String) async -> Result<PromptNode, PromptError> {
+        guard !token.isEmpty else { return .failure(PromptError(message: String(localized: "请先登录"))) }
         struct P: Encodable { let code: String }
         var req = URLRequest(url: API.agentBase.appendingPathComponent("prompts/import"))
         req.httpMethod = "POST"
@@ -413,16 +414,16 @@ final class PromptStore {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONEncoder().encode(P(code: code))
         guard let (data, resp) = try? await URLSession.shared.data(for: req) else {
-            return .failure(String(localized: "网络出错，请重试"))
+            return .failure(PromptError(message: String(localized: "网络出错，请重试")))
         }
         guard resp.isOK else {
-            return .failure(resp.httpStatusCode == 404
+            return .failure(PromptError(message: resp.httpStatusCode == 404
                 ? String(localized: "这个魔法数字无效或已停止分享")
-                : String(localized: "导入失败，请重试"))
+                : String(localized: "导入失败，请重试")))
         }
         struct R: Decodable { let item: PromptNode }
         guard let item = (try? JSONDecoder().decode(R.self, from: data))?.item else {
-            return .failure(String(localized: "导入失败，请重试"))
+            return .failure(PromptError(message: String(localized: "导入失败，请重试")))
         }
         await refresh()
         return .success(item)

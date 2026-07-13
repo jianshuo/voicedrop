@@ -324,6 +324,20 @@ final class PromptStoreTests: XCTestCase {
         XCTAssertEqual(result.map(\.id), PromptLogic.builtin.map(\.id))
     }
 
+    /// 有效但空的 fetched 必须返回空列表，不能落到缓存或内置（用户主动删除了所有项）。
+    func testEffectiveItemsValidEmptyFetchedReturnsEmptyNotCachedOrBuiltin() throws {
+        let emptyJSON = """
+        {"schema":1,"items":[]}
+        """.data(using: .utf8)!
+        let cachedJSON = """
+        {"schema":1,"items":[{"id":"p_cached01","type":"action","label":"C","origin":"user","prompt":"p","appliesTo":["text"]}]}
+        """.data(using: .utf8)!
+        let builtin = [PromptNode(id: "sys_builtin", type: "action", label: "B", origin: "system", prompt: "p", appliesTo: ["text"])]
+
+        let result = PromptLogic.effectiveItems(fetched: emptyJSON, cached: cachedJSON, builtin: builtin)
+        XCTAssertEqual(result.count, 0, "Empty valid payload must return empty list, not fall through to cache or builtin")
+    }
+
     // MARK: - menuConfig 直接吃内置回退
 
     /// 内置下 .image：全部 6 个图片风格动作都挂在 sys_style 唯一一组下——1 个 section，
