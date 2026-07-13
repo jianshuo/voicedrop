@@ -108,6 +108,62 @@ plan = `docs/superpowers/plans/2026-07-13-prompt-manager-phase1-server.md`。
 - 对抗性 review 全程抓出 **12 个真实缺陷**（校验器可被 5MB 载荷打穿/会 throw 成 500、恢复默认重复
   补条目/超 200 上限、匿名作者显示成机器码等），全部修复 + 回归测试。计划文档已同步修正。
 
+### Phase 2（iOS）——代码已完成（2026-07-14），**未发版**：等 PR #24 先合并部署
+
+spec = `docs/superpowers/specs/2026-07-13-prompt-manager-redesign.md` §9，plan =
+`docs/superpowers/plans/2026-07-14-prompt-manager-phase2-ios.md`（分 8 个 task，TDD，
+逐 task 提交在 `prompt-manager-phase2` 分支）。Task 8（本次）删掉最后的老文件、跑完全量验证。
+
+- **新文件**：`PromptStore.swift`（整树模型 `PromptNode`/`PromptAnchor` + 网络层 GET/PUT
+  `/agent/prompts` + `restore-defaults`/`import` + 按 `appliesTo` 过滤出长按菜单用的
+  `UIMenuConfig`——挪进 `ConfigMenu.swift` 消费，视觉不动）；`PromptManagerView.swift`
+  （设置 → 提示词，新列表页，替换老 `InstructionSettingsView`；支持 5a 分组展示/1b 左滑删除/
+  1d+1a 拖动排序含拖进分组/4a 新建入口）；`PromptEditView.swift`（编辑单条，两个开关+分享卡，
+  分享卡 UI 从老 `InstructionSettingsView` 原样搬来）；`PromptNewSheet.swift`（新建提示词，3c，
+  默认「都行」无 AI 分类建议——分类功能已在服务端砍掉）；`PromptImportSheet.swift`
+  （导入码流程，4b）。**`VoiceDropTests` target 是本仓库第一个单测 target**
+  （`VoiceDropTests/PromptStoreTests.swift`，68 个用例，覆盖模型/过滤/reorder/fork/merge 逻辑），
+  项目由 xcodegen 生成，`project.yml` 的 `VoiceDrop.scheme.testTargets` 已声明；跑法：
+  `xcodebuild test -project VoiceDrop.xcodeproj -scheme VoiceDrop -destination 'platform=iOS Simulator,name=iPhone 16' -only-testing:VoiceDropTests`
+  （新增 `.swift` 文件后照例先 `xcodegen generate`）。
+- **删除**：`UIConfigStore.swift`（Task 3，随长按菜单切到 PromptStore 一起删）、
+  `InstructionSettingsView.swift`（Task 8，本次；分享卡 UI 已在 Task 5 原样搬进
+  `PromptEditView.swift`，`ShareCodePayload`/`shareAction` 两边都是 `private`，删除前
+  grep 全仓确认零外部引用）。
+- **PromptStore 三级回退**：network（`GET /agent/prompts`）→ `UserDefaults` 本地缓存
+  （上次成功拉取的整树）→ **内置兜底**（客户端字面量镜像服务端 `prompt-template.js` 的
+  `sys_*` 默认值）。⚠️ **服务端模板字面量变了，客户端内置兜底不会自动跟着变**——iOS 这份
+  是手抄的快照，改服务端默认提示词时记得同步改这份，否则断网用户（第三级）看到的是旧默认值。
+- **fork-on-edit 语义**：编辑一条 `{"ref":"sys_*"}` 系统条目 = 客户端把它实体化成完整节点
+  （`forkedFrom` 记来源），整棵树 PUT 落盘；分享码跟着走：PR jianshuo.dev#24
+  `prompt-shares-readapi` 分支的 `rekeyForkedShares` 在服务端 PUT 保存时把 `shares/<码>`
+  的 owner 索引从老 ref id 挪到新 fork id（码不变），随后现有的「保存时刷新分享内容」同步
+  把 fork 后的新文本写进码。「恢复默认」= 整体丢弃 fork 换回 ref（未做单条粒度恢复，spec
+  原说的按钮简化为整体操作，视为有意裁剪，见 Task 8 brief 的 Self-Review）。
+- **菜单 = 从同一份列表客户端过滤**：`ConfigMenu.swift` 不再单独打一次网络请求，而是吃
+  `PromptStore` 拉回的整树，按每个节点的 `appliesTo`（文字/图片…）本地过滤出对应长按菜单，
+  长按文字菜单和长按图片菜单是同一份数据的两个视图，新建/编辑/删除立刻反映到两边。
+- **AppRouter 7 位数字深链**：`https://voicedrop.cn/<7位魔法数字>` → `.promptImport` case →
+  落 `PromptImportSheet`（与老的「AI 指令」魔法数字兑换页复用同一套 7 位码解析器/正则，
+  只是落地视图从老设置页换成新 Prompt Manager 的导入 sheet）。
+- **reorder = 本地草稿 + 整树 PUT**：拖动排序全在本地维护一份草稿树（`PromptStore` 的
+  moving 系列纯函数，68 个单测里大头是这些——跨分组拖动、分组进分组拒绝、越界 clamp 等），
+  松手才整树 PUT 落盘；PUT 带 baseline 冲突检测（保存前服务端整树若已变化于本地拉取时的
+  快照，拒绝覆盖，避免多端并发排序互相打架——具体冲突提示见 `PromptStore.swift` 内注释）。
+- ⚠️ **发版顺序硬约束**：iOS **不能在 jianshuo.dev PR #24（`prompt-shares-readapi`，
+  截至 2026-07-14 仍 OPEN，未合并未部署）落地前上 TestFlight**——`PromptEditView` 的分享卡
+  读分享状态靠 `GET /agent/prompt-shares`，这个端点是 PR #24 加的；没它，分享开关在新
+  设置页会读不到状态（老的 `ui-config/custom` 里的 `shareCode`/`sharing` 字段已随 Phase 1
+  删除）。同理 fork 后分享码保活也靠 PR #24 的 `rekeyForkedShares`，没部署的话 fork 一条
+  正在分享的系统条目会让分享码停在 fork 前的旧内容。
+- **手测清单**（人工 QA，见 `.superpowers/sdd/task-8-report.md`；模拟器脚本能力有限，
+  交互手势必须真人跑一遍）：① 设置→提示词打开新列表（不再「加载失败」）② 长按文字/图片
+  菜单 = 过滤视图，新建的文字项立刻出现在长按文字菜单 ③ 编辑一条系统项 → 徽标变「已自定义」
+  → 长按菜单吃到新文本 ④ 删除 → 恢复默认能找回 ⑤ 导入码全流程（需 PR #24 部署）⑥ 分享
+  开关 + fork 后码不变（需 PR #24 部署）⑦ 断网 → 长按菜单仍能渲染（内置兜底）⑧ **在展开的
+  分组内部重新排序**（nested onMove，本轮最担心的风险点）⑨ 把一个动作拖进分组；分组内条目
+  「移出分组」左滑；分组拖进分组应被拒绝 ⑩ 深链 voicedrop.cn/<7位码> 落到导入 sheet。
+
 ## 新功能：指令分享码「魔法数字」（2026-07-11，服务端已上线，真机手测通过，TestFlight 已发）
 
 **2026-07-11 验证与部署（Mac 侧）**：agent 全量 75 文件 731 用例绿；iOS xcodebuild
