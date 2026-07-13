@@ -115,6 +115,29 @@ struct PromptManagerView: View {
                                 .listRowBackground(Color.clear)
                         }
                     } else {
+                        if store.error != nil {
+                            Section {
+                                HStack(spacing: 12) {
+                                    Text("加载失败，显示的可能不是最新列表")
+                                        .font(.system(size: 12.5))
+                                        .foregroundStyle(Color(hex: "B98A3E"))
+                                    Spacer()
+                                    Button {
+                                        Task { await store.refresh() }
+                                    } label: {
+                                        Text("重试")
+                                            .font(.system(size: 13))
+                                            .foregroundStyle(Theme.accent)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .padding(10)
+                                .background(Color(hex: "FBF3E9"), in: RoundedRectangle(cornerRadius: 8))
+                                .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 10, trailing: 4))
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                            }
+                        }
                         Section {
                             if reordering { reorderCardSection } else { normalCardSection }
                         }
