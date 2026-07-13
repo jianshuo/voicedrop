@@ -1,6 +1,24 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-07-12（服务端已部署）
+Last updated: 2026-07-13（服务端已部署 + 本 repo 主界面切轻量接口）
+
+## 性能改造第二轮（2026-07-13，API 速度体检后落地）
+
+服务端（jianshuo.dev repo）四连改 + 本 repo 一处，全部已上线实测：
+
+- **community/list、community/replies 走 D1 展示索引直出**（7s → 0.2-0.3s），
+  响应后 waitUntil 全量对账（reconcileIndex，与 admin reindex 共用）。
+- **GET /articles 列表索引直出**（1.0-1.7s → ~0.45s）：article-store 四个写入口
+  收口到 putArticleDoc 同步维护 articles-index.json；R2 listing 权威、退到
+  waitUntil 对账。community/get 的索引自愈回写也挪进 waitUntil（0.85s → ~0.55s）。
+- **GET /recordings 轻量录音列表**（新路由，~0.5s）：recordings-index.json
+  （上传/直删 .m4a 同步维护）+ articles-index 的 sidecar 标记（empty/blocked/tags，
+  /empty /blocked 路由与 .tags 上传/删除同步点亮熄灭）并发直出四个状态位。
+  教训：delimiter listing 在 R2 内部仍要扫过全部 key（1.0-1.6s），不能放请求路径。
+- **本 repo：Library.loadOnce 首选 GET /recordings**（fetchRecordingRows），
+  老服务端没有该路由 → 自动回退全量 GET /list 客户端自筛（老行为原样保留，
+  ListResponse 别删）。/list 接口继续存在：老版本 App、24h 只读 token、Mac
+  入库管道还在用，只是新 App 主界面不再碰它。
 
 ## 性能改造（2026-07-12，性能审计后落地）
 

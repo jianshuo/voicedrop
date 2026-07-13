@@ -346,6 +346,56 @@ final class LibraryStore {
         let files: [Item]
     }
 
+    private struct RecordingsResponse: Decodable {
+        struct Item: Decodable {
+            let name: String
+            let uploaded: String?
+            let hasArticles: Bool
+            let isEmpty: Bool
+            let blocked: Bool?
+            let hasTags: Bool?
+        }
+        let recordings: [Item]
+    }
+
+    /// 列表数据源：每行 = Recording + 两个 sidecar 存在位（.blocked / .tags）。
+    /// 首选轻量 GET /recordings（服务端 2026-07-13 起提供：录音索引 + 文章索引
+    /// 直出，~0.5s）；老服务端没有这个路由 → 回退全量 GET /list 客户端自筛
+    /// （~2.5s 的老行为，翻全部 R2 对象）。返回 nil = 服务端明确拒绝（老路径
+    /// 非 200），调用方显示「加载失败」。
+    private func fetchRecordingRows() async throws -> [(rec: Recording, blocked: Bool, hasTags: Bool)]? {
+        var req = URLRequest(url: base.appending(path: "recordings"))
+        req.setBearer(token)
+        if let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
+           let r = try? JSONDecoder().decode(RecordingsResponse.self, from: data) {
+            return r.recordings
+                .filter { RecordingName.isRecordingFile($0.name) }
+                .map { (rec: Recording(audioName: $0.name,
+                                       uploaded: $0.uploaded ?? "",
+                                       hasArticles: $0.hasArticles,
+                                       isEmpty: $0.isEmpty),
+                        blocked: $0.blocked ?? false,
+                        hasTags: $0.hasTags ?? false) }
+        }
+        var listReq = URLRequest(url: base.appending(path: "list"))
+        listReq.setBearer(token)
+        let (data, resp) = try await URLSession.shared.data(for: listReq)
+        guard resp.isOK else { return nil }
+        let list = try JSONDecoder().decode(ListResponse.self, from: data)
+        let names = Set(list.files.map(\.name))
+        return list.files
+            .filter { RecordingName.isRecordingFile($0.name.components(separatedBy: "/").last ?? $0.name) }
+            .map {
+                let stem = String($0.name.dropLast(4))
+                return (rec: Recording(audioName: $0.name,
+                                       uploaded: $0.uploaded ?? "",
+                                       hasArticles: names.contains(Recording.articleKey(forStem: stem)),
+                                       isEmpty: names.contains(Recording.emptyKey(forStem: stem))),
+                        blocked: names.contains(Recording.blockedKey(forStem: stem)),
+                        hasTags: names.contains(Recording.tagsKey(forStem: stem)))
+            }
+    }
+
     /// Called by StatusSession when the Worker miner signals a stem advanced to a phase (asr / mining).
     func markPhase(stem: String, phase rawPhase: String) {
         guard let phase = MiningPhase(rawValue: rawPhase) else { return }
@@ -382,28 +432,15 @@ final class LibraryStore {
         guard !token.isEmpty else { error = String(localized: "请先登录"); return }
         loading = true; error = nil
         defer { loading = false }
-        var req = URLRequest(url: base.appending(path: "list"))
-        req.setBearer(token)
         do {
-            let (data, resp) = try await URLSession.shared.data(for: req)
-            guard resp.isOK else {
+            guard let rows = try await fetchRecordingRows() else {
                 error = String(localized: "加载失败"); return
             }
-            let list = try JSONDecoder().decode(ListResponse.self, from: data)
-            let names = Set(list.files.map(\.name))
-            let audios = list.files.filter {
-                RecordingName.isRecordingFile($0.name.components(separatedBy: "/").last ?? $0.name)
-            }
-            var next = audios.map {
-                let stem = String($0.name.dropLast(4))
-                return Recording(audioName: $0.name,
-                                 uploaded: $0.uploaded ?? "",
-                                 hasArticles: names.contains(Recording.articleKey(forStem: stem)),
-                                 isEmpty: names.contains(Recording.emptyKey(forStem: stem)))
-            }
+            let blockedStems = Set(rows.filter { $0.blocked }.map { $0.rec.stem })
+            let taggedStems = Set(rows.filter { $0.hasTags }.map { $0.rec.stem })
             // The ONE place recordings get ordered — newest first. Every consumer
             // (LibraryView, ExportSheet) reads this order; nobody re-sorts. See Recording.newestFirst.
-            .sorted(by: Recording.newestFirst)
+            var next = rows.map { $0.rec }.sorted(by: Recording.newestFirst)
 
             // Re-apply in-flight processing state from WebSocket, and prune stems
             // that are now done (article or empty marker already landed in R2).
@@ -435,7 +472,7 @@ final class LibraryStore {
             // .json / .empty take precedence — only fetch when neither is present.
             for i in recordings.indices {
                 guard !recordings[i].hasArticles, !recordings[i].isEmpty,
-                      names.contains(recordings[i].blockedKey) else { continue }
+                      blockedStems.contains(recordings[i].stem) else { continue }
                 recordings[i].blockReason = await fetchBlockReason(recordings[i].stem)
             }
 
@@ -445,7 +482,7 @@ final class LibraryStore {
             // currently in flight), so the extra fetches are ~zero on most loads.
             for i in recordings.indices {
                 let tagsKey = Recording.tagsKey(forStem: recordings[i].stem)
-                guard !recordings[i].hasArticles, names.contains(tagsKey) else { continue }
+                guard !recordings[i].hasArticles, taggedStems.contains(recordings[i].stem) else { continue }
                 if let data = try? await get(tagsKey),
                    let tags = try? JSONDecoder().decode([String].self, from: data), !tags.isEmpty {
                     recordings[i].tags = tags
