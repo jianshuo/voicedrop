@@ -30,8 +30,8 @@ enum PhotoService {
         return dir
     }()
 
-    private static func diskURL(_ fullKey: String) -> URL {
-        diskDir.appending(path: fullKey.replacingOccurrences(of: "/", with: "_"))
+    private static func diskURL(_ cacheKey: String) -> URL {
+        diskDir.appending(path: cacheKey.replacingOccurrences(of: "/", with: "_"))
     }
 
     /// 启动时一次性粗剪：超过 512MB 就按修改时间删最旧的一半。O(文件数)，几百个
@@ -48,38 +48,62 @@ enum PhotoService {
         for e in entries.prefix(entries.count / 2) { try? fm.removeItem(at: e.url) }
     }
 
-    // ── 缩略图变体 ────────────────────────────────────────────────────────────────
-    // 列表 42pt 图标、社区瀑布流卡片不需要 1200px 原图。上传时旁挂一张长边 512px、
-    // q0.6 的 `<name>.thumb.jpg`（~15-40KB，小 4-10 倍），展示面 preferThumb 先取
-    // 它；老照片没有缩略图 → 404 记进 missing 集（免得每次滚动重试探测）→ 回退原图。
+    // ── 服务端缩图（Cloudflare Image Transformations）──────────────────────────
+    // 列表 42pt 图标、社区瀑布流卡片不需要 1200px 原图。缩图在 Cloudflare 边缘
+    // 现场做（/cdn-cgi/image/<参数>/<同域路径>，结果缓存在边缘）——客户端零缩图
+    // 代码、零 .thumb 文件，iOS/安卓/网页/AI 生成图一条路。zone 侧需要开启
+    // Images Transformations 开关；没开时该 URL 404 → 记进 missing 集（免得每次
+    // 滚动重试探测）→ 回退原图，行为无损。
     nonisolated(unsafe) private static var thumbMissing = Set<String>()
     private static let thumbLock = NSLock()
-    // 同步小包装：NSLock 的 lock()/unlock() 在 async 上下文不可用（Swift 6），
-    // withLock 的同步函数可以。
-    private static func thumbMissed(_ tk: String) -> Bool { thumbLock.withLock { thumbMissing.contains(tk) } }
-    private static func markThumbMissed(_ tk: String) { thumbLock.withLock { _ = thumbMissing.insert(tk) } }
+    // NSLock 的 lock()/unlock() 在 async 上下文不可用（Swift 6），withLock 的同步函数可以。
+    private static func thumbMissed(_ k: String) -> Bool { thumbLock.withLock { thumbMissing.contains(k) } }
+    private static func markThumbMissed(_ k: String) { thumbLock.withLock { _ = thumbMissing.insert(k) } }
 
-    /// photos/<ts>/<n>-<rand>.jpg → photos/<ts>/<n>-<rand>.thumb.jpg（非 .jpg 键返 nil）
-    static func thumbKey(_ fullKey: String) -> String? {
-        guard fullKey.hasSuffix(".jpg"), !fullKey.hasSuffix(".thumb.jpg") else { return nil }
-        return String(fullKey.dropLast(4)) + ".thumb.jpg"
+    /// 边缘缩图 URL：长边 512px、质量 60（原格式输出，UIImage 直接解）。
+    private static func transformURL(_ fullKey: String) -> URL? {
+        URL(string: "https://\(API.host)/cdn-cgi/image/width=512,quality=60/files/api/photo/\(fullKey.urlPathEncoded)")
     }
 
     /// Fetch + decode a photo, front-loaded by the in-process image cache: a repeat
     /// visit to an article renders its photos instantly instead of re-downloading.
     /// `ignoringLocalCache` skips the cache READ (a retry must probe the network) but
     /// a successful fetch is always written back.
-    /// `preferThumb`: 展示尺寸小（列表图标/卡片）时先取 .thumb.jpg 变体，缺了回退原图。
+    /// `preferThumb`: 展示尺寸小（列表图标/卡片）时先取边缘缩图，失败回退原图。
     static func image(fullKey: String, ignoringLocalCache: Bool = false, preferThumb: Bool = false) async -> UIImage? {
-        if preferThumb, let tk = thumbKey(fullKey), !thumbMissed(tk) {
-            if let thumb = await image(fullKey: tk, ignoringLocalCache: ignoringLocalCache) { return thumb }
-            markThumbMissed(tk)
+        if preferThumb, !fullKey.isEmpty {
+            let cacheKey = fullKey + "#w512"
+            if !thumbMissed(cacheKey) {
+                if !ignoringLocalCache, let hit = decodedCache.object(forKey: cacheKey as NSString) { return hit }
+                if let ui = await fetchDecoded(url: transformURL(fullKey), cacheKey: cacheKey,
+                                               ignoringLocalCache: ignoringLocalCache) { return ui }
+                markThumbMissed(cacheKey)   // zone 未开转换 / 单图转换失败 → 本次会话不再探测
+            }
         }
         if !ignoringLocalCache, let hit = decodedCache.object(forKey: fullKey as NSString) { return hit }
         guard let d = await data(fullKey: fullKey, ignoringLocalCache: ignoringLocalCache),
               let ui = UIImage(data: d) else { return nil }
         let px = ui.size.width * ui.size.height * ui.scale * ui.scale
         decodedCache.setObject(ui, forKey: fullKey as NSString, cost: Int(px * 4))
+        return ui
+    }
+
+    /// 下载 + 解码 + 双层缓存（磁盘字节 / 内存位图）——preferThumb 的边缘缩图路径用。
+    private static func fetchDecoded(url: URL?, cacheKey: String, ignoringLocalCache: Bool) async -> UIImage? {
+        let file = diskURL(cacheKey)
+        var bytes: Data?
+        if !ignoringLocalCache, let d = try? Data(contentsOf: file), !d.isEmpty { bytes = d }
+        if bytes == nil {
+            guard let url else { return nil }
+            var req = URLRequest(url: url)
+            if ignoringLocalCache { req.cachePolicy = .reloadIgnoringLocalCacheData }
+            guard let (d, resp) = try? await URLSession.shared.data(for: req), resp.isOK, !d.isEmpty else { return nil }
+            try? d.write(to: file, options: .atomic)   // 只缓存成功响应——失败绝不落盘
+            bytes = d
+        }
+        guard let bytes, let ui = UIImage(data: bytes) else { return nil }
+        let px = ui.size.width * ui.size.height * ui.scale * ui.scale
+        decodedCache.setObject(ui, forKey: cacheKey as NSString, cost: Int(px * 4))
         return ui
     }
 
@@ -108,8 +132,8 @@ enum PhotoService {
     }
 
     /// PUT JPEG bytes to a relative key (within the bearer's own scope). Returns the
-    /// relative key on success, nil otherwise. 成功后顺手旁挂缩略图（best-effort，
-    /// 失败不影响主图——展示面会回退原图）。
+    /// relative key on success, nil otherwise. 缩图不在客户端做——多端各自实现太脆，
+    /// 展示面用 Cloudflare 边缘转换（见 transformURL）。
     @discardableResult
     static func upload(data: Data, relKey: String, bearer: String) async -> String? {
         guard !bearer.isEmpty,
@@ -125,37 +149,7 @@ enum PhotoService {
         req.httpBody = data
         do {
             let (_, resp) = try await URLSession.shared.data(for: req)
-            guard resp.isOK else { return nil }
-            await uploadThumb(original: data, relKey: relKey, bearer: bearer)
-            return relKey
+            return resp.isOK ? relKey : nil
         } catch { return nil }
-    }
-
-    /// 生成并上传 512px/q0.6 的缩略图变体。解码/缩放放后台线程；任何一步失败都
-    /// 静默放弃（缺缩略图只是慢，不是错）。
-    private static func uploadThumb(original: Data, relKey: String, bearer: String) async {
-        guard let tk = thumbKey(relKey) else { return }
-        let thumbData: Data? = await Task.detached(priority: .utility) {
-            guard let ui = UIImage(data: original) else { return nil }
-            let longEdge = max(ui.size.width, ui.size.height)
-            guard longEdge > 0 else { return nil }
-            let scale = min(1, 512 / longEdge)
-            let size = CGSize(width: ui.size.width * scale, height: ui.size.height * scale)
-            let fmt = UIGraphicsImageRendererFormat()
-            fmt.scale = 1
-            let small = UIGraphicsImageRenderer(size: size, format: fmt).image { _ in
-                ui.draw(in: CGRect(origin: .zero, size: size))
-            }
-            return small.jpegData(compressionQuality: 0.6)
-        }.value
-        guard let thumbData,
-              let url = URL(string: "\(API.filesBase.absoluteString)/upload/\(tk.urlPathEncoded)")
-        else { return }
-        var req = URLRequest(url: url)
-        req.httpMethod = "PUT"
-        req.setBearer(bearer)
-        req.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
-        req.httpBody = thumbData
-        _ = try? await URLSession.shared.data(for: req)
     }
 }
