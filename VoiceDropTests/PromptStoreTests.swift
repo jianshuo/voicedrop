@@ -254,4 +254,95 @@ final class PromptStoreTests: XCTestCase {
         }
         XCTAssertEqual(seen.count, 1000)
     }
+
+    // MARK: - 内置回退（Task 3）
+
+    /// 内置 = 服务端 DEFAULT_PROMPT_TEMPLATE 的解析形态：3 组（sys_style/sys_rewrite/
+    /// sys_insert）+ 12 个 action，总节点数（组 + 递归 action）= 15。
+    private func countNodes(_ nodes: [PromptNode]) -> Int {
+        nodes.reduce(0) { $0 + 1 + countNodes($1.children ?? []) }
+    }
+    private func countActions(_ nodes: [PromptNode]) -> Int {
+        nodes.reduce(0) { $0 + ($1.type == "action" ? 1 : 0) + countActions($1.children ?? []) }
+    }
+
+    func testBuiltinHas15NodesAnd12Actions() {
+        let builtin = PromptLogic.builtin
+        XCTAssertEqual(countNodes(builtin), 15)
+        XCTAssertEqual(countActions(builtin), 12)
+    }
+
+    func testBuiltinIdsUseSysPrefixAndKnownGroups() {
+        let ids = Set(PromptLogic.builtin.map(\.id))
+        XCTAssertEqual(ids, ["sys_style", "sys_rewrite", "sys_insert"])
+        let styleChildren = Set(PromptLogic.builtin.first { $0.id == "sys_style" }?.children?.map(\.id) ?? [])
+        XCTAssertEqual(styleChildren, ["sys_cartoon", "sys_ad", "sys_watercolor", "sys_sketch", "sys_oil", "sys_film"])
+        let insertChildren = Set(PromptLogic.builtin.first { $0.id == "sys_insert" }?.children?.map(\.id) ?? [])
+        XCTAssertEqual(insertChildren, ["sys_wechat_cover", "sys_cartoon_explainer"])
+    }
+
+    // MARK: - effectiveItems 三级回退裁决（纯函数，不打网络）
+
+    func testEffectiveItemsPrefersFetchedOverCachedOverBuiltin() throws {
+        let fetchedJSON = """
+        {"schema":1,"items":[{"id":"p_fetched1","type":"action","label":"F","origin":"user","prompt":"p","appliesTo":["text"]}]}
+        """.data(using: .utf8)!
+        let cachedJSON = """
+        {"schema":1,"items":[{"id":"p_cached01","type":"action","label":"C","origin":"user","prompt":"p","appliesTo":["text"]}]}
+        """.data(using: .utf8)!
+        let builtin = [PromptNode(id: "sys_builtin", type: "action", label: "B", origin: "system", prompt: "p", appliesTo: ["text"])]
+
+        let fromFetched = PromptLogic.effectiveItems(fetched: fetchedJSON, cached: cachedJSON, builtin: builtin)
+        XCTAssertEqual(fromFetched.map(\.id), ["p_fetched1"])
+
+        let fromCached = PromptLogic.effectiveItems(fetched: nil, cached: cachedJSON, builtin: builtin)
+        XCTAssertEqual(fromCached.map(\.id), ["p_cached01"])
+
+        let fromBuiltin = PromptLogic.effectiveItems(fetched: nil, cached: nil, builtin: builtin)
+        XCTAssertEqual(fromBuiltin.map(\.id), ["sys_builtin"])
+    }
+
+    func testEffectiveItemsCorruptFetchedFallsBackToCached() throws {
+        let corrupt = "not json at all { [[[".data(using: .utf8)!
+        let cachedJSON = """
+        {"schema":1,"items":[{"id":"p_cached01","type":"action","label":"C","origin":"user","prompt":"p","appliesTo":["text"]}]}
+        """.data(using: .utf8)!
+        let result = PromptLogic.effectiveItems(fetched: corrupt, cached: cachedJSON, builtin: PromptLogic.builtin)
+        XCTAssertEqual(result.map(\.id), ["p_cached01"])
+    }
+
+    /// 坏缓存（且没有本次 GET）→ 静默落到内置：15 节点。长按永远有菜单。
+    func testEffectiveItemsCorruptCacheFallsBackToBuiltin() throws {
+        let corrupt = "not json at all { [[[".data(using: .utf8)!
+        let result = PromptLogic.effectiveItems(fetched: nil, cached: corrupt, builtin: PromptLogic.builtin)
+        XCTAssertEqual(countNodes(result), 15)
+        XCTAssertEqual(countActions(result), 12)
+    }
+
+    func testEffectiveItemsAllNilFallsBackToBuiltin() throws {
+        let result = PromptLogic.effectiveItems(fetched: nil, cached: nil, builtin: PromptLogic.builtin)
+        XCTAssertEqual(result.map(\.id), PromptLogic.builtin.map(\.id))
+    }
+
+    // MARK: - menuConfig 直接吃内置回退
+
+    /// 内置下 .image：全部 6 个图片风格动作都挂在 sys_style 唯一一组下——1 个 section，
+    /// 该 section 唯一节点是 submenu，children 有 6 个。
+    func testMenuConfigImageFromBuiltinIsOneSectionWithSixChildren() {
+        let config = PromptLogic.menuConfig(PromptLogic.builtin, for: .image)
+        XCTAssertEqual(config.groups.count, 1)
+        XCTAssertEqual(config.groups[0].count, 1)
+        XCTAssertEqual(config.groups[0][0].type, "submenu")
+        XCTAssertEqual(config.groups[0][0].children?.count, 6)
+    }
+
+    /// 内置下 .text：sys_rewrite（4 子项）+ sys_insert（2 子项）各自成组 → 2 个 section。
+    func testMenuConfigTextFromBuiltinIsTwoSections() {
+        let config = PromptLogic.menuConfig(PromptLogic.builtin, for: .text)
+        XCTAssertEqual(config.groups.count, 2)
+        XCTAssertEqual(config.groups[0].map(\.id), ["sys_rewrite"])
+        XCTAssertEqual(config.groups[0][0].children?.count, 4)
+        XCTAssertEqual(config.groups[1].map(\.id), ["sys_insert"])
+        XCTAssertEqual(config.groups[1][0].children?.count, 2)
+    }
 }

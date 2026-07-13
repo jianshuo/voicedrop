@@ -1,8 +1,13 @@
 import Foundation
+import Observation
 
-// Prompt Manager Phase 2（iOS）—— 模型 + 纯逻辑（网络层见 Task 3）。
+/// 让 `Result<T, String>` 能直接把错误文案当 Error 用（importPrompt 的返回类型）——
+/// 这里的错误全是给用户看的本地化文案，不需要一个专门的 Error 类型来包一层。
+extension String: @retroactive Error {}
+
+// Prompt Manager Phase 2（iOS）—— 模型 + 纯逻辑（Task 2）+ 网络/缓存层（Task 3）。
 // spec: docs/superpowers/specs/2026-07-13-prompt-manager-redesign.md §9
-// plan: docs/superpowers/plans/2026-07-14-prompt-manager-phase2-ios.md Task 2
+// plan: docs/superpowers/plans/2026-07-14-prompt-manager-phase2-ios.md Task 2/3
 
 // MARK: - 模型
 
@@ -130,5 +135,359 @@ enum PromptLogic {
             return UIMenuNode(id: node.id, label: node.label, type: "submenu", children: children, instruction: nil)
         }
         return UIMenuNode(id: node.id, label: node.label, type: nil, children: nil, instruction: node.prompt)
+    }
+}
+
+// MARK: - 网络/缓存层
+
+/// GET/PUT/restore-defaults 共用的响应外壳 {schema, items}。
+private struct PromptsResponse: Decodable {
+    let schema: Int
+    let items: [PromptNode]
+}
+
+extension PromptLogic {
+    /// Data → items，解码失败返回 nil（三级回退链的每一环都靠它判断"这环能不能用"）。
+    static func decodeItems(_ data: Data) -> [PromptNode]? {
+        try? JSONDecoder().decode(PromptsResponse.self, from: data).items
+    }
+
+    /// 三级回退的裁决：本次 GET 成功 → 用它；否则退回缓存；否则内置。任何一级解码
+    /// 失败都静默落到下一级——长按永远有菜单。纯函数，不碰网络/UserDefaults，
+    /// 调用方（PromptStore）负责把 Data 喂进来，方便单测。
+    static func effectiveItems(fetched: Data?, cached: Data?, builtin: [PromptNode]) -> [PromptNode] {
+        if let fetched, let items = decodeItems(fetched) { return items }
+        if let cached, let items = decodeItems(cached) { return items }
+        return builtin
+    }
+
+    /// 内置默认 = 服务端 DEFAULT_PROMPT_TEMPLATE 的解析形态，三级回退最后一环
+    /// （网络 + 缓存都失败时兜底）。12 条 prompt 文案从已删除的旧长按菜单配置 store
+    /// 的内置默认逐字搬（同一批调优过的文案）；sys_cartoon_explainer 是那份旧内置
+    /// 默认里没有的一条，文案从服务端 GET /agent/prompts 原样拉取补全，与服务端模板一致。
+    static let builtin: [PromptNode] = {
+        guard let data = builtinJSON.data(using: .utf8),
+              let nodes = try? JSONDecoder().decode([PromptNode].self, from: data) else {
+            return []
+        }
+        return nodes
+    }()
+
+    private static let builtinJSON = #"""
+    [
+      {
+        "id": "sys_style",
+        "type": "group",
+        "label": "图片风格",
+        "origin": "system",
+        "children": [
+          {
+            "id": "sys_cartoon",
+            "type": "action",
+            "label": "卡通",
+            "origin": "system",
+            "prompt": "把这张图（[[photo:{{KEY}}]]）重画成宫崎骏动画的手绘卡通风格，构图和主体不变，正文其他内容都不要动。",
+            "appliesTo": [
+              "image"
+            ],
+            "kind": "image"
+          },
+          {
+            "id": "sys_ad",
+            "type": "action",
+            "label": "广告",
+            "origin": "system",
+            "prompt": "把这张图（[[photo:{{KEY}}]]）重新设计成一则商品广告。请从专业设计师的角度，结合本篇文章的内容和受众，打造一个精致、洗练的视觉设计。整体风格要现代、极简，不使用文字，可以加一些别的代替文字的元素。请通过合理的版式构成，最大限度地突出商品的魅力。正文其他内容都不要动。",
+            "appliesTo": [
+              "image"
+            ],
+            "kind": "image"
+          },
+          {
+            "id": "sys_watercolor",
+            "type": "action",
+            "label": "水彩",
+            "origin": "system",
+            "prompt": "把这张图（[[photo:{{KEY}}]]）重画成通透的水彩画风格，构图和主体不变，正文其他内容都不要动。",
+            "appliesTo": [
+              "image"
+            ],
+            "kind": "image"
+          },
+          {
+            "id": "sys_sketch",
+            "type": "action",
+            "label": "素描",
+            "origin": "system",
+            "prompt": "把这张图（[[photo:{{KEY}}]]）重画成铅笔素描风格，构图和主体不变，正文其他内容都不要动。",
+            "appliesTo": [
+              "image"
+            ],
+            "kind": "image"
+          },
+          {
+            "id": "sys_oil",
+            "type": "action",
+            "label": "油画",
+            "origin": "system",
+            "prompt": "把这张图（[[photo:{{KEY}}]]）重画成古典油画风格，构图和主体不变，正文其他内容都不要动。",
+            "appliesTo": [
+              "image"
+            ],
+            "kind": "image"
+          },
+          {
+            "id": "sys_film",
+            "type": "action",
+            "label": "胶片",
+            "origin": "system",
+            "prompt": "把这张图（[[photo:{{KEY}}]]）调成胶片摄影的质感和色调，构图和主体不变，正文其他内容都不要动。",
+            "appliesTo": [
+              "image"
+            ],
+            "kind": "image"
+          }
+        ]
+      },
+      {
+        "id": "sys_rewrite",
+        "type": "group",
+        "label": "改写这段",
+        "origin": "system",
+        "children": [
+          {
+            "id": "sys_concise",
+            "type": "action",
+            "label": "更简洁",
+            "origin": "system",
+            "prompt": "把第{{LINE}}行（开头是\"{{QUOTE}}\"）改写得更简洁，意思不变，正文其他行都不要动。",
+            "appliesTo": [
+              "text"
+            ]
+          },
+          {
+            "id": "sys_casual",
+            "type": "action",
+            "label": "更口语",
+            "origin": "system",
+            "prompt": "把第{{LINE}}行（开头是\"{{QUOTE}}\"）改写得更口语、像平时说话，意思不变，正文其他行都不要动。",
+            "appliesTo": [
+              "text"
+            ]
+          },
+          {
+            "id": "sys_formal",
+            "type": "action",
+            "label": "更书面",
+            "origin": "system",
+            "prompt": "把第{{LINE}}行（开头是\"{{QUOTE}}\"）改写得更书面、更正式，意思不变，正文其他行都不要动。",
+            "appliesTo": [
+              "text"
+            ]
+          },
+          {
+            "id": "sys_expand",
+            "type": "action",
+            "label": "扩写一点",
+            "origin": "system",
+            "prompt": "把第{{LINE}}行（开头是\"{{QUOTE}}\"）扩写一点，补充细节但别啰嗦，正文其他行都不要动。",
+            "appliesTo": [
+              "text"
+            ]
+          }
+        ]
+      },
+      {
+        "id": "sys_insert",
+        "type": "group",
+        "label": "插入图片",
+        "origin": "system",
+        "children": [
+          {
+            "id": "sys_wechat_cover",
+            "type": "action",
+            "label": "公众号题图",
+            "origin": "system",
+            "prompt": "给这篇文章画一张微信公众号题图，放在文章最前面。画面为 2.45:1 的横幅比例。主视觉不要用泛泛的机器人形象或模糊的科技背景，要用具体的物件表达文章主题，比如提示词卡片、设计画布、图片生成面板、封面草稿。题图上的中文主标题从文章标题提炼，必须清晰可读，最好 6 到 10 个汉字。构图要适合公众号封面：大标题放左侧，主视觉放右侧，四周留足安全边距。风格：成熟的新媒体编辑部封面，干净、精致、实用，不要廉价营销海报感。避免：乱码文字、过多小字、真实品牌 logo、纯氛围壁纸、厚重的蓝紫渐变。正文其他内容都不要动。",
+            "appliesTo": [
+              "text"
+            ],
+            "kind": "image"
+          },
+          {
+            "id": "sys_cartoon_explainer",
+            "type": "action",
+            "label": "卡通解释图",
+            "origin": "system",
+            "prompt": "给这篇文章画一张扁平卡通风格的解释图（flat cartoon explanation illustration），插入到正文最能帮助理解的位置，让没读过文章的人扫一眼就能看懂文章的核心结构。先读懂全文，找出核心结构——分几个阶段？有什么对比？有什么递进？——再把这个结构画出来。画幅比例由内容决定，以一眼读懂为准：双行对照用 3:2 或 4:3 横版，流程递进用横长条（2.45:1 或 3:1），层级深度用竖版（3:4 或 4:5），凝聚式概念用方形 1:1。风格：像 New Yorker 杂志插图、xkcd 或高级科普读物的插画，既有趣又有思想深度；人物几何化简化（火柴人或圆头方身），线条清晰，无写实细节；配色温暖克制，最多 4 到 5 种主色，建议米白底加深色线条加 1 到 2 个强调色（橙红、墨绿、深蓝任选）；质感纯平面或轻微手绘线条感，像在白纸上手绘的概念图，不像 PPT 或 Canva 模板。构图：把核心层级、阶段或对比关系分区并列展开（从左到右、上下分层或环形排布），用箭头、台阶、流程线等通用视觉符号连接各区；每个分区只画 1 个主场景加 1 个核心物件，不堆细节；每个分区可配 1 个 2 到 6 字的中文短标签，标签必须准确、可读、无伪汉字；分区之间留呼吸空间，整体不能挤。必须避免：真人脸部（用简化几何代替）、文字过多（只用关键标签，不是 PPT）、抽象到看不懂（必须能读图理解文章）、风格不统一、饱和霓虹、廉价渐变、3D 拟真、金属玻璃光泽、儿童读物感、中国风滥用、任何水印签名 Logo 二维码、错字漏字伪中文笔画。正文其他内容都不要动。",
+            "appliesTo": [
+              "text"
+            ],
+            "kind": "image"
+          }
+        ]
+      }
+    ]
+    """#
+}
+
+struct SharePreview: Decodable {
+    let label, prompt: String
+    let appliesTo: [String]
+    let kind: String?
+    let author: String
+    let importCount: Int
+}
+
+struct ShareState: Decodable {
+    let code: String
+    let sharing: Bool
+}
+
+@MainActor
+@Observable
+final class PromptStore {
+    static let shared = PromptStore()
+
+    private(set) var items: [PromptNode]
+    var loading = false
+    var error: String?
+
+    private static let cacheKey = "promptsCache.v1"
+    private var token: String { AuthStore.shared.bearer }
+
+    private init() {
+        let cached = UserDefaults.standard.data(forKey: Self.cacheKey)
+        items = PromptLogic.effectiveItems(fetched: nil, cached: cached, builtin: PromptLogic.builtin)
+    }
+
+    /// GET 整树。成功 → 缓存原始响应 + 更新 items；失败静默保留现值（init 时已经
+    /// 用缓存/内置兜过底一次，长按菜单不会因为这次刷新失败就没有菜单）。
+    func refresh() async {
+        guard !token.isEmpty else { error = String(localized: "请先登录"); return }
+        loading = true
+        defer { loading = false }
+        var req = URLRequest(url: API.agentBase.appendingPathComponent("prompts"))
+        req.setBearer(token)
+        guard let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
+              let fresh = PromptLogic.decodeItems(data) else {
+            error = String(localized: "加载失败")
+            return
+        }
+        error = nil
+        items = fresh
+        UserDefaults.standard.set(data, forKey: Self.cacheKey)
+    }
+
+    /// PUT 整树（rawItems(items)）。nil = 成功；非 nil = 给用户看的错误文案。
+    /// 成功后用响应回填 items（服务端会重算 origin 等派生字段）。
+    func save() async -> String? {
+        guard !token.isEmpty else { return String(localized: "请先登录") }
+        guard let body = try? JSONSerialization.data(withJSONObject: ["items": PromptLogic.rawItems(items)]) else {
+            return String(localized: "保存失败，请重试")
+        }
+        var req = URLRequest(url: API.agentBase.appendingPathComponent("prompts"))
+        req.httpMethod = "PUT"
+        req.setBearer(token)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = body
+        guard let (data, resp) = try? await URLSession.shared.data(for: req) else {
+            return String(localized: "网络出错，请重试")
+        }
+        guard resp.isOK else { return String(localized: "保存失败，请重试") }
+        if let fresh = PromptLogic.decodeItems(data) {
+            items = fresh
+            UserDefaults.standard.set(data, forKey: Self.cacheKey)
+        }
+        return nil
+    }
+
+    /// POST /agent/prompts/import {code}。成功后刷新整树（服务端已经把新条目
+    /// 追加进用户的 prompts.json，本地需要重新 GET 才能拿到完整、带派生字段的列表）。
+    func importPrompt(code: String) async -> Result<PromptNode, String> {
+        guard !token.isEmpty else { return .failure(String(localized: "请先登录")) }
+        struct P: Encodable { let code: String }
+        var req = URLRequest(url: API.agentBase.appendingPathComponent("prompts/import"))
+        req.httpMethod = "POST"
+        req.setBearer(token)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONEncoder().encode(P(code: code))
+        guard let (data, resp) = try? await URLSession.shared.data(for: req) else {
+            return .failure(String(localized: "网络出错，请重试"))
+        }
+        guard resp.isOK else {
+            return .failure(resp.httpStatusCode == 404
+                ? String(localized: "这个魔法数字无效或已停止分享")
+                : String(localized: "导入失败，请重试"))
+        }
+        struct R: Decodable { let item: PromptNode }
+        guard let item = (try? JSONDecoder().decode(R.self, from: data))?.item else {
+            return .failure(String(localized: "导入失败，请重试"))
+        }
+        await refresh()
+        return .success(item)
+    }
+
+    /// POST /agent/prompts/restore-defaults —— 补回模板里缺的，自建/改过的都不受影响。
+    func restoreDefaults() async -> Bool {
+        guard !token.isEmpty else { return false }
+        var req = URLRequest(url: API.agentBase.appendingPathComponent("prompts/restore-defaults"))
+        req.httpMethod = "POST"
+        req.setBearer(token)
+        guard let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
+              let fresh = PromptLogic.decodeItems(data) else { return false }
+        items = fresh
+        UserDefaults.standard.set(data, forKey: Self.cacheKey)
+        return true
+    }
+
+    /// GET /agent/prompt-share/<code> —— 导入预览，公开端点，不带 bearer。
+    func sharePreview(code: String) async -> SharePreview? {
+        let req = URLRequest(url: API.agentBase.appendingPathComponent("prompt-share").appendingPathComponent(code))
+        guard let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK else { return nil }
+        return try? JSONDecoder().decode(SharePreview.self, from: data)
+    }
+
+    /// GET /agent/prompt-shares —— 当前用户全部分享状态一览（5c 分享卡）。
+    func shareStates() async -> [String: ShareState] {
+        guard !token.isEmpty else { return [:] }
+        var req = URLRequest(url: API.agentBase.appendingPathComponent("prompt-shares"))
+        req.setBearer(token)
+        guard let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK else { return [:] }
+        struct R: Decodable { let byItem: [String: ShareState] }
+        return (try? JSONDecoder().decode(R.self, from: data))?.byItem ?? [:]
+    }
+
+    /// 分享开关：开 = POST /agent/prompt-share 铸码/同码复活；关 = DELETE 使码立即
+    /// 失效（服务端索引保留，再开还是同一个码）。沿用原 InstructionCustomStore.setSharing
+    /// 的实现（含 429 → 「今天生成分享码的次数已达上限，明天再试」的文案映射）。
+    func setSharing(id: String, on: Bool) async -> String? {
+        guard !token.isEmpty else { return String(localized: "请先登录") }
+        var req: URLRequest
+        if on {
+            struct P: Encodable { let id: String }
+            req = URLRequest(url: API.agentBase.appendingPathComponent("prompt-share"))
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try? JSONEncoder().encode(P(id: id))
+        } else {
+            req = URLRequest(url: API.agentBase.appendingPathComponent("prompt-share").appendingPathComponent(id))
+            req.httpMethod = "DELETE"
+        }
+        req.setBearer(token)
+        guard let (_, resp) = try? await URLSession.shared.data(for: req) else {
+            return String(localized: "网络出错，请重试")
+        }
+        guard resp.isOK else {
+            return resp.httpStatusCode == 429
+                ? String(localized: "今天生成分享码的次数已达上限，明天再试")
+                : String(localized: "操作失败，请重试")
+        }
+        return nil
+    }
+
+    /// 过滤结果 → ConfigMenu 现有输入形状（长按菜单直接吃）。
+    func menuConfig(for anchor: PromptAnchor) -> UIMenuConfig {
+        PromptLogic.menuConfig(items, for: anchor)
     }
 }

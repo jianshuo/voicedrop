@@ -5,7 +5,7 @@ import Observation
 // 设置 → 提示词：逐条自定义长按菜单背后的指令（图片风格 / 改写 / 公众号题图…）。
 // 服务端真源 GET/PUT /agent/ui-config/custom（users/<sub>/ui-config.json 稀疏覆盖）：
 // 指令/名称留空 = 用缺省值（内置 ← 全局调优版）；「在菜单中隐藏」把该条从长按菜单
-// 里拿掉（可随时恢复）。保存后刷新 UIConfigStore，长按菜单立即生效。
+// 里拿掉（可随时恢复）。保存后刷新长按菜单的数据源，本次会话即生效。
 
 struct InstructionItem: Identifiable, Decodable {
     let id: String
@@ -67,8 +67,10 @@ final class InstructionCustomStore {
             items[i].customLabel = trimmedLabel.isEmpty ? nil : String(trimmedLabel.prefix(20))
             items[i].hidden = hidden
         }
-        // 长按菜单吃的是合并后的 ui-config——保存后立刻刷新，本次会话即生效。
-        await UIConfigStore.shared.refresh()
+        // 长按菜单已经改吃 PromptStore（Prompt Manager Phase 2）——这条老设置页
+        // 停留在旧 ui-config/custom 模型，保存后仍尽量刷一下新数据源，但两套模型
+        // 已经不是同一份数据；本页整体待 Task 8 删除。
+        await PromptStore.shared.refresh()
         return true
     }
 
