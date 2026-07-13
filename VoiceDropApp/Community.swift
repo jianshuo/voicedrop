@@ -12,6 +12,10 @@ struct CommunityPost: Decodable, Identifiable, Hashable {
     let count: Int?
     let mine: Bool?                 // owned by the current user (can un-share)
     let replyTo: String?            // shareId this post is replying to, if any
+    // 瀑布流卡片素材（community/list 服务端补齐，旧响应缺省为 nil → 文字卡兜底）。
+    var hasPhoto: Bool? = nil       // 正文含 [[photo:…]] 标记
+    var coverPhotoKey: String? = nil // 第一张图完整 R2 key（owner 已拼），走公开 /photo/<key>
+    var preview: String? = nil      // 正文前 ~60 字纯文本（无标记无 markdown）
     var id: String { shareId }
 }
 
@@ -46,6 +50,9 @@ struct FeedResult: Decodable {
 @Observable
 final class CommunityStore {
     var posts: [CommunityPost] = []
+    /// 服务端原始返回顺序（纯 firstSharedAt 时间序）——「最新」tab 直接用这份，
+    /// 不经 reco；posts 则会被 applyRanking 重排成「推荐」顺序。
+    var timeOrdered: [CommunityPost] = []
     var loading = false
     var error: String?
 
@@ -62,8 +69,14 @@ final class CommunityStore {
     /// shareIds the current user has liked — filled by `applyRanking()`, seeds the ❤️ state.
     var likedShareIds: Set<String> = []
 
+    /// 每帖被赞总数（shareId → n）——rank 响应顺路下发，瀑布流卡片的红心数。
+    var likeCounts: [String: Int] = [:]
+
     /// 投币点亮态：shareId → (count, fed)。由 loadFeedStates() 批量填充。
     var feedStates: [String: FeedState] = [:]
+    /// 每帖收到的回应数（shareId → 数量）。load() 里从 posts 的 replyTo 汇总，
+    /// 瀑布流卡片的回应数直接读这里（原来是 applyRanking 的局部变量）。
+    var replyCounts: [String: Int] = [:]
     /// 当前币价（算力/币），随 feed/state 响应更新，展示用。
     var coinPrice: Double = 0
 
@@ -80,6 +93,10 @@ final class CommunityStore {
             struct R: Decodable { let posts: [CommunityPost] }
             posts = try JSONDecoder().decode(R.self, from: data).posts
                 .filter { !BlockStore.isBlocked($0.author) }   // local block list (Apple 1.2)
+            timeOrdered = posts                                // 服务端时间序快照（reco 重排前）
+            replyCounts = posts.reduce(into: [String: Int]()) { acc, p in
+                if let to = p.replyTo { acc[to, default: 0] += 1 }
+            }
             await applyRanking()
         } catch { self.error = error.localizedDescription }
     }
@@ -88,9 +105,6 @@ final class CommunityStore {
     /// On failure/timeout keep the time-sort — the feed always shows.
     private func applyRanking() async {
         guard !posts.isEmpty, !token.isEmpty else { return }
-        let replyCounts = posts.reduce(into: [String: Int]()) { acc, p in
-            if let to = p.replyTo { acc[to, default: 0] += 1 }
-        }
         let payload = posts.map { p -> [String: Any] in
             ["shareId": p.shareId,
              "firstSharedAt": p.firstSharedAt ?? 0,
@@ -106,9 +120,10 @@ final class CommunityStore {
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
             guard resp.isOK else { return }
-            struct R: Decodable { let order: [String]; let liked: [String] }
+            struct R: Decodable { let order: [String]; let liked: [String]; let likes: [String: Int]? }
             let r = try JSONDecoder().decode(R.self, from: data)
             likedShareIds = Set(r.liked)
+            likeCounts = r.likes ?? [:]
             let byId = Dictionary(uniqueKeysWithValues: posts.map { ($0.shareId, $0) })
             let reordered = r.order.compactMap { byId[$0] }
             if reordered.count == posts.count { posts = reordered }  // replace only on full coverage

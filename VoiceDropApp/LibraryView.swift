@@ -459,48 +459,12 @@ struct LibraryView: View {
         } else if community.posts.isEmpty {
             Spacer(); message(String(localized: "VD社区还没有分享"), String(localized: "在文章右上角 ⋯ 里点「分享到 VD社区」，大家就能看到。")); Spacer()
         } else {
-            List {
-                ForEach(community.posts) { post in
-                    Button { selectedPost = post } label: { communityCard(post) }
-                        .buttonStyle(.plain)
-                        .listRowBackground(Color.clear).listRowSeparator(.hidden)
-                        .listRowInsets(EdgeInsets(top: 5, leading: 16, bottom: 6, trailing: 16))
-                        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            if post.mine == true {
-                                Button(role: .destructive) { confirmUnshare = post } label: { Label("取消分享", systemImage: "trash") }
-                                    .tint(.red)
-                            }
-                        }
-                }
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .contentMargins(.bottom, 24, for: .scrollContent)
-            .refreshable { await community.load() }
+            // 双排瀑布流（CommunityFeedView，design handoff 方向 1a）。取消分享从
+            // swipe 改长按 context menu——masonry 不在 List 里，没有 swipeActions。
+            CommunityFeedView(store: community,
+                              onSelect: { selectedPost = $0 },
+                              onUnshare: { confirmUnshare = $0 })
         }
-    }
-
-    private func communityCard(_ post: CommunityPost) -> some View {
-        HStack(spacing: 13) {
-            RoundedRectangle(cornerRadius: Theme.R.card)
-                .fill(Theme.accentSoft)
-                .frame(width: 42, height: 42)
-                .overlay(Image(systemName: "doc.text").font(.system(size: 17)).foregroundStyle(Theme.accent))
-            VStack(alignment: .leading, spacing: 5) {
-                Text(post.title ?? String(localized: "(无题)")).font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.ink)
-                    .lineLimit(1).truncationMode(.tail)
-                HStack(spacing: 9) {
-                    Text(post.author ?? String(localized: "匿名")).font(.system(size: 13)).foregroundStyle(Theme.accent)
-                    Text(communityDate(post.firstSharedAt)).font(.system(size: 13)).foregroundStyle(Theme.metaChrome)
-                }
-            }
-            Spacer(minLength: 6)
-            Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.chevron)
-        }
-        .padding(.vertical, 14).padding(.horizontal, 15)
-        .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.R.card))
-        .overlay(RoundedRectangle(cornerRadius: Theme.R.card).stroke(Theme.borderChrome, lineWidth: 1))
-        .cardChromeShadow()
     }
 
     private func rowCard(_ rec: Recording) -> some View {
