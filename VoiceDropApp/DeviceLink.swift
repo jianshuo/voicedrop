@@ -61,15 +61,38 @@ final class DeviceLinkResponder {
 
     private let base = API.agentLink
 
+    // 用户对这次配对已经明确表过态（放行过 / 点过「不是我」/ 划走过弹窗）。
+    // 拿它挡住「状态丢了就去服务端捞」的兜底：不然用户划走弹窗（= 拒绝）之后，
+    // link_release 一来还是会放行 —— 那就把「划走 = 拒绝」变成了「划走 = 同意」，是提权。
+    private var settledPairingIds: Set<String> = []
+
+    // 弹窗划走时 pending 已经被置空，拿不到 pairingId 了 —— 所以在这儿留一份。
+    private var lastPresentedId: String?
+
     func present(pairingId: String, code: String, pubkey: String) {
+        guard !settledPairingIds.contains(pairingId) else { return }
         pending = Pending(pairingId: pairingId, code: code, pubkey: pubkey)
+        lastPresentedId = pairingId
         status = ""
     }
 
     // Fired when the new device entered the correct code (server pushed link_release).
     func release(pairingId: String) {
-        guard let p = pending, p.pairingId == pairingId else { return }
+        guard !settledPairingIds.contains(pairingId) else { return }
         Task {
+            // pending 只活在内存里。App 崩过/重启过，或在后台错过了 link_request，
+            // 它就是 nil —— 以前这里直接 return：不 POST、不报错、不提示，
+            // 服务端只能干等 25 秒超时。（2026-07-13 真机上就是这么挂的。）
+            // 服务端的 StatusHub 现在存着这次配对（含 pubkey），直接捞回来。
+            var p = pending
+            if p?.pairingId != pairingId { p = await fetchPending() }
+
+            guard let p, p.pairingId == pairingId else {
+                status = String(localized: "登录失败")
+                return
+            }
+
+            settledPairingIds.insert(pairingId)
             do {
                 let (epk, sealed) = try DeviceLinkCrypto.encrypt(token: AuthStore.shared.anonToken, toPubB64: p.pubkey)
                 try await post("complete", body: ["pairingId": pairingId, "blob": ["epk": epk, "sealed": sealed]])
@@ -84,8 +107,33 @@ final class DeviceLinkResponder {
     func cancel() {
         guard let p = pending else { return }
         let pid = p.pairingId
+        settledPairingIds.insert(pid)
         pending = nil
         Task { try? await post("cancel", body: ["pairingId": pid]) }
+    }
+
+    // 弹窗被划走 = 拒绝这次登录（fail-safe）。以前划走只是把 pending 置空，
+    // 服务端还以为配对活着，手机却已经把 pubkey 扔了 —— 无声僵死。
+    // 放行成功和点「不是我」也会走到这里（它们同样让 sheet 消失），但那两条路
+    // 已经把 pairingId 记进 settled 了，所以这里只会接住真正的「划走」。
+    func sheetDismissed() {
+        guard let pid = lastPresentedId, !settledPairingIds.contains(pid) else { return }
+        settledPairingIds.insert(pid)
+        Task { try? await post("cancel", body: ["pairingId": pid]) }
+    }
+
+    // 服务端还留着这次配对（StatusHub 存了 2 分钟，含 pubkey）。客户端因此
+    // 不必持久化任何配对状态。
+    private func fetchPending() async -> Pending? {
+        var req = URLRequest(url: base.appending(path: "pending"))
+        req.setBearer(AuthStore.shared.bearer)
+        guard let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
+              let o = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let pid = o["pairingId"] as? String,
+              let code = o["code"] as? String,
+              let pubkey = o["pubkey"] as? String
+        else { return nil }
+        return Pending(pairingId: pid, code: code, pubkey: pubkey)
     }
 
     private func post(_ path: String, body: [String: Any]) async throws {
