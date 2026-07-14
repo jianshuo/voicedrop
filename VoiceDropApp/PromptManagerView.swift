@@ -6,48 +6,37 @@ import UIKit
 // spec: docs/superpowers/specs/2026-07-13-prompt-manager-redesign.md §9
 // plan: docs/superpowers/plans/2026-07-14-prompt-manager-phase2-ios.md Task 4/7
 //
-// Task 7：页面从 ScrollView 改成真正的 `List`——.onMove（拖动排序）和 .swipeActions（1b 左滑
-// 删除，替换 Task 4 的长按 contextMenu 临时方案）都要求 List。为了让 List 长得还是「一张白色
-// 圆角卡 + 暖色发丝分隔线」而不是系统默认的分组样式：`.listStyle(.plain)` +
-// `.scrollContentBackground(.hidden)` 去掉系统底色和默认分组视觉；每行 `.listRowInsets(.zero)`
-// + `.listRowBackground(.clear)`，卡片白底/圆角改由行内容自己 `.background(.white)` +
-// `.clipShape(RoundedCorner(...))`（只有整卡的第一行/最后一行需要圆角，中间行是直角矩形）；
-// 分隔线复用 List 原生 separator（`.listRowSeparatorTint`），不再手画 `settingsRowDivider`。
-// 行点击进编辑页原来用 `NavigationLink`——放进 List 后系统会自动在行尾加一个原生 disclosure
-// chevron（和我们手画的 `settingsChevron` 重复），换成 `Button` + `.navigationDestination(item:)`
-// （页面里 `renameTarget`/`newActionDraft` 已经是这个模式）就完全绕开了这个问题，不需要
-// 「NavigationLink→EmptyView()→.opacity(0)」的遮盖技巧。
+// **第 6 轮拖拽重构（Task 1，2026-07-14）**：编辑态的拖拽物理彻底换掉。Task 7 的
+// `editMode`-driven `.onMove`（顶层/组内两条独立 onMove）+ `.draggable`/`.dropDestination`
+// （跨组拖进分组）已经全部删除，换成 `PromptDragEngine`（纯逻辑，见该文件）+ 手写 ≡ 手柄
+// `DragGesture` + PreferenceKey 行帧收集 + overlay 浮层跟手 + 琥珀虚线缝隙。
+// plan: docs/superpowers/plans/2026-07-14-prompt-manager-drag-6a6d.md Task 1（6a/6b）。
+// **容器也换了**：编辑态不再是 List（`.onMove`/`.draggable` 都要求 List），改成
+// `ScrollView` + 手画的卡片 `VStack`；普通态（List + 左滑删除/导入/恢复默认/高亮）完全不动。
+// **「移出分组」左滑动作已随这次改造删除**——它原来挂在 Task 7 的组内子行上（`reorderChildRow`
+// 的 `.swipeActions`），而 `swipeActions` 是 List 专属修饰符，编辑态换成 ScrollView 后这个
+// UI 天然消失了，不是本次刻意裁剪的功能。**拖出分组的等价能力（6d「移到分组外」落点区）
+// 交给 Task 2**——`PromptDragEngine` 已经把 `.outOfGroup` 判定和落地都实现好并测过了，
+// Task 1 只是 UI 层暂时把这个 target 当 `.none` 处理（松手不生效，行弹回原位），代码里
+// 标了 `// Task 2` 的位置就是要接张口/落点区视觉的地方。
 //
-// **排序态的模型（长按进入，「完成」退出并整树 PUT）**：进入时把 `store.items` 复制一份到
-// 本地 `draft`，之后所有拖动/拖进拖出操作只改 `draft`，UI 全程从 `draft` 渲染，`store.items`
-// 完全不动——直到「完成」才一次 `store.save()`。**为什么不是实时改 store.items**：Task 1-6
-// 建立的删除/新建/编辑纪律全部是「改一下就立刻整树 PUT」，但排序途中每拖一次都 PUT 一次既
-// 浪费又容易在网络慢的时候拖出竞态；brief 明确要求「一次 store.save() 整树承载」，local draft
-// 是唯一能同时满足「实时拖动反馈」和「一次性提交」的做法。
+// **排序态的模型（长按进入，「完成」退出并整树 PUT，Task 7 建立、这次原样保留）**：进入时把
+// `store.items` 复制一份到本地 `draft`，之后所有拖动/拖进拖出操作只改 `draft`，UI 全程从
+// `draft` 渲染，`store.items` 完全不动——直到「完成」才一次 `store.save()`。**为什么不是
+// 实时改 store.items**：Task 1-6 建立的删除/新建/编辑纪律全部是「改一下就立刻整树 PUT」，
+// 但排序途中每拖一次都 PUT 一次既浪费又容易在网络慢的时候拖出竞态；brief 明确要求
+// 「一次 store.save() 整树承载」，local draft 是唯一能同时满足「实时拖动反馈」和
+// 「一次性提交」的做法。`enterReorder`/`cancelReorder`/`commitReorder`/`applyReorder`
+// （baseline 冲突检测）+ `isMutating` 门 + 退出确认对话框——全部原样保留,是 Task 7 的资产。
 //
-// **进组/出组/两级封顶的具体落地**：顶层重排 + 组内重排用 List 原生 `.onMove`（各自一个
-// ForEach，天然只能在同一个 ForEach 内部重排，不会互相跨越——这正好就是 brief 要的「顶层与
-// 组内各自 onMove」）。**跨组移动**（动作拖进分组）用 iOS 16+ `Transferable`
-// `.draggable`/`.dropDestination`——这是一条独立于 onMove 的拖拽会话，可以和 onMove 的拖动
-// 手柄共存在同一行上：拖动手柄（trailing，系统画的）触发线性重排；直接按住行体拖动触发
-// `.draggable`，落在某个分组行的 `.dropDestination` 上 = 拖进该组末尾（`isTargeted` 给了实时
-// 虚线高亮，`PromptLogic.movingIntoGroup` 判断被拖对象是不是 group 来做两级封顶，是则
-// 忽略+触觉反馈，不落地）。**拖出分组**没有用真正的跨 Section drop-to-gap（那需要在每个
-// 缝隙都放一个 drop target，复杂度和脆弱度都明显更高，brief 也点名这是可接受的降级点）——
-// 换成组内子行左滑「移出分组」（`PromptLogic.movingOutOfGroup`，落到顶层末尾），文档化的
-// 保真度取舍。
-//
-// **已知与设计稿的差距（记在这里，报告里也会提）**：
-// 1) 「被拖行 scale(1.03)+投影+边框、手柄变色」这组「拖动中实时反馈」——List 原生 onMove 的
-//    拖动没有公开 API 暴露「当前是哪一行在被拖」，做不到逐行反馈；只有 .draggable 那条跨组
-//    拖拽路径能拿到真实的拖动预览（`reorderDragPreview`，做了同款的白底+琥珀边+投影）。
-// 2) List 在 onMove 生效时会在行尾自动画一个系统own的三横线拖动手柄（灰色，位置/颜色不可改）；
-//    系统手柄是真正的拖动交互入口（trailing），行体上的 .draggable 处理跨组拖拽。
-//    之前的自定义 leading 手柄已删除（false affordance，交互没有绑定）。
-// 3) 卡片整体的 1px 描边（`Theme.borderChrome`）在 List 行拼接下没有做（每行独立描边会在行与
-//    行之间露缝）——只做了首行顶部圆角/末行底部圆角 + 发丝分隔线，视觉上仍是「一张白卡」，
-//    只是没有外描边和整卡投影。
-
+// **拖拽引擎怎么接**：编辑态每一行用 `.background(GeometryReader...)` 把自己的屏幕帧
+// （`RowFrame`）经 `RowFramePreferenceKey` 收进 `rowFrames`（命名坐标空间 `editCoordSpace`）。
+// ≡ 手柄（唯一的拖动发起点）挂 `DragGesture(minimumDistance: 2, coordinateSpace: .named(...))`：
+// `onChanged` 里把当前手指 Y 喂给 `PromptDragEngine.dropIndex`，算出的 `DropTarget` 变了就
+// `withAnimation(.easeOut(duration: 0.15))` 更新；被拖的那一行整个从渲染流里摘掉（`editRows()`
+// 直接跳过它，不留 opacity-0 占位——唯一的"占位"是当前 `DropTarget` 对应位置插入的 44pt
+// 缝隙），浮起的视觉在 `.overlay` 里跟着 `translation` 走。松手（`onEnded`）→
+// `PromptDragEngine.apply` 落到 `draft`，清空拖拽状态。
 struct PromptManagerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var store = PromptStore.shared
@@ -67,10 +56,10 @@ struct PromptManagerView: View {
     /// chevron，改成 Button + item-based `.navigationDestination`（和 renameTarget 同一个模式）。
     @State private var editTarget: PromptNode?
     /// Task 6：导入成功后高亮的新行 id，2 秒后自动清空（`#FBF3E9` 底渐隐）；
-    /// `ScrollViewReader` 配合它把列表滚到新行——见 body 里的 ScrollViewReader + rowView。
+    /// `ScrollViewReader` 配合它把列表滚到新行——见 normalModeList 里的 ScrollViewReader + rowView。
     @State private var highlightedID: String?
 
-    // MARK: - Task 7：排序态
+    // MARK: - 排序态（Task 7 建立，Task 1 只换了拖拽物理，生命周期/落盘全部保留）
 
     @State private var reordering = false
     /// 排序态本地草稿——所有拖动/拖进拖出只改这份，「完成」才整树 PUT（见文件头长注释）。
@@ -81,96 +70,24 @@ struct PromptManagerView: View {
     /// 进入排序态时的 store.items 扁平 id 序列——用于检测期间的并发 import/深链更新。
     @State private var reorderBaseline: [String] = []
     @State private var showCancelConfirm = false
-    /// 跨组拖拽实时高亮：当前正被拖拽悬停的分组行 id（`.dropDestination` 的 isTargeted 回调）。
-    @State private var targetedGroupID: String?
+
+    // MARK: - 第 6 轮拖拽（6a/6b，Task 1）：≡ 手柄驱动的自定义拖拽状态
+
+    /// 编辑态每一行当前的屏幕帧，命名坐标空间 `editCoordSpace`，`RowFramePreferenceKey` 收集。
+    @State private var rowFrames: [RowFrame] = []
+    /// 非 nil = 有一行正被 ≡ 手柄拖着走。
+    @State private var editDrag: EditDragState?
+    /// `PromptDragEngine.dropIndex` 算出的当前落点——驱动缝隙动画 + 松手落地。
+    @State private var dropTarget: DropTarget = .none
 
     var body: some View {
         VStack(spacing: 0) {
             header
 
-            ScrollViewReader { proxy in
-                List {
-                    Section {
-                        Text(introText)
-                            .font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
-                            .listRowInsets(EdgeInsets(top: 6, leading: 4, bottom: 2, trailing: 4))
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                    }
-
-                    if store.loading && store.items.isEmpty {
-                        Section {
-                            HStack { Spacer(); ProgressView().tint(Theme.accent); Spacer() }
-                                .padding(.top, 40)
-                                .listRowInsets(EdgeInsets())
-                                .listRowSeparator(.hidden)
-                                .listRowBackground(Color.clear)
-                        }
-                    } else if let err = store.error, store.items.isEmpty {
-                        Section {
-                            Text(err).font(.system(size: 14)).foregroundStyle(Theme.faint)
-                                .frame(maxWidth: .infinity, alignment: .center).padding(.top, 40)
-                                .listRowInsets(EdgeInsets())
-                                .listRowSeparator(.hidden)
-                                .listRowBackground(Color.clear)
-                        }
-                    } else {
-                        if store.error != nil {
-                            Section {
-                                HStack(spacing: 12) {
-                                    Text("加载失败，显示的可能不是最新列表")
-                                        .font(.system(size: 12.5))
-                                        .foregroundStyle(Color(hex: "B98A3E"))
-                                    Spacer()
-                                    Button {
-                                        Task { await store.refresh() }
-                                    } label: {
-                                        Text("重试")
-                                            .font(.system(size: 13))
-                                            .foregroundStyle(Theme.accent)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                                .padding(10)
-                                .background(Color(hex: "FBF3E9"), in: RoundedRectangle(cornerRadius: 8))
-                                .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 10, trailing: 4))
-                                .listRowSeparator(.hidden)
-                                .listRowBackground(Color.clear)
-                            }
-                        }
-                        Section {
-                            if reordering { reorderCardSection } else { normalCardSection }
-                        }
-
-                        if !reordering {
-                            Section {
-                                importBox
-                                    .listRowInsets(EdgeInsets())
-                                    .listRowSeparator(.hidden)
-                                    .listRowBackground(Color.clear)
-
-                                Button {
-                                    showRestoreConfirm = true
-                                } label: {
-                                    Text("恢复默认提示词").font(.system(size: 13)).foregroundStyle(Theme.accent)
-                                }
-                                .frame(maxWidth: .infinity)
-                                .padding(.top, 4)
-                                .listRowInsets(EdgeInsets())
-                                .listRowSeparator(.hidden)
-                                .listRowBackground(Color.clear)
-                            }
-                        }
-                    }
-                }
-                .listStyle(.plain)
-                .scrollContentBackground(.hidden)
-                .listSectionSpacing(10)
-                .environment(\.editMode, .constant(reordering ? .active : .inactive))
-                .onChange(of: highlightedID) { _, id in
-                    guard let id else { return }
-                    withAnimation { proxy.scrollTo(id, anchor: .center) }
-                }
+            if reordering {
+                editModeScrollView
+            } else {
+                normalModeList
             }
         }
         .background(Theme.appBG.ignoresSafeArea())
@@ -236,7 +153,7 @@ struct PromptManagerView: View {
 
     private var introText: String {
         reordering
-            ? String(localized: "长按左侧手柄拖动排序；把动作拖到分组行上收进该组；组内项左滑「移出分组」。")
+            ? String(localized: "拖 ≡ 手柄调顺序；拖到 folder 标题收进去。")
             : String(localized: "一套指令，长按文字或图片时按『适用于』自动筛选。改过的系统项标『已自定义』，自己建的标『自建』。")
     }
 
@@ -247,7 +164,7 @@ struct PromptManagerView: View {
         }
     }
 
-    // MARK: - 顶栏（Task 7：排序态下左「取消」右「完成」，替换 ← / ＋）
+    // MARK: - 顶栏（Task 7：排序态下左「取消」右「完成」，替换 ← / ＋；6a：返回方块隐藏）
 
     private var header: some View {
         HStack(spacing: 14) {
@@ -285,7 +202,90 @@ struct PromptManagerView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - 正常态：行（顶层项 + 展开的组内子项，摊平成一个数组统一画分隔线/圆角）
+    // MARK: - 正常态：List（不动）—— 行 = 顶层项 + 展开的组内子项，摊平成一个数组统一画分隔线/圆角
+
+    private var normalModeList: some View {
+        ScrollViewReader { proxy in
+            List {
+                Section {
+                    Text(introText)
+                        .font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 4, bottom: 2, trailing: 4))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                }
+
+                if store.loading && store.items.isEmpty {
+                    Section {
+                        HStack { Spacer(); ProgressView().tint(Theme.accent); Spacer() }
+                            .padding(.top, 40)
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                    }
+                } else if let err = store.error, store.items.isEmpty {
+                    Section {
+                        Text(err).font(.system(size: 14)).foregroundStyle(Theme.faint)
+                            .frame(maxWidth: .infinity, alignment: .center).padding(.top, 40)
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                    }
+                } else {
+                    if store.error != nil {
+                        Section {
+                            HStack(spacing: 12) {
+                                Text("加载失败，显示的可能不是最新列表")
+                                    .font(.system(size: 12.5))
+                                    .foregroundStyle(Color(hex: "B98A3E"))
+                                Spacer()
+                                Button {
+                                    Task { await store.refresh() }
+                                } label: {
+                                    Text("重试")
+                                        .font(.system(size: 13))
+                                        .foregroundStyle(Theme.accent)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            .padding(10)
+                            .background(Color(hex: "FBF3E9"), in: RoundedRectangle(cornerRadius: 8))
+                            .listRowInsets(EdgeInsets(top: 0, leading: 4, bottom: 10, trailing: 4))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                        }
+                    }
+                    Section {
+                        normalCardSection
+                    }
+                    Section {
+                        importBox
+                            .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+
+                        Button {
+                            showRestoreConfirm = true
+                        } label: {
+                            Text("恢复默认提示词").font(.system(size: 13)).foregroundStyle(Theme.accent)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 4)
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .listSectionSpacing(10)
+            .onChange(of: highlightedID) { _, id in
+                guard let id else { return }
+                withAnimation { proxy.scrollTo(id, anchor: .center) }
+            }
+        }
+    }
 
     private enum Row: Identifiable {
         case action(PromptNode, indent: CGFloat)
@@ -408,157 +408,262 @@ struct PromptManagerView: View {
         }
     }
 
-    // MARK: - 排序态：顶层 + 组内各自 onMove，跨组用 draggable/dropDestination
+    // MARK: - 编辑态（第 6 轮拖拽，6a/6b）：ScrollView + 手写卡片，≡ 手柄驱动 PromptDragEngine
 
-    @ViewBuilder private var reorderCardSection: some View {
-        let visibleIDs = reorderVisibleIDs
-        ForEach(Array(draft.enumerated()), id: \.element.id) { _, node in
+    private let editCoordSpace = "promptManagerEditRows"
+
+    private var editModeScrollView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(introText)
+                    .font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
+                    .padding(.horizontal, 19)
+                    .padding(.top, 6)
+                editList
+            }
+            .padding(.bottom, 24)
+        }
+    }
+
+    /// 编辑态当前应渲染的行序列：被拖的那一行整个从流里摘除（跟手的浮层已经在 overlay 里
+    /// 画着它），当前 `dropTarget` 若是 `.reorder`，在对应 scope 里插入一个 44pt 缝隙占位；
+    /// `.intoGroup`/`.outOfGroup`/`.none` 不出缝隙——folder 张口 / 移出区是 Task 2 的活，
+    /// Task 1 阶段悬停在这些落点上时列表就正常收拢，松手也不生效。
+    private func editRows() -> [EditRow] {
+        var topLevelChunks: [[EditRow]] = []
+
+        for node in draft {
+            if node.id == editDrag?.id { continue } // 被拖的顶层项（action 或 group）整体隐去
             if node.type == "group" {
-                reorderGroupRow(node)
-                    .background(Color.white)
-                    .clipShape(cardCorner(isFirst: node.id == visibleIDs.first,
-                                           isLast: node.id == visibleIDs.last && !expandedGroups.contains(node.id)))
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-                    .listRowSeparatorTint(Theme.dividerInCard)
-
+                var chunk: [EditRow] = [.group(node)]
                 if expandedGroups.contains(node.id) {
-                    ForEach(Array((node.children ?? []).enumerated()), id: \.element.id) { _, child in
-                        reorderChildRow(child)
-                            .background(Color.white)
-                            .clipShape(cardCorner(isFirst: false, isLast: child.id == visibleIDs.last))
-                            .listRowInsets(EdgeInsets())
-                            .listRowBackground(Color.clear)
-                            .listRowSeparatorTint(Theme.dividerInCard)
+                    var children: [EditRow] = []
+                    for child in node.children ?? [] {
+                        if child.id == editDrag?.id { continue } // 被拖的组内子项隐去
+                        children.append(.child(child, parent: node.id))
                     }
-                    .onMove { from, to in moveWithinGroup(groupID: node.id, from: from, to: to) }
+                    if case .reorder(let index, let scope) = dropTarget, scope == .group(node.id) {
+                        children.insert(.gap, at: min(max(index, 0), children.count))
+                    }
+                    chunk += children
                 }
+                topLevelChunks.append(chunk)
             } else {
-                reorderActionRow(node)
-                    .background(Color.white)
-                    .clipShape(cardCorner(isFirst: node.id == visibleIDs.first, isLast: node.id == visibleIDs.last))
-                    .listRowInsets(EdgeInsets())
-                    .listRowBackground(Color.clear)
-                    .listRowSeparatorTint(Theme.dividerInCard)
+                topLevelChunks.append([.action(node)])
             }
         }
-        .onMove(perform: moveTopLevel)
+
+        if case .reorder(let index, .topLevel) = dropTarget {
+            let insertAt = min(max(index, 0), topLevelChunks.count)
+            topLevelChunks.insert([.gap], at: insertAt)
+        }
+
+        return topLevelChunks.flatMap { $0 }
     }
 
-    /// 排序态当前实际可见的行 id，按渲染顺序——只用来判断哪一行是"整卡最外层"的第一行/
-    /// 最后一行（圆角），和具体的 ForEach/onMove 拆分结构无关。
-    private var reorderVisibleIDs: [String] {
-        draft.flatMap { node -> [String] in
-            guard node.type == "group" else { return [node.id] }
-            var ids = [node.id]
-            if expandedGroups.contains(node.id) { ids += (node.children ?? []).map(\.id) }
-            return ids
+    private var editList: some View {
+        let rows = editRows()
+        return VStack(spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
+                if isGapRow(row) {
+                    dropGapView
+                } else {
+                    let isFirst = i == 0 || isGapRow(rows[i - 1])
+                    let isLast = i == rows.count - 1 || isGapRow(rows[i + 1])
+                    editRowContent(row)
+                        .background(Color.white)
+                        .clipShape(cardCorner(isFirst: isFirst, isLast: isLast))
+                        .overlay(alignment: .bottom) {
+                            if !isLast {
+                                Rectangle().fill(Theme.dividerInCard).frame(height: 1)
+                            }
+                        }
+                }
+            }
+        }
+        .opacity(editDrag == nil ? 1 : 0.9) // 6b：拖动中其余行 opacity 0.9（被拖行已从流中摘除，不在这些行里）
+        .coordinateSpace(name: editCoordSpace)
+        .overlay(alignment: .topLeading) { floatingDragOverlay }
+        .onPreferenceChange(RowFramePreferenceKey.self) { rowFrames = $0 }
+    }
+
+    private func isGapRow(_ row: EditRow) -> Bool {
+        if case .gap = row { return true }
+        return false
+    }
+
+    @ViewBuilder
+    private func editRowContent(_ row: EditRow) -> some View {
+        switch row {
+        case .group(let node): editGroupRow(node)
+        case .action(let node): editActionRow(node)
+        case .child(let node, let parent): editChildRow(node, parent: parent)
+        case .gap: EmptyView()
         }
     }
 
-
-    private func reorderGroupRow(_ node: PromptNode) -> some View {
+    /// 6a：folder 默认收起（`enterReorder` 已把 `expandedGroups` 清空）——行 = 手柄 + folder
+    /// 图标（30×30 `#F1ECE3`，图标 `#7A6E5C`）+ 名字 15 + 「N 项」12 `#b8ae9e` + ⌄ `#CFC6B6`。
+    /// 6d：点标题仍可展开/收起（组内调序在 Task 1 已可用，收纳/移出落点区留 Task 2）。
+    private func editGroupRow(_ node: PromptNode) -> some View {
         let expanded = expandedGroups.contains(node.id)
-        let isTargeted = targetedGroupID == node.id
         return HStack(spacing: 12) {
-            iconTile(bg: Theme.tileNeutral, symbol: "folder", fg: Theme.secondary)
-            HStack(spacing: 6) {
-                Text(node.label).font(.system(size: 15)).foregroundStyle(Theme.ink)
-                originBadge(node.origin)
-                Text("分组 · \(node.children?.count ?? 0) 项")
-                    .font(.system(size: 12)).foregroundStyle(Theme.sectionLabel)
-            }
+            editHandle(active: editDrag?.id == node.id)
+                .frame(width: 30, height: 44)
+                .contentShape(Rectangle())
+                .gesture(dragGesture(for: node.id, kind: .groupTitle, label: node.label, symbol: "folder"))
+            RoundedRectangle(cornerRadius: Theme.R.tile)
+                .fill(Theme.tileNeutral)
+                .frame(width: 30, height: 30)
+                .overlay(Image(systemName: "folder").font(.system(size: 13)).foregroundStyle(Color(hex: "7A6E5C")))
+            Text(node.label).font(.system(size: 15)).foregroundStyle(Theme.ink)
             Spacer(minLength: 8)
-            if isTargeted {
-                Text("拖到这里收进分组")
-                    .font(.system(size: 11, weight: .medium)).foregroundStyle(Color(hex: "D8A25B"))
-            } else {
-                settingsChevron.rotationEffect(.degrees(expanded ? 90 : 0))
+            if !expanded {
+                Text("\(node.children?.count ?? 0) 项")
+                    .font(.system(size: 12)).foregroundStyle(Color(hex: "b8ae9e"))
             }
+            Image(systemName: "chevron.down")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Color(hex: "CFC6B6"))
+                .rotationEffect(.degrees(expanded ? 180 : 0))
         }
         .padding(.vertical, 12).padding(.horizontal, 15)
         .contentShape(Rectangle())
-        .overlay(
-            RoundedRectangle(cornerRadius: 6)
-                .strokeBorder(Color(hex: "D8A25B"), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-                .opacity(isTargeted ? 1 : 0)
-                .padding(2)
-        )
         .onTapGesture {
             withAnimation(.easeInOut(duration: 0.18)) {
                 if expanded { expandedGroups.remove(node.id) } else { expandedGroups.insert(node.id) }
             }
         }
-        .draggable(node.id) {
-            reorderDragPreview(label: node.label, symbol: "folder")
-        }
-        .dropDestination(for: String.self) { droppedIDs, _ in
-            handleDropIntoGroup(droppedIDs, groupID: node.id)
-        } isTargeted: { targeted in
-            targetedGroupID = targeted ? node.id : (targetedGroupID == node.id ? nil : targetedGroupID)
-        }
+        .background(rowFramePublisher(id: node.id, kind: .groupTitle))
     }
 
-    private func reorderActionRow(_ node: PromptNode) -> some View {
-        HStack(alignment: .top, spacing: 12) {
+    /// 6a：行右尖角/适用于标/origin 标全部隐藏——编辑态行 = 手柄 + 图标块 + 名字。
+    private func editActionRow(_ node: PromptNode) -> some View {
+        HStack(spacing: 12) {
+            editHandle(active: editDrag?.id == node.id)
+                .frame(width: 30, height: 44)
+                .contentShape(Rectangle())
+                .gesture(dragGesture(for: node.id, kind: .action, label: node.label, symbol: actionSymbol(node)))
             actionTile(node)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(node.label).font(.system(size: 15)).foregroundStyle(Theme.ink)
-                    originBadge(node.origin)
-                }
-                AppliesToBadges(appliesTo: node.appliesTo ?? [])
-            }
+            Text(node.label).font(.system(size: 15)).foregroundStyle(Theme.ink)
             Spacer(minLength: 8)
         }
         .padding(.vertical, 12).padding(.horizontal, 15)
-        .contentShape(Rectangle())
-        .draggable(node.id) {
-            reorderDragPreview(label: node.label, symbol: "text.quote")
-        }
+        .background(rowFramePublisher(id: node.id, kind: .action))
     }
 
-    /// 组内子行（缩进 16pt）：多一个左滑「移出分组」——真正的跨 Section 拖拽落点（缝隙间
-    /// drop target）复杂度明显更高，这里用 swipe 做保真度取舍（文件头长注释已记录）。
-    private func reorderChildRow(_ node: PromptNode) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            actionTile(node)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(node.label).font(.system(size: 15)).foregroundStyle(Theme.ink)
-                    originBadge(node.origin)
-                }
-                AppliesToBadges(appliesTo: node.appliesTo ?? [])
-            }
+    /// 6d：组内行——缩进 30、图标 26×26/圆角 6、名字 14.5，自带 ≡ 手柄。组内互相调序走同一套
+    /// `PromptDragEngine`（scope `.group`），Task 1 已完整可用；拖进/挪出组的落点视觉
+    /// （6c 张口 + 6d「移到分组外」）是 Task 2 的活——这里手指越出组边界只是不落地，
+    /// 松手行弹回原位（`commitDrag` 对 `.intoGroup`/`.outOfGroup` 是 no-op，标了 `// Task 2`）。
+    private func editChildRow(_ node: PromptNode, parent: String) -> some View {
+        HStack(spacing: 10) {
+            editHandle(active: editDrag?.id == node.id)
+                .frame(width: 26, height: 40)
+                .contentShape(Rectangle())
+                .gesture(dragGesture(for: node.id, kind: .child(parent: parent), label: node.label, symbol: actionSymbol(node)))
+            iconTile(bg: isImageOnly(node) ? Theme.accentSoft : Theme.tileNeutral,
+                     symbol: actionSymbol(node),
+                     fg: isImageOnly(node) ? Theme.accent : Theme.secondary,
+                     size: 26, iconSize: 12)
+            Text(node.label).font(.system(size: 14.5)).foregroundStyle(Theme.ink)
             Spacer(minLength: 8)
         }
-        .padding(.leading, 16)
-        .padding(.vertical, 12).padding(.horizontal, 15)
-        .contentShape(Rectangle())
-        .draggable(node.id) {
-            reorderDragPreview(label: node.label, symbol: "text.quote")
-        }
-        .swipeActions(edge: .trailing) {
-            Button {
-                moveChildOut(childID: node.id)
-            } label: {
-                Label(String(localized: "移出分组"), systemImage: "arrow.up.right.square")
-            }
-            .tint(Color(hex: "D8A25B"))
+        .padding(.leading, 30).padding(.vertical, 10).padding(.trailing, 15)
+        .background(rowFramePublisher(id: node.id, kind: .child(parent: parent)))
+    }
+
+    private func editHandle(active: Bool) -> some View {
+        Image(systemName: "line.3.horizontal")
+            .font(.system(size: 16, weight: active ? .semibold : .medium))
+            .foregroundStyle(active ? Color(hex: "D8A25B") : Color(hex: "C9C0B1"))
+    }
+
+    private func rowFramePublisher(id: String, kind: RowFrame.Kind) -> some View {
+        GeometryReader { geo in
+            Color.clear.preference(key: RowFramePreferenceKey.self,
+                                    value: [RowFrame(id: id, frame: geo.frame(in: .named(editCoordSpace)), kind: kind)])
         }
     }
 
-    /// `.draggable` 的拖动预览——onMove 拿不到"当前哪行在被拖"的状态做不了逐行 scale/投影，
-    /// 这条跨组拖拽路径是唯一能给出真实拖动态视觉反馈的地方，按设计稿的投影/描边 token 做。
-    private func reorderDragPreview(label: String, symbol: String) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: symbol).font(.system(size: 13)).foregroundStyle(Theme.accent)
-            Text(label).font(.system(size: 14, weight: .medium)).foregroundStyle(Theme.ink)
+    /// 6b：琥珀虚线缝隙——高 44、margin 5×10、1.5pt dashed `#D8A25B`、圆角 8、底 `#FBF3E9`、无文字。
+    private var dropGapView: some View {
+        RoundedRectangle(cornerRadius: 8)
+            .strokeBorder(Color(hex: "D8A25B"), style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
+            .background(Color(hex: "FBF3E9"), in: RoundedRectangle(cornerRadius: 8))
+            .frame(height: 44)
+            .padding(.vertical, 5)
+            .padding(.horizontal, 10)
+            .transition(.opacity)
+    }
+
+    /// 6b：浮起行跟手——scale(1.03)、投影 `0 14 30 rgba(60,48,30,0.26)`、边 1px `#EBD9B8`、
+    /// 圆角 9、手柄 `#D8A25B`、名字 semibold。位置 = 起点帧中心 + 手指位移（不是直接贴手指，
+    /// 保持抓取点相对行的位置不跳）。
+    @ViewBuilder
+    private var floatingDragOverlay: some View {
+        if let d = editDrag {
+            HStack(spacing: 12) {
+                editHandle(active: true).frame(width: 30, height: 44)
+                iconTile(bg: Theme.tileNeutral, symbol: d.symbol, fg: Theme.secondary)
+                Text(d.label).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.ink)
+                Spacer(minLength: 8)
+            }
+            .padding(.vertical, 12).padding(.horizontal, 15)
+            .frame(width: d.originFrame.width, height: d.originFrame.height, alignment: .leading)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 9))
+            .overlay(RoundedRectangle(cornerRadius: 9).stroke(Color(hex: "EBD9B8"), lineWidth: 1))
+            .shadow(color: Color(.sRGB, red: 60 / 255, green: 48 / 255, blue: 30 / 255, opacity: 0.26), radius: 15, x: 0, y: 14)
+            .scaleEffect(1.03)
+            .position(x: d.originFrame.midX, y: d.originFrame.midY + d.translation.height)
+            .allowsHitTesting(false)
         }
-        .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color(hex: "EBD9B8"), lineWidth: 1))
-        .shadow(color: Color(.sRGB, red: 60 / 255, green: 48 / 255, blue: 30 / 255, opacity: 0.22), radius: 13, x: 0, y: 6)
+    }
+
+    private func actionSymbol(_ node: PromptNode) -> String {
+        isImageOnly(node) ? "photo" : "text.quote"
+    }
+
+    private func isImageOnly(_ node: PromptNode) -> Bool {
+        (node.appliesTo ?? []) == ["image"]
+    }
+
+    /// ≡ 手柄的拖拽手势——**唯一的拖动发起点**，挂在手柄的 30×44（组内行 26×40）命中区上，
+    /// 不挂在整行，行体的其它点击（folder 标题展开/收起）互不打架。
+    private func dragGesture(for id: String, kind: RowFrame.Kind, label: String, symbol: String) -> some Gesture {
+        DragGesture(minimumDistance: 2, coordinateSpace: .named(editCoordSpace))
+            .onChanged { value in
+                if editDrag == nil {
+                    guard let origin = rowFrames.first(where: { $0.id == id })?.frame else { return }
+                    editDrag = EditDragState(id: id, kind: kind, label: label, symbol: symbol, originFrame: origin)
+                    UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                }
+                editDrag?.translation = value.translation
+                editDrag?.fingerY = value.location.y
+                recomputeDropTarget()
+            }
+            .onEnded { _ in commitDrag() }
+    }
+
+    private func recomputeDropTarget() {
+        guard let d = editDrag else { return }
+        let target = PromptDragEngine.dropIndex(fingerY: d.fingerY, rows: rowFrames, draggedID: d.id, draggedKind: d.kind, items: draft)
+        guard target != dropTarget else { return }
+        withAnimation(.easeOut(duration: 0.15)) { dropTarget = target }
+    }
+
+    private func commitDrag() {
+        guard let d = editDrag else { return }
+        if case .reorder = dropTarget, let moved = PromptDragEngine.apply(dropTarget, draggedID: d.id, items: draft) {
+            draft = moved
+        }
+        // .intoGroup / .outOfGroup / .none：Task 1 阶段松手不落地（Task 2 接 6c 张口收纳 +
+        // 6d「移到分组外」落点区的视觉与落地）。
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        withAnimation(.easeOut(duration: 0.15)) {
+            editDrag = nil
+            dropTarget = .none
+        }
     }
 
     // MARK: - 排序态：进入 / 完成 / 取消
@@ -568,7 +673,9 @@ struct PromptManagerView: View {
         savedExpandedGroups = expandedGroups
         draft = store.items
         reorderBaseline = PromptLogic.flattenIDs(store.items)
-        expandedGroups = []
+        expandedGroups = [] // 6a：进编辑态 folder 默认全部收起
+        editDrag = nil
+        dropTarget = .none
         reordering = true
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
@@ -584,6 +691,8 @@ struct PromptManagerView: View {
     private func exitReorderDiscarding() {
         draft = []
         expandedGroups = savedExpandedGroups
+        editDrag = nil
+        dropTarget = .none
         reordering = false
     }
 
@@ -600,40 +709,11 @@ struct PromptManagerView: View {
                 showToast(String(localized: "保存失败，已恢复（\(err)）"))
             } else {
                 expandedGroups = savedExpandedGroups
+                editDrag = nil
+                dropTarget = .none
                 reordering = false
             }
         }
-    }
-
-    private func moveTopLevel(from: IndexSet, to: Int) {
-        guard let f = from.first else { return }
-        draft = PromptLogic.moving(draft, fromTop: f, toTop: to)
-    }
-
-    private func moveWithinGroup(groupID: String, from: IndexSet, to: Int) {
-        guard let f = from.first else { return }
-        draft = PromptLogic.movingWithinGroup(draft, groupID: groupID, fromChild: f, toChild: to)
-    }
-
-    /// 拖进分组：`PromptLogic.movingIntoGroup` 返回 nil = 两级封顶命中（被拖的是个 group）
-    /// 或目标/来源找不到——忽略这次 drop（返回 false）+ 触觉反馈；成功则落地并自动展开
-    /// 目标组，方便立刻看到新成员落位，返回 true。
-    @discardableResult
-    private func handleDropIntoGroup(_ droppedIDs: [String], groupID: String) -> Bool {
-        guard let actionID = droppedIDs.first else { return false }
-        guard let moved = PromptLogic.movingIntoGroup(draft, actionID: actionID, groupID: groupID) else {
-            UINotificationFeedbackGenerator().notificationOccurred(.warning)
-            return false
-        }
-        withAnimation { draft = moved }
-        expandedGroups.insert(groupID)
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        return true
-    }
-
-    private func moveChildOut(childID: String) {
-        draft = PromptLogic.movingOutOfGroup(draft, childID: childID, toTopIndex: draft.count)
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
     }
 
     // MARK: - 图标块 / 标
@@ -647,10 +727,9 @@ struct PromptManagerView: View {
 
     /// 图标按内容挑：只适用于图片的动作用 photo/赭红，其余（仅文字或都行）用 text.quote/中性灰。
     private func actionTile(_ node: PromptNode) -> some View {
-        let imageOnly = (node.appliesTo ?? []) == ["image"]
-        return iconTile(bg: imageOnly ? Theme.accentSoft : Theme.tileNeutral,
-                         symbol: imageOnly ? "photo" : "text.quote",
-                         fg: imageOnly ? Theme.accent : Theme.secondary)
+        iconTile(bg: isImageOnly(node) ? Theme.accentSoft : Theme.tileNeutral,
+                  symbol: isImageOnly(node) ? "photo" : "text.quote",
+                  fg: isImageOnly(node) ? Theme.accent : Theme.secondary)
     }
 
     @ViewBuilder private func originBadge(_ origin: String) -> some View {
@@ -756,6 +835,44 @@ struct PromptManagerView: View {
                 .padding(.bottom, 32)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
         }
+    }
+}
+
+// MARK: - 第 6 轮拖拽（Task 1）：编辑态私有辅助类型
+
+/// 正在被 ≡ 手柄拖着走的那一行的状态——起点帧 + 实时位移，驱动浮层跟手与 `dropIndex` 判定。
+private struct EditDragState {
+    let id: String
+    let kind: RowFrame.Kind
+    let label: String
+    let symbol: String
+    let originFrame: CGRect
+    var translation: CGSize = .zero
+    var fingerY: CGFloat = 0
+}
+
+/// 编辑态渲染用的行——比 `PromptNode` 多一个 `.gap`（当前落点的琥珀虚线缝隙占位）。
+private enum EditRow: Identifiable {
+    case group(PromptNode)
+    case action(PromptNode)
+    case child(PromptNode, parent: String)
+    case gap
+
+    var id: String {
+        switch self {
+        case .group(let n): return n.id
+        case .action(let n): return n.id
+        case .child(let n, _): return n.id
+        case .gap: return "‹gap›" // 同一时刻至多一个缝隙，固定 id 足够
+        }
+    }
+}
+
+/// 收集编辑态每一行在 `editCoordSpace` 命名坐标空间里的屏幕帧，喂给 `PromptDragEngine`。
+private struct RowFramePreferenceKey: PreferenceKey {
+    static var defaultValue: [RowFrame] { [] } // 计算属性，不是存储的可变全局状态——Swift 6 并发检查要求
+    static func reduce(value: inout [RowFrame], nextValue: () -> [RowFrame]) {
+        value += nextValue()
     }
 }
 
