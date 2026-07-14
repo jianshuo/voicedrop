@@ -6,7 +6,7 @@ import UIKit
 // MARK: - Models
 
 /// One mined article (v2 schema: many per recording).
-struct MinedArticle: Decodable, Identifiable {
+struct MinedArticle: Codable, Identifiable {
     let title: String
     let body: String
     var style: Int?                 // 文风版本 per-article 字段（legacy 文章在 body 注释里，读回退）
@@ -115,6 +115,65 @@ enum ArticleBody {
             if !text.isEmpty { out.append(.text(text)) }
         }
         return out
+    }
+
+    /// Replace body-row line `n`'s plain text (1-based, matching `bodyRows`'s 第N行
+    /// counter in RecordingDetailView — text paragraphs AND `[[photo:…]]` marker lines
+    /// share one continuous count) with `newText`. Every other character of `body` is
+    /// left byte-identical — only line `n`'s own trimmed substring is spliced out and
+    /// replaced, so sibling paragraphs, blank-line spacing, and every other
+    /// `[[photo:…]]` marker (inline or on its own line) survive untouched. Walks the
+    /// SAME text/photo segmentation `bodyRows` uses (not a raw "\n" split) so an inline
+    /// marker inside a text run still counts as its own line, keeping numbering in sync
+    /// with what the user saw when they long-pressed. Returns `body` unchanged if `n`
+    /// is out of range (shouldn't happen — the UI only offers 编辑 on rendered rows).
+    static func replacingLine(_ n: Int, with newText: String, in body: String) -> String {
+        let stripped = stripOriginComment(body)
+        let ns = stripped as NSString
+        let full = NSRange(location: 0, length: ns.length)
+        let matches = marker.matches(in: stripped, range: full)
+        var lineNo = 0
+        var cursor = 0
+
+        // Walk one text run (between/around markers), splitting on "\n" and counting
+        // each non-blank (after trimming) line as one 第N行 slot. Returns the exact
+        // NSRange of line `n`'s trimmed content within `stripped`, if it falls in here.
+        func findLine(in range: NSRange) -> NSRange? {
+            var lineStart = range.location
+            let end = range.location + range.length
+            while lineStart <= end {
+                let nl = ns.range(of: "\n", options: [], range: NSRange(location: lineStart, length: end - lineStart))
+                let lineEnd = nl.location == NSNotFound ? end : nl.location
+                let lineRange = NSRange(location: lineStart, length: lineEnd - lineStart)
+                let raw = ns.substring(with: lineRange)
+                if !raw.trimmingCharacters(in: .whitespaces).isEmpty {
+                    lineNo += 1
+                    if lineNo == n {
+                        let leadWS = raw.prefix(while: { $0 == " " || $0 == "\t" }).count
+                        let trailWS = raw.reversed().prefix(while: { $0 == " " || $0 == "\t" }).count
+                        return NSRange(location: lineRange.location + leadWS,
+                                       length: lineRange.length - leadWS - trailWS)
+                    }
+                }
+                if nl.location == NSNotFound { break }
+                lineStart = nl.location + 1
+            }
+            return nil
+        }
+
+        for m in matches {
+            if m.range.location > cursor {
+                let chunk = NSRange(location: cursor, length: m.range.location - cursor)
+                if let hit = findLine(in: chunk) { return ns.replacingCharacters(in: hit, with: newText) }
+            }
+            lineNo += 1   // the [[photo:…]] marker itself consumes one 第N行 slot
+            cursor = m.range.location + m.range.length
+        }
+        if cursor < ns.length {
+            let chunk = NSRange(location: cursor, length: ns.length - cursor)
+            if let hit = findLine(in: chunk) { return ns.replacingCharacters(in: hit, with: newText) }
+        }
+        return stripped
     }
 
     /// Body with all `[[photo:N]]` markers AND the origin comment removed — for places
@@ -582,6 +641,26 @@ final class LibraryStore {
         } catch { return nil }
     }
 
+    /// Same GET as `fetchDoc` but returns the raw JSON bytes untouched — used right
+    /// before a 键盘精修 (keyboard paragraph edit) save so the PUT can merge into the
+    /// server's ACTUAL current JSON object rather than a client-reconstructed
+    /// `ArticleDoc`. `ArticleDoc` only models the fields this app reads (it has no
+    /// `schema`/`status`/`model`, for instance) — re-encoding a typed struct back to
+    /// the server would silently drop any field it doesn't know about. Merging on the
+    /// raw dictionary instead means every field survives untouched except the one key
+    /// (`articles`) this feature actually changes.
+    func fetchDocRaw(_ rec: Recording) async -> Data? {
+        guard rec.hasArticles, !token.isEmpty else { return nil }
+        let enc = rec.stem.urlPathEncoded
+        guard let url = URL(string: "\(base.absoluteString)/articles/\(enc)") else { return nil }
+        var req = URLRequest(url: url)
+        req.setBearer(token)
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            return resp.isOK ? data : nil
+        } catch { return nil }
+    }
+
     /// Fetch the human-readable reason from a `.empty` marker (silent / corrupt /
     /// no-speech). Returns nil if the marker is missing or unreadable.
     func fetchEmptyReason(_ rec: Recording) async -> String? {
@@ -845,6 +924,37 @@ final class LibraryStore {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = body
         _ = try? await URLSession.shared.data(for: req)
+    }
+
+    /// Verbatim (non-AI) paragraph save for 键盘精修: PUTs `articles` back to the same
+    /// `PUT /articles/<stem>` endpoint the miner and the AI edit tool already use
+    /// (`writeArticleDoc` — always appends a new version and bumps `head`), so
+    /// undo/redo and the version history just work, with zero LLM involvement (exact
+    /// text in, exact text stored — no rewriting risk). Re-fetches the doc's raw JSON
+    /// fresh right before merging (keeps the staleness window to this one call, not
+    /// the whole screen visit) and replaces ONLY its top-level `articles` key, so any
+    /// other field — including ones `ArticleDoc` doesn't model — survives untouched.
+    func saveArticles(_ rec: Recording, articles: [MinedArticle]) async -> Bool {
+        guard !token.isEmpty, rec.hasArticles else { return false }
+        guard let raw = await fetchDocRaw(rec),
+              var obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any]
+        else { return false }
+        guard let articlesData = try? JSONEncoder().encode(articles),
+              let articlesJSON = try? JSONSerialization.jsonObject(with: articlesData)
+        else { return false }
+        obj["articles"] = articlesJSON
+        guard let body = try? JSONSerialization.data(withJSONObject: obj) else { return false }
+        let enc = rec.stem.urlPathEncoded
+        guard let url = URL(string: "\(base.absoluteString)/articles/\(enc)") else { return false }
+        var req = URLRequest(url: url)
+        req.httpMethod = "PUT"
+        req.setBearer(token)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = body
+        do {
+            let (_, resp) = try await URLSession.shared.data(for: req)
+            return resp.isOK
+        } catch { return false }
     }
 
     /// Move the head pointer on the server (undo/redo sync). Fire-and-forget: returns

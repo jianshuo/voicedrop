@@ -1,6 +1,59 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-07-13（服务端已部署 + 本 repo 主界面切轻量接口）
+Last updated: 2026-07-14（新功能：键盘精修，代码已完成，**未做真机手测**）
+
+## 新功能：键盘精修（design_handoff_paragraph_edit 方向 1a，2026-07-14 代码完成）
+
+按 `~/Downloads/design_handoff_paragraph_edit` 的 1a 定稿实现「长按段落 → 就地变
+可编辑框 → 系统键盘直接改字词」，补上口头修改（说话重写整段）不方便改一两个字的
+缺口。**纯 iOS 改动，服务端零改动**——关键发现：`PUT /files/api/articles/<stem>`
+（`functions/lib/article-store.js` 的 `writeArticleDoc`）本来就是给挖矿/AI
+`write_article` 工具用的通用端点，不经过 LLM、每次调用自动 append 一个新版本，
+键盘精修直接复用它就有了撤销/重做，不用碰 `agent/src/index.js` 的 WS/Durable
+Object，也不必把编辑指令包成自然语言再喂给 Claude（那样反而会引入"AI 又悄悄改写
+了一遍"的风险，违背这个功能"精确改字"的初衷）。
+
+- **入口**：`RecordingDetailView.presentTextMenu` 的长按菜单 `localRows` 里，在
+  已有「拷贝」旁边加一行「编辑」（`ConfigMenu.swift` 的 `LongpressLocalRow`，不进
+  服务端 PromptStore 配置、不走网络，和「拷贝」同类）。
+- **光标落点**：长按手势从 `.onLongPressGesture` 换成
+  `LongPressGesture.sequenced(before: DragGesture(minimumDistance:0))` 才能拿到
+  触点坐标；`ParagraphEditBox.swift` 里有一处关键换算——编辑框比原来的只读 `Text`
+  多了 9pt 顶部内边距（`-10` 出血 margin 和 `+10` padding 水平方向正好抵消，垂直
+  方向不会），所以 `initialTapPoint.y` 必须先减 9 再喂给 `UITextView.closestPosition`，
+  否则多行段落会摸到上一行。
+- **新文件** `ParagraphEditBox.swift`：`UITextView` 的 `UIViewRepresentable`
+  封装（SwiftUI `TextEditor` 做不到 tap-to-caret 和 `inputAccessoryView`）。
+  `updateUIView` 用 `Coordinator.didSetInitialCaret` 挡住除首次挂载外的每次
+  重渲染重设光标/焦点（否则每敲一个字都会把光标弹回长按点）。回车 = 完成（拦在
+  `shouldChangeTextIn`，不让 `\n` 混进正文，段落边界因此天然锁死）。键盘上方
+  `inputAccessoryView` 是纯 UIKit 拼的工具条（‹ › 光标细调 + 「选词」=
+  选中光标处整个词方便打字覆盖，**不是** 1c 的 AI 候选词方向，那个方向没采纳）。
+- **落盘**：`Library.swift` 新增 `LibraryStore.saveArticles` + `fetchDocRaw`。
+  `saveArticles` 在**每次保存时现拉一份服务端原始 JSON**（不是开屏时的旧快照，
+  把过期窗口缩到"这一次编辑"而不是"这次开屏的全程"），只替换顶层 `articles` 这
+  一个 key 再 PUT 回去——`ArticleDoc`（Swift Decodable 模型）没有建模
+  `schema`/`status`/`model` 等字段，如果整个 struct 转 JSON 再传回去这些字段会
+  被悄悄冲掉；改成在原始 JSON dict 上做最小 merge 就完全不会丢。`MinedArticle`
+  从 `Decodable` 改成了 `Codable`（这是唯一的模型改动）。
+- **精确替换某一行**：`Library.swift` 新增 `ArticleBody.replacingLine(_:with:in:)`
+  ——必须严格复用 `bodyRows`/`ArticleBody.segments` 那套"文字游程 + 图片标记各占
+  一个第N行"的切分算法（不能简单按原始 `"\n"` 数），否则一张嵌在文字里的
+  `[[photo:…]]`（不占独立物理行）会让行号和用户长按时看到的对不上，编辑保存后
+  覆盖错段落。只替换目标行的精确字符 range，其余字节（包括所有图片标记、空行
+  间距、legacy `<!--…-->` 注释以外的一切）保持原样。单测
+  `VoiceDropTests/ArticleBodyLineReplaceTests.swift`（9 例，含图片嵌在同一物理
+  行、越界行号、legacy 注释剥离等边界）。
+- **UI 联动**：编辑态顶栏切「取消」`#8A8175`／「完成」`#D8593B`；其余段落 + 标题
+  淡出到 `#B3AB9D`（原地不动）；底部「按住 说话 修改」bar 隐藏；`ScrollViewReader`
+  在进入编辑态时把目标段滚到可见范围（键盘会吃掉下半屏）；完成后复用现有
+  `flashChanges` 荧光高亮 + `loadVersionHistory` 刷新撤销/重做。
+- **已验证**：`xcodebuild build` BUILD SUCCEEDED；`xcodebuild test`
+  （`-only-testing:VoiceDropTests`）77 例全绿（68 老 + 9 新）；模拟器装包启动无
+  崩溃、首屏截图正常。**⚠️ 未验证**：长按菜单出「编辑」→ 打字 → 光标落点是否真的
+  精确 → 完成后落盘/撤销重做——这条全靠自绘手势 + UIKit 桥接，和 STATE.md 别处
+  记录过的教训一样（"模拟器脚本能力有限，交互手势必须真人跑一遍"），下一个 Agent
+  或真人需要在真机/模拟器里对着一篇真实文章走一遍长按→编辑→打字→完成/取消。
 
 ## 性能改造第二轮（2026-07-13，API 速度体检后落地）
 
