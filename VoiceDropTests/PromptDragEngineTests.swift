@@ -117,6 +117,23 @@ final class PromptDragEngineTests: XCTestCase {
         XCTAssertEqual(moved?.first(where: { $0.id == "G2" })?.children?.map(\.id), ["A"])
     }
 
+    func testChildDraggedOntoAnotherGroupsTitleProducesIntoGroup() {
+        // 拖 G1 的子行 C1，手指落在 G2 的标题帧上（fingerY = 310，恰好 G2.mid）
+        // → dropIndex 应该给出 .intoGroup("G2")
+        let target = PromptDragEngine.dropIndex(fingerY: 310, rows: makeRows(), draggedID: "C1", draggedKind: .child(parent: "G1"), items: makeItems())
+        XCTAssertEqual(target, .intoGroup(id: "G2"))
+
+        // apply 后 C1 应该被移到 G2 的 children 末尾，G1 的 children 中 C1 应该消失
+        let moved = PromptDragEngine.apply(.intoGroup(id: "G2"), draggedID: "C1", items: makeItems())
+        XCTAssertEqual(moved?.first(where: { $0.id == "G1" })?.children?.map(\.id), ["C2"])
+        XCTAssertEqual(moved?.first(where: { $0.id == "G2" })?.children?.map(\.id), ["C1"])
+
+        // flattenIDs 验证无重复无丢失
+        let before = PromptLogic.flattenIDs(makeItems())
+        let after = PromptLogic.flattenIDs(moved ?? [])
+        XCTAssertEqual(Set(before), Set(after))
+    }
+
     // MARK: - 拖 group 悬停 group：dropIndex 不产出 intoGroup + apply 独立拒绝（两级封顶）
 
     func testDraggedGroupHoveringAnotherGroupTitleDoesNotProduceIntoGroup() {

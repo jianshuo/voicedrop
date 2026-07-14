@@ -132,10 +132,7 @@ struct PromptManagerView: View {
             guard phase != .active else { return }
             editDrag = nil
             dropTarget = .none
-            hoverDwellTask?.cancel()
-            hoverDwellTask = nil
-            hoverCandidateID = nil
-            armedGroupID = nil
+            resetHoverDwell()
         }
         .overlay(alignment: .bottom) { toastView }
         .toolbar(.hidden, for: .navigationBar)
@@ -592,13 +589,13 @@ struct PromptManagerView: View {
                         .clipped()
                         .opacity(rowOpacity(armed: armed, collapsed: collapsed))
                         // 6c 外发光——放在 .clipped() 之后一层新的 overlay，不会被前面那次
-                        // clip 裁掉；4px 硬边环：stroke 宽 8、path 往外 padding(-4)，环正好
+                        // clip 裁掉；4px 硬边环：stroke 宽 4、path 往外 padding(-2)，环正好
                         // 从卡片边缘往外铺 4pt，读起来是 `0 0 0 4px rgba(216,162,91,0.18)`。
                         .overlay {
                             if armed {
                                 RoundedRectangle(cornerRadius: 9)
-                                    .stroke(Color(hex: "D8A25B").opacity(0.18), lineWidth: 8)
-                                    .padding(-4)
+                                    .stroke(Color(hex: "D8A25B").opacity(0.18), lineWidth: 4)
+                                    .padding(-2)
                             }
                         }
                 }
@@ -852,6 +849,13 @@ struct PromptManagerView: View {
             .onEnded { _ in commitDrag() }
     }
 
+    private func resetHoverDwell() {
+        hoverDwellTask?.cancel()
+        hoverDwellTask = nil
+        hoverCandidateID = nil
+        armedGroupID = nil
+    }
+
     private func recomputeDropTarget() {
         guard let d = editDrag else { return }
         let target = PromptDragEngine.dropIndex(fingerY: d.fingerY, rows: rowFrames, draggedID: d.id, draggedKind: d.kind, items: draft)
@@ -906,13 +910,10 @@ struct PromptManagerView: View {
         // 其余情况（含未到 0.3s 的 intoGroup 候选、组内行放回自己父组标题的 .none）：不落地，
         // 行弹回原位。
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        hoverDwellTask?.cancel()
-        hoverDwellTask = nil
-        hoverCandidateID = nil
+        resetHoverDwell()
         withAnimation(.easeOut(duration: 0.15)) {
             editDrag = nil
             dropTarget = .none
-            armedGroupID = nil
         }
     }
 
@@ -926,10 +927,7 @@ struct PromptManagerView: View {
         expandedGroups = [] // 6a：进编辑态 folder 默认全部收起
         editDrag = nil
         dropTarget = .none
-        hoverDwellTask?.cancel()
-        hoverDwellTask = nil
-        hoverCandidateID = nil
-        armedGroupID = nil
+        resetHoverDwell()
         reordering = true
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
     }
@@ -947,10 +945,7 @@ struct PromptManagerView: View {
         expandedGroups = savedExpandedGroups
         editDrag = nil
         dropTarget = .none
-        hoverDwellTask?.cancel()
-        hoverDwellTask = nil
-        hoverCandidateID = nil
-        armedGroupID = nil
+        resetHoverDwell()
         reordering = false
     }
 
@@ -969,10 +964,7 @@ struct PromptManagerView: View {
                 expandedGroups = savedExpandedGroups
                 editDrag = nil
                 dropTarget = .none
-                hoverDwellTask?.cancel()
-                hoverDwellTask = nil
-                hoverCandidateID = nil
-                armedGroupID = nil
+                resetHoverDwell()
                 reordering = false
             }
         }
