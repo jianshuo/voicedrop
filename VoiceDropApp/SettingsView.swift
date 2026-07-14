@@ -469,7 +469,7 @@ struct SettingsView: View {
                                             title: String(localized: "写作风格"), subtitle: String(localized: "成文时模仿这套语气")) { settingsChevron }
                             }.buttonStyle(.plain)
                             settingsRowDivider
-                            NavigationLink { InstructionSettingsView() } label: {
+                            NavigationLink { PromptManagerView() } label: {
                                 SettingsRow(tileBG: Theme.tileNeutral, symbol: "wand.and.stars", tileFG: Theme.secondary,
                                             title: String(localized: "提示词"), subtitle: String(localized: "自定义长按菜单里的每个动作")) { settingsChevron }
                             }.buttonStyle(.plain)

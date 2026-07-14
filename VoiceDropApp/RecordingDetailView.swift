@@ -326,7 +326,7 @@ struct RecordingDetailView: View {
         }
         agent.connect(recording)
         // 长按菜单配置：后台拉一次，失败静默（缓存/内置兜底，长按永远有菜单）。
-        Task { await UIConfigStore.shared.refresh() }
+        Task { await PromptStore.shared.refresh() }
         await dictation.requestAuth()
         await loadVersionHistory()
     }
@@ -801,11 +801,11 @@ struct RecordingDetailView: View {
     /// （拷贝不进服务端配置、不走网络）。点选把成品指令交给现有语音编辑队列——
     /// 与口述/插入照片同一入口，排队、串行、「正在改」指示全部复用。
     private func presentTextMenu(line: Int, text: String, frame: CGRect) {
-        guard let menu = UIConfigStore.shared.textMenu(page: "voice-editor") else { return }
+        let menu = PromptStore.shared.menuConfig(for: .text)
         withAnimation(.easeOut(duration: 0.15)) {
             lpMenu = LongpressPresentation(
                 anchor: .text(text), frame: frame, menu: menu,
-                fill: { UIConfigStore.fill($0, ["LINE": String(line), "QUOTE": Self.quotePrefix(text)]) },
+                fill: { UIMenuConfig.fill($0, ["LINE": String(line), "QUOTE": Self.quotePrefix(text)]) },
                 onPick: { agent.enqueue($0, articleIndex: articleIndex) },
                 localRows: [LongpressLocalRow(label: String(localized: "拷贝"), systemImage: "doc.on.doc",
                                               action: { UIPasteboard.general.string = text })]
@@ -815,11 +815,11 @@ struct RecordingDetailView: View {
 
     /// 长按已出图的配图 → 自绘操作菜单（图片风格）。{{KEY}} 在这里换成该图 relKey。
     private func presentImageMenu(_ img: UIImage, relKey: String, frame: CGRect) {
-        guard let menu = UIConfigStore.shared.imageMenu(page: "voice-editor") else { return }
+        let menu = PromptStore.shared.menuConfig(for: .image)
         withAnimation(.easeOut(duration: 0.15)) {
             lpMenu = LongpressPresentation(
                 anchor: .image(img), frame: frame, menu: menu,
-                fill: { UIConfigStore.fill($0, ["KEY": relKey]) },
+                fill: { UIMenuConfig.fill($0, ["KEY": relKey]) },
                 onPick: { agent.enqueue($0, articleIndex: articleIndex) }
             )
         }

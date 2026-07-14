@@ -4,7 +4,31 @@ import UIKit
 // 长按操作菜单 —— 自绘覆盖层，视觉照设计稿 Long Press Actions.dc.html（方向 2a+2b）：
 // 暖纸菜单卡（#FAF6EF·圆角13·组间 7pt 厚分隔）、被按元素抬起带大投影、submenu 原位
 // 替换 + 顶部灰底返回行。系统 .contextMenu 改不了这些视觉，所以全部自绘；菜单结构仍由
-// ui-config（UIMenuConfig）驱动——submenu 递归、未知 type/缺 instruction 的节点静默跳过。
+// PromptStore（PromptLogic.menuConfig 过滤结果）驱动——submenu 递归、未知 type/缺
+// instruction 的节点静默跳过。
+
+// MARK: - 菜单配置模型（PromptStore 的输出契约；原属已删除的旧长按菜单配置 store，
+// 挪到这里紧挨着唯一的消费方——渲染器）
+
+struct UIMenuNode: Codable, Identifiable {
+    let id: String
+    let label: String
+    let type: String?
+    let children: [UIMenuNode]?
+    let instruction: String?
+}
+
+struct UIMenuConfig: Codable {
+    /// 组的数组：组间渲染分隔线（原生 contextMenu 的 Section 语义）。
+    let groups: [[UIMenuNode]]
+
+    /// 占位符替换：subs 的 key 不带花括号（如 ["KEY": relKey]）。
+    static func fill(_ instruction: String, _ subs: [String: String]) -> String {
+        var s = instruction
+        for (k, v) in subs { s = s.replacingOccurrences(of: "{{\(k)}}", with: v) }
+        return s
+    }
+}
 
 /// 一次长按呈现：被按元素（图/段落）+ 它的 global frame + 菜单配置 + 占位符替换。
 struct LongpressPresentation: Identifiable {
