@@ -236,16 +236,19 @@ final class Uploader {
                     }
                     lastError = nil
                     refreshPending()
+                    Analytics.capture("录音上传完成", ["尝试次数": attempt])
                     return true
                 }
                 // Auth / other 4xx is the server rejecting THIS request — a retry
                 // won't change the outcome, so stop immediately.
                 if code == 401 || code == 403 {
                     lastError = String(localized: "token 失效（HTTP \(code)）")
+                    Analytics.capture("录音上传失败", ["原因": "token失效"])
                     return false
                 }
                 if (400..<500).contains(code) {
                     lastError = String(localized: "上传失败 HTTP \(code)")
+                    Analytics.capture("录音上传失败", ["原因": "HTTP\(code)"])
                     return false
                 }
                 // 5xx, or 0 (no HTTP response) — transient; fall through to retry.
@@ -259,6 +262,7 @@ final class Uploader {
                 try? await Task.sleep(nanoseconds: UInt64(attempt) * 1_500_000_000)
             }
         }
+        Analytics.capture("录音上传失败", ["原因": "重试耗尽"])
         return false
     }
 

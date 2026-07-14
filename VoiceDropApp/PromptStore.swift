@@ -563,6 +563,7 @@ final class PromptStore {
             items = fresh
             UserDefaults.standard.set(data, forKey: Self.cacheKey)
         }
+        Analytics.capture("提示词保存")
         return nil
     }
 
@@ -677,6 +678,7 @@ final class PromptStore {
             return .failure(PromptError(message: String(localized: "导入失败，请重试")))
         }
         await refresh()
+        Analytics.capture("提示词导入码兑换")
         return .success(item)
     }
 
@@ -735,6 +737,7 @@ final class PromptStore {
                 ? String(localized: "今天生成分享码的次数已达上限，明天再试")
                 : String(localized: "操作失败，请重试")
         }
+        Analytics.capture("提示词分享开关", ["开": on])
         return nil
     }
 

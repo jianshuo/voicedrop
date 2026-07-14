@@ -181,7 +181,9 @@ final class CommunityStore {
     /// `replyTo` links this post to another post's shareId.
     func share(_ rec: Recording, replyTo: String? = nil) async -> String? {
         guard !token.isEmpty, rec.hasArticles else { return nil }
-        return await withAppleRetry({ await postShare(rec, replyTo: replyTo) }, isSuccess: { $0 != nil })
+        let sid = await withAppleRetry({ await postShare(rec, replyTo: replyTo) }, isSuccess: { $0 != nil })
+        if sid != nil { Analytics.capture("发到社区", ["是回应": replyTo != nil]) }
+        return sid
     }
 
     /// Returns shareId if this recording is currently shared to the community, nil otherwise.
@@ -245,6 +247,7 @@ final class CommunityStore {
         posts.removeAll { $0.shareId == shareId }                 // optimistic
         let ok = await withAppleRetry({ await postUnshare(shareId) }, isSuccess: { $0 })
         if !ok { await load() }                                   // failed → resync the optimistic removal
+        if ok { Analytics.capture("取消社区分享") }
         return ok
     }
 
@@ -323,6 +326,7 @@ final class CommunityStore {
             if !s.fed && r?.already != true { s.count += 1 }
             s.fed = true
             feedStates[shareId] = s
+            if r?.ok == true { Analytics.capture("投币") }
         }
         return r
     }
@@ -348,6 +352,9 @@ final class CommunityStore {
     /// core experience is unaffected.
     func engage(_ shareId: String, action: String, on: Bool? = nil) async {
         guard !token.isEmpty else { return }
+        var engageProps: [String: Any] = ["动作": action]
+        if let on { engageProps["开"] = on }
+        Analytics.capture("社区互动", engageProps)
         var req = URLRequest(url: recoBase.appending(path: "engage").appending(path: shareId))
         req.httpMethod = "POST"
         req.timeoutInterval = 3

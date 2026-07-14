@@ -97,6 +97,24 @@ final class ArticleAgentSession: VoiceAgentSession {
         persist()
         send(reqItem)
         state = .working
+        editSentAt[reqItem.id] = Date()
+        Analytics.capture("语音编辑发起", [
+            "类型": text.hasPrefix("【回答追问】") ? "回答追问" : "普通修改",
+            "字数": text.count,
+            "带图": !images.isEmpty,
+        ])
+    }
+
+    /// 埋点用：编辑发起时刻（键 = 请求 id），落地/出错时算端到端耗时。
+    private var editSentAt: [String: Date] = [:]
+
+    private func captureEditDone(_ id: String?, ok: Bool) {
+        let effective = id ?? queue.first?.id
+        var props: [String: Any] = ["成功": ok]
+        if let effective, let began = editSentAt.removeValue(forKey: effective) {
+            props["耗时秒"] = Int(Date().timeIntervalSince(began))
+        }
+        Analytics.capture("语音编辑落地", props)
     }
 
     private func resubmitAll() {
@@ -173,6 +191,7 @@ final class ArticleAgentSession: VoiceAgentSession {
             if (obj["state"] as? String) == "working" { state = .working }
         case "updated":
             if let doc = decodeDoc(obj["article"]) { onUpdate?(doc, (obj["stems"] as? [String]) ?? []) }
+            captureEditDone(id, ok: true)
             if let id { resolve(id) } else if !queue.isEmpty { resolve(queue[0].id) } // old-server fallback
         case "reply":
             if let text = obj["text"] as? String, !text.isEmpty {
@@ -182,6 +201,7 @@ final class ArticleAgentSession: VoiceAgentSession {
             let msg = (obj["message"] as? String) ?? "出错了"
             error = msg
             onReply?(msg, false)
+            captureEditDone(id, ok: false)
             if let id { resolve(id) } else if !queue.isEmpty { resolve(queue[0].id) }
             if queue.isEmpty { state = .error }
         case "snapshot":

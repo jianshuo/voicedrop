@@ -213,6 +213,7 @@ struct RecordingDetailView: View {
                 communityShareId = await community.sharedShareId(recording)
                 sharedToCommunity = communityShareId != nil
                 ReviewPrompter.articleOpened { requestReview() }
+                Analytics.capture("文章打开", ["篇数": articles.count])
             }
         }
         .onDisappear { player.stop(); dictation.stop(); agent.disconnect() }
@@ -566,8 +567,10 @@ struct RecordingDetailView: View {
         // inline-URL text via ArticleShareItem's per-target branching.
         guard let u = await store.shareURL(recording, section: articleIndex) else {
             sharePayload = SharePayload(text: allText)        // no link → text only
+            Analytics.capture("创建分享链接", ["有链接": false])
             return
         }
+        Analytics.capture("创建分享链接", ["有链接": true])
         let title = articles[safe: articleIndex]?.title ?? "VoiceDrop"
         let image = await firstPhotoImage()                  // best-effort card thumbnail
         sharePayload = SharePayload(text: allText + "\n\n" + u.absoluteString,
@@ -597,6 +600,7 @@ struct RecordingDetailView: View {
             showToast(String(localized: "小红书文案生成失败，稍后再试"))
             return
         }
+        Analytics.capture("小红书导出")
         UIPasteboard.general.string = pack.clipboardText
         // 原文配图优先、顺序保真：全部原图（≤9）按文章顺序在前；不满 9 张才用
         // 图文卡（标题卡+正文分页）补空位，原图够 9 张就不放卡。
@@ -880,6 +884,7 @@ struct RecordingDetailView: View {
         guard !trimmed.isEmpty, trimmed != editingOriginalText else { return }
         let newBody = ArticleBody.replacingLine(line, with: trimmed, in: a.body)
         guard newBody != a.body else { return }
+        Analytics.capture("原位编辑完成")
         var newArticles = articles
         newArticles[articleIndex] = MinedArticle(title: a.title, body: newBody, style: a.style, wechatMediaId: a.wechatMediaId)
         let oldArticles = articles
@@ -1099,6 +1104,7 @@ struct RecordingDetailView: View {
             // Real, synchronous result now — no more "约 1 分钟后".
             showToast(created == 0 && updated > 0 ? String(localized: "已更新草稿") : String(localized: "已到草稿箱"))
             published = true
+            Analytics.capture("发公众号", ["新建": created, "更新": updated])
         case .notConfigured:
             publishAfterSetup = true
             showingWechatSettings = true

@@ -80,8 +80,12 @@ struct RecordSession: View {
                 if classic { try recorder.start(); sessionStart = recorder.startDate }
                 else { try interviewer.start(); sessionStart = interviewer.startDate }
                 phase = .recording
+                Analytics.capture("录音开始", ["引擎": classic ? "经典" : "新", "高音质": Prefs.shared.highQuality])
             }
-            catch { phase = .failed(String(localized: "无法开始录音：\(error.localizedDescription)")) }
+            catch {
+                phase = .failed(String(localized: "无法开始录音：\(error.localizedDescription)"))
+                Analytics.capture("录音失败", ["阶段": "启动"])
+            }
         }
         .onDisappear {
             // Safety net: any teardown path that didn't run stop() (a future dismissal
@@ -99,6 +103,7 @@ struct RecordSession: View {
             let scope = sessionStart
             PhotoCaptureView(recordingStart: scope) { captured in
                 showCamera = false
+                if !captured.isEmpty { Analytics.capture("录音拍照", ["张数": captured.count]) }
                 for photo in captured {
                     Task { await Self.uploadPhoto(date: photo.date, data: photo.data, sessionStart: scope) }
                 }
@@ -249,9 +254,15 @@ struct RecordSession: View {
             // Show a REAL failure instead of silently closing as if nothing happened.
             if !classic, let err = interviewer.engine.engineError {
                 phase = .failed(String(localized: "录音失败：\(err)"))
+                Analytics.capture("录音失败", ["阶段": "收尾"])
             } else { onFinish() }
             return
         }
+        Analytics.capture("录音完成", [
+            "时长秒": Int(take.duration),
+            "用过采访": classic ? false : interviewer.interviewWasUsed,
+            "引擎": classic ? "经典" : "新",
+        ])
         await promote(take)
         onFinish()                    // close — the list shows 正在上传 and uploads
     }

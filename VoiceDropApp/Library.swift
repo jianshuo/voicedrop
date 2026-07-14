@@ -990,7 +990,13 @@ final class LibraryStore {
             guard resp.isOK else { return nil }
             struct R: Decodable { let scope: String? }
             let s = (try? JSONDecoder().decode(R.self, from: data))?.scope
-            if let s, !s.isEmpty { cachedScope = s }
+            if let s, !s.isEmpty {
+                cachedScope = s
+                // scope = "users/<sub>/" → 剥出 sub，把本设备的匿名分析事件并到账号名下
+                let sub = s.replacingOccurrences(of: "users/", with: "")
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                Analytics.identify(sub)
+            }
             return cachedScope
         } catch { return nil }
     }

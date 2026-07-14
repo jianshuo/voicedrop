@@ -60,7 +60,10 @@ struct CommunityFeedView: View {
     }
 
     private func tabLabel(_ title: String, _ t: FeedTab) -> some View {
-        Button { tab = t } label: {
+        Button {
+            tab = t
+            Analytics.capture("社区浏览", ["tab": t == .reco ? "推荐" : t == .latest ? "最新" : "回应"])
+        } label: {
             Text(title)
                 .font(.system(size: 15, weight: tab == t ? .semibold : .regular))
                 .foregroundStyle(tab == t ? Theme.ink : Theme.metaChrome)

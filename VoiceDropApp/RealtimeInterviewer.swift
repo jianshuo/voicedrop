@@ -31,6 +31,9 @@ final class RealtimeInterviewer: RecordingBackend {
 
     /// The interview side-path is currently on (relay connected or connecting).
     private(set) var interviewActive = false
+    /// 本段录音里采访是否用过（哪怕已关掉）——录音完成事件的属性。
+    private(set) var interviewWasUsed = false
+    private var interviewStartedAt: Date?
     private(set) var connState: RealtimeSession.State = .idle
 
     // Half-duplex state — see class comment.
@@ -72,6 +75,9 @@ final class RealtimeInterviewer: RecordingBackend {
     private func startInterview() {
         guard engine.isRecording else { return }
         interviewActive = true
+        interviewWasUsed = true
+        interviewStartedAt = Date()
+        Analytics.capture("采访开启")
         aiSpeaking = false
         aiTurnEnded = false
         engine.teeEnabled = true  // Sink starts producing 24k PCM only from here on
@@ -80,6 +86,10 @@ final class RealtimeInterviewer: RecordingBackend {
 
     private func stopInterview() {
         interviewActive = false
+        if let began = interviewStartedAt {
+            Analytics.capture("采访结束", ["时长秒": Int(Date().timeIntervalSince(began))])
+            interviewStartedAt = nil
+        }
         engine.teeEnabled = false // Sink stops the resample/tee — plain recording pays nothing
         reconnectTask?.cancel(); reconnectTask = nil
         reconnectAttempt = 0

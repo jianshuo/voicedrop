@@ -81,6 +81,7 @@ final class FollowupState {
         guard let q = current(for: articleIndex) else { return }
         setStatus(q.id, "skipped")
         advance(articleIndex: articleIndex)
+        Analytics.capture("追问跳过")
     }
 
     /// 口述回答已作为普通指令发出：当场标 answered、翻题。之后的进展就是普通
@@ -88,6 +89,7 @@ final class FollowupState {
     func answerSent(_ q: FollowupQuestion, articleIndex: Int) {
         setStatus(q.id, "answered")
         advance(articleIndex: articleIndex)
+        Analytics.capture("追问回答")
     }
 
     private func setStatus(_ id: String, _ status: String) {

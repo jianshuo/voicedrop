@@ -144,6 +144,7 @@ final class ReferralManager {
         if attributed {
             done = true
             Self.log.info("claim(\(source, privacy: .public)): ✅ 归因成功，done=true")
+            Analytics.capture("邀请归因成功", ["层": source])
             if let s = j["suanli"] as? [String: Any], let you = s["you"] as? Double, you > 0 {
                 Self.log.info("claim: 新人侧入账 \(you, privacy: .public) 算力")
                 NotificationCenter.default.post(name: .referralRewarded, object: nil,

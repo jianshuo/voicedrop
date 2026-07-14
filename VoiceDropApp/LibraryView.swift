@@ -214,6 +214,7 @@ struct LibraryView: View {
             statusSession.onLinkRelease = { pid in linkResponder.release(pairingId: pid) }
             statusSession.connect()
             await refresh()
+            _ = await store.ownerScope()   // 顺手触发 /whoami → Analytics.identify（匿名事件并入账号）
         }
         .task {
             // Library-wide voice-command session: reply bubble + list refresh after

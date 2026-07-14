@@ -91,6 +91,7 @@ final class LibraryCommandSession: VoiceAgentSession {
         queue.append(reqItem)
         persist()
         send(reqItem)
+        Analytics.capture("语音编辑发起", ["类型": "库级命令", "字数": text.count, "带图": !images.isEmpty])
         state = .working
     }
 

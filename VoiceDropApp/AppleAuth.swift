@@ -117,6 +117,7 @@ final class AuthStore {
             keychainSave(token, account: sessionAccount)
             session = token
             lastError = nil
+            Analytics.capture("登录完成")
         } catch {
             lastError = error.localizedDescription
         }
@@ -125,6 +126,7 @@ final class AuthStore {
     func signOut() {
         keychainDelete(account: sessionAccount)
         session = nil
+        Analytics.reset()
     }
 
     /// Present the system Sign-in-with-Apple sheet, then exchange the identity
