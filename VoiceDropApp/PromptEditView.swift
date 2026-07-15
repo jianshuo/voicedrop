@@ -185,6 +185,17 @@ struct PromptEditView: View {
                 .frame(minHeight: 150)
                 .padding(10)
                 .background(Theme.card, in: RoundedRectangle(cornerRadius: 12))
+                // 空态引导：写自然语言即可——长按目标由锚点协议自动携带，
+                // 不用教 {{KEY}}/{{LINE}} 占位符（spec 2026-07-16-anchor-protocol §5）。
+                .overlay(alignment: .topLeading) {
+                    if promptDraft.isEmpty {
+                        Text("用平常说话的方式写就行，比如：\n把这张照片重画成水彩\n把这段改得更简洁，意思不变")
+                            .font(.system(size: 15)).foregroundStyle(Theme.faint)
+                            .lineSpacing(4)
+                            .padding(.horizontal, 15).padding(.top, 18)
+                            .allowsHitTesting(false)
+                    }
+                }
         }
     }
 
