@@ -308,9 +308,9 @@ struct PromptEditView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("分享这条提示词").font(.system(size: 15)).foregroundStyle(Theme.ink)
-                    Text(sharing ? "分享中，关闭后分享码立即失效"
-                                 : "开启后，任何人对 VoiceDrop 说出分享码，或打开链接，就能看到并一次性使用这条提示词")
+                    Text("分享到社区").font(.system(size: 15)).foregroundStyle(Theme.ink)
+                    Text(sharing ? "分享中：社区可见，关闭后分享码失效、社区帖撤下"
+                                 : "开启后发布到社区，并得到分享码短链")
                         .font(.system(size: 12)).foregroundStyle(Theme.faint)
                 }
                 Spacer()

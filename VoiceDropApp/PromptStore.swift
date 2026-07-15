@@ -715,8 +715,18 @@ final class PromptStore {
     /// 分享开关：开 = POST /agent/prompt-share 铸码/同码复活；关 = DELETE 使码立即
     /// 失效（服务端索引保留，再开还是同一个码）。沿用原 InstructionCustomStore.setSharing
     /// 的实现（含 429 → 「今天生成分享码的次数已达上限，明天再试」的文案映射）。
+    /// 分享=发布到社区，需可追责身份：匿名 token 会被服务端 403 needs_apple_signin
+    /// 拒绝，此处拉起 Apple 登录、成功后重试一次（对齐 Community.withAppleRetry 语义）。
     func setSharing(id: String, on: Bool) async -> String? {
         guard !token.isEmpty else { return String(localized: "请先登录") }
+        let first = await postSharing(id: id, on: on)
+        guard first.needsSignin else { return first.message }
+        await AuthStore.shared.signInWithApple()
+        guard AuthStore.shared.isAuthenticated else { return String(localized: "分享到社区需要先登录") }
+        return await postSharing(id: id, on: on).message
+    }
+
+    private func postSharing(id: String, on: Bool) async -> (message: String?, needsSignin: Bool) {
         var req: URLRequest
         if on {
             struct P: Encodable { let id: String }
@@ -729,16 +739,20 @@ final class PromptStore {
             req.httpMethod = "DELETE"
         }
         req.setBearer(token)
-        guard let (_, resp) = try? await URLSession.shared.data(for: req) else {
-            return String(localized: "网络出错，请重试")
+        guard let (data, resp) = try? await URLSession.shared.data(for: req) else {
+            return (String(localized: "网络出错，请重试"), false)
         }
-        guard resp.isOK else {
-            return resp.httpStatusCode == 429
-                ? String(localized: "今天生成分享码的次数已达上限，明天再试")
-                : String(localized: "操作失败，请重试")
+        if resp.isOK {
+            Analytics.capture("提示词分享开关", ["开": on])
+            return (nil, false)
         }
-        Analytics.capture("提示词分享开关", ["开": on])
-        return nil
+        if resp.httpStatusCode == 403,
+           (try? JSONDecoder().decode([String: String].self, from: data))?["error"] == "needs_apple_signin" {
+            return (nil, true)
+        }
+        return (resp.httpStatusCode == 429
+            ? String(localized: "今天生成分享码的次数已达上限，明天再试")
+            : String(localized: "操作失败，请重试"), false)
     }
 
     /// 过滤结果 → ConfigMenu 现有输入形状（长按菜单直接吃）。
