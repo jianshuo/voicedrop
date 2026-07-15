@@ -67,7 +67,7 @@
 
 ### 4.2 码兑换（prompt-share.js 注入块）
 
-- 注入块的占位符解释保留（老分享码里还有占位符）；another 一句补充：
+- 注入块的占位符解释保留（老分享码里还有占位符）；另补一句：
   「若上下文提供了用户长按的目标，『这张图/这段』即指它」。
 - 无改动硬依赖：码兑换发生在语音指令里，通常无 anchor（§2 缺失即现状）。
 
@@ -83,7 +83,8 @@
 - `RecordingDetailView`：
   - `presentImageMenu`（:920 附近）：`onPick` 时带 `anchor = .image(key: relKey)`；
     `fill` 的 `{{KEY}}` 替换**保留**（老模板/老自定义提示词还在用）。
-  - 文字菜单（:857 附近）同理：`anchor = .line(line, quote)`；`{{LINE}}/{{QUOTE}}` 替换保留。
+  - 文字菜单（:857 附近）同理：`anchor = .line(line, text: 整行原文)`；`{{LINE}}/{{QUOTE}}`
+    替换保留（{{QUOTE}} 仍是 15 字前缀——那是给拼进句子的老提示词用的，与 anchor.text 无关）。
 - 语音自由指令（PushToTalk）与回答追问：不带 anchor（现状）。
 - 新建提示词的 placeholder 提示文案：引导写自然语言（「把这张照片…」「把这段…」），
   不再教占位符。
