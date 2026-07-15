@@ -2,6 +2,38 @@
 
 Last updated: 2026-07-14（键盘精修 v2 已上 main，v1 曾整体 revert；同日接入 PostHog）
 
+## 提示词社区帖：分享即发帖 + 社区「提示词」tab（2026-07-15，服务端已上线，iOS 待真机手测+TestFlight）
+
+spec = `docs/superpowers/specs/2026-07-15-prompt-community-posts-design.md`，plan 同名 plans/。
+SDD 执行记录在 `.superpowers/sdd/progress.md`。**服务端已部署**（agent worker 36190a31 /
+reco d785d93e / Pages 3a45768e，D1 migration 0003 已 apply），线上冒烟过：feed 115 帖带
+kind=article、匿名 403、新 MCP 工具可用。iOS 4 个 commit 已合 main **未发 TestFlight**。
+
+- **数据模型**：提示词帖 = `community/<shareId>.json` 的 `kind:"prompt"` 变体
+  （`promptCode` 指向 `shares/<码>` 写穿副本，内容零复制实时读）；
+  `shareId = HMAC("promptshare:<码>")` 从码派生（fork re-key/复活全自动成立）。
+  D1 community_posts 加 `kind` 列，reco feed / community/list 双路径透传。
+- **同生同死（四条路径全闭环）**：开分享=铸码+发帖；关分享/社区取消分享/举报
+  resolve-remove/销号——都连 `shares/<码>` 一起删（后两条是最终全分支 review 抓的漏，
+  aca6df2 修）。再开=同码同帖复活（firstSharedAt 重置，计划明文接受）。
+- **门槛收紧（产品决策）**：POST /agent/prompt-share 需 Apple/微信 session，匿名 403
+  needs_apple_signin——**匿名不再能铸码**。铸码前 checkArticlesShareable 关键词审核。
+- **老 App 兼容**：community/get 对 prompt 帖合成 `articles:[{title:label,body:全文}]` +
+  kind + promptCode，老客户端当文字帖渲染（可读/投币/回应，无导入按钮）。
+- **iOS**：CommunityFeedView 四 tab（推荐/最新/回应/提示词，混排+客户端过滤）+
+  TextCoverCard「提示词」角标；CommunityPostView「收下这条提示词」CTA（gate:
+  kind=prompt && promptCode && !mine，走 PromptStore.shared.importPrompt）；
+  PromptEditView 开关文案改「分享到社区」，403 拉起 Apple 登录重试一次
+  （二次拒绝返回可见错误，不伪装成功——review 抓的竞态）。
+- **真机手测清单（发 TestFlight 后必跑）**：① 开分享→社区三处立见（推荐/最新/提示词
+  tab，卡片带角标）② 另一账号打开→全文+收下→长按菜单立即可用 ③ 投币/文章回应
+  ④ 关开关→帖码同消（feed+短链「分享已停止」）⑤ 再开→同码同帖 ⑥ 匿名翻开关→
+  拉起登录→重试成功 ⑦ 老版本 App 打开 prompt 帖当文字帖可读 ⑧ 自己的帖无导入按钮。
+- 已知边界（有意不做）：删除提示词条目不自动关分享（帖码冻结，与码现状一致）；
+  D1 挂时 R2 慢路径 prompt 卡无题无预览（窗口期展示降级）；导入成功双埋点
+  （「社区提示词导入」+「提示词导入码兑换」，分析时注意）；4 个新中文 key 待夜间
+  英文同步收敛。
+
 ## PostHog 产品分析已接入（2026-07-14，模拟器验证事件已送达）
 
 - SPM 包 `posthog-ios`（project.yml `packages:`，from 3.0.0）；初始化在
