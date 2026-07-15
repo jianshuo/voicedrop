@@ -207,6 +207,7 @@ struct LibraryView: View {
                 Task { await refresh() }
             }
         }
+        .onAppear { Analytics.screen("录音列表") }   // 回到列表 = 离开某条录音，清掉「当前录音」
         .task {
             statusSession.onPhase = { stem, phase in store.markPhase(stem: stem, phase: phase) }
             statusSession.onDone = { stem in store.markDone(stem: stem) }

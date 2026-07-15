@@ -45,6 +45,7 @@ struct AccountView: View {
         }
         .background(Theme.appBG.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
+        .onAppear { Analytics.screen("账户") }
         .task { await store.load() }
         .confirmationDialog("永久删除账户？", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("永久删除", role: .destructive) { Task { await deleteAccount() } }

@@ -1,7 +1,3 @@
 What's new:
-• All-new Prompt Manager: customize how your articles are written — organize prompts into groups, drag to reorder, and import prompts shared by friends in one tap
-• Live preview for voice edits: watch rewrites and insertions appear right in the article as they generate — no more waiting on a spinner
-• Long-press any paragraph to edit it in place with the keyboard, layout untouched
-• Redesigned community feed: two-column cards with For You / Latest / Replies tabs
-• Faster everywhere: the recording list opens instantly and cover thumbnails load much quicker
-• Photos imported from your library keep their original aspect ratio
+• Performance and stability improvements
+• Small polish throughout

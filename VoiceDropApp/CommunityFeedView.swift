@@ -43,6 +43,7 @@ struct CommunityFeedView: View {
             }
         }
         .background(Self.pageBG)
+        .onAppear { Analytics.screen("社区") }
     }
 
     // MARK: 分段 tab（推荐 / 最新 / 回应）

@@ -136,6 +136,7 @@ struct PromptManagerView: View {
         }
         .overlay(alignment: .bottom) { toastView }
         .toolbar(.hidden, for: .navigationBar)
+        .onAppear { Analytics.screen("提示词管理") }
         .task { await store.refresh() }
         .confirmationDialog(deleteDialogTitle, isPresented: deleteDialogBinding, titleVisibility: .visible) {
             Button(String(localized: "删除"), role: .destructive) {

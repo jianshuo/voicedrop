@@ -31,4 +31,18 @@ enum Analytics {
     static func capture(_ event: String, _ props: [String: Any] = [:]) {
         PostHogSDK.shared.capture(event, properties: props)
     }
+
+    /// 当前上下文（super properties）：注册后随之后的每条事件自动上送，
+    /// 让任何动作都能回答「用户当时在哪个界面、看哪条录音」；同时记一条
+    /// 「界面进入」事件形成完整动线。红线同上：界面名是代码里的固定字符串、
+    /// stem 是时间戳式文件名，均不含用户内容。
+    static func screen(_ name: String, stem: String? = nil) {
+        if let stem {
+            PostHogSDK.shared.register(["当前界面": name, "当前录音": stem])
+        } else {
+            PostHogSDK.shared.unregister("当前录音")
+            PostHogSDK.shared.register(["当前界面": name])
+        }
+        capture("界面进入", ["界面": name])
+    }
 }
