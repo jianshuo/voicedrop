@@ -408,7 +408,6 @@ struct SettingsView: View {
     @State private var showStyle = false
     @State private var showName = false
     @State private var invitePayload: SharePayload?
-    @State private var inviteFailed = false
 
     private var shortTag: String {
         let id = AuthStore.shared.anonId          // "anon-7f3a…"
@@ -570,11 +569,6 @@ struct SettingsView: View {
         .sheet(isPresented: $showStyle) { WritingStyleSheet(store: store) }
         .sheet(isPresented: $showName) { NameEditSheet(store: store) }
         .sheet(item: $invitePayload) { ShareSheet(items: $0.activityItems) }
-        .alert("邀请链接没拿到", isPresented: $inviteFailed) {
-            Button("好") {}
-        } message: {
-            Text("网络不给力，稍后再试一次。")
-        }
     }
 
     /// 邀请行副标题：双边同额且现价可得 → 带数字；否则通用文案（绝不编数字）。
@@ -584,22 +578,23 @@ struct SettingsView: View {
         return String(localized: "朋友装上，双方都得算力")
     }
 
-    /// 点「邀请好友」→（必要时先取链接）拉系统分享 sheet。文本给 X/拷贝等目标；
+    /// 点「邀请好友」→ **立即**拉系统分享 sheet，不等任何网络。邀请码 = 账户短码
+    /// （anonId 前 6 位 hex，与服务端派生同源），链接本地就能拼；服务端已回过权威
+    /// 链接（撞码加长的极端情形）就用那个。注册表写穿（落地页靠它）由 loadInvite
+    /// 在后台补——设置页打开时已预取一次，这里再兜一次。文本给 X/拷贝等目标；
     /// 微信目标经 ArticleShareItem 拿裸 URL 出富卡片（og 标题 = 「X 邀请你用 VoiceDrop」）。
     private func shareInvite() {
         Analytics.capture("邀请好友分享")
-        Task {
-            await store.loadInvite()
-            guard let url = store.inviteURL else { inviteFailed = true; return }
-            let name = store.name.isEmpty ? store.inviteName : store.name
-            let title = name.isEmpty
-                ? String(localized: "邀请你用 VoiceDrop")
-                : String(localized: "\(name) 邀请你用 VoiceDrop")
-            let a = store.inviteRewardInviter, b = store.inviteRewardFriend
-            let reward = (a > 0 && a == b) ? String(localized: "，用这个链接下载咱俩各得 \(a) 算力") : ""
-            let text = String(localized: "我在用 VoiceDrop，动动嘴就能写出好文章\(reward)：\(url.absoluteString)")
-            invitePayload = SharePayload(text: text, url: url, title: title)
-        }
+        Task { await store.loadInvite() }   // 后台兜写穿，不挡分享
+        let url = store.inviteURL ?? URL(string: "https://voicedrop.cn/i/\(shortTag)")!
+        let name = store.name.isEmpty ? store.inviteName : store.name
+        let title = name.isEmpty
+            ? String(localized: "邀请你用 VoiceDrop")
+            : String(localized: "\(name) 邀请你用 VoiceDrop")
+        let a = store.inviteRewardInviter, b = store.inviteRewardFriend
+        let reward = (a > 0 && a == b) ? String(localized: "，用这个链接下载咱俩各得 \(a) 算力") : ""
+        let text = String(localized: "我在用 VoiceDrop，动动嘴就能写出好文章\(reward)：\(url.absoluteString)")
+        invitePayload = SharePayload(text: text, url: url, title: title)
     }
 
     @ViewBuilder private func group<C: View>(_ label: String, @ViewBuilder _ content: () -> C) -> some View {
