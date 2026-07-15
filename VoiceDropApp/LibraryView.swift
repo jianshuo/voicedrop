@@ -27,6 +27,7 @@ struct LibraryView: View {
         let tag: String?        // deep-link/intent tag; nil = use the current page's tag
     }
     @State private var showSettings = false
+    @State private var showUsage = false   // 算力账单直达（「文章被投喂」推送深链）
     @State private var selectedRec: Recording?
     @State private var selectedPost: CommunityPost?
     // Universal-link web fallback (/help/ 等无原生对应的页面) — in-app Safari.
@@ -201,6 +202,7 @@ struct LibraryView: View {
             SharedArticleView(store: community, shared: nav.shared, articleIndex: nav.index)
         }
         .navigationDestination(isPresented: $showSettings) { SettingsView(libraryStore: store) }
+        .navigationDestination(isPresented: $showUsage) { UsageView() }
         .fullScreenCover(item: $recordLaunch) { launch in
             RecordSession(defaultTag: launch.tag ?? currentPageTag) {
                 recordLaunch = nil
@@ -269,19 +271,23 @@ struct LibraryView: View {
             }
             switch link {
             case .recordings:
-                tab = .recordings; selectedRec = nil; selectedPost = nil; showSettings = false; sharedArticle = nil
+                tab = .recordings; selectedRec = nil; selectedPost = nil; showSettings = false; showUsage = false; sharedArticle = nil
                 Task { await refresh() }
             case .community:
-                tab = .community; selectedRec = nil; selectedPost = nil; showSettings = false; sharedArticle = nil
+                tab = .community; selectedRec = nil; selectedPost = nil; showSettings = false; showUsage = false; sharedArticle = nil
             case .settings:
-                selectedRec = nil; selectedPost = nil; showSettings = true; sharedArticle = nil
+                selectedRec = nil; selectedPost = nil; showSettings = true; showUsage = false; sharedArticle = nil
+            case .usage:
+                // 「文章被投喂」推送点开 → 直达算力账单，不绕设置页。
+                selectedRec = nil; selectedPost = nil; showSettings = false; sharedArticle = nil
+                showUsage = true
             case .record(let tag):
                 // A deep-link/intent tag beats the current page's tag; nil keeps
                 // page behavior (record on a tag page → that page's tag).
-                selectedRec = nil; selectedPost = nil; showSettings = false; sharedArticle = nil
+                selectedRec = nil; selectedPost = nil; showSettings = false; showUsage = false; sharedArticle = nil
                 recordLaunch = RecordLaunch(tag: tag)
             case .article(let stem):
-                tab = .recordings; selectedPost = nil; showSettings = false; sharedArticle = nil
+                tab = .recordings; selectedPost = nil; showSettings = false; showUsage = false; sharedArticle = nil
                 // 深链即权威:article 深链只在成文后才会发出(「文章已生成」推送/分享链),
                 // 而本地快照多半还停在挖矿前(hasArticles=false),fetchDoc 会被旧 flag
                 // 挡住不问服务端。强行置位后详情页第一次 .task 就直接拉正文,点开约
@@ -311,7 +317,7 @@ struct LibraryView: View {
             case .promptImport(let code):
                 // https://voicedrop.cn/<7位数字> — 推到设置页 + 弹导入 sheet 预填该码
                 // （Task 6；PromptManagerView 本身够不着，见上面 promptImportPrefill 的注释）。
-                selectedRec = nil; selectedPost = nil; sharedArticle = nil
+                selectedRec = nil; selectedPost = nil; sharedArticle = nil; showUsage = false
                 showSettings = true
                 promptImportPrefill = PromptImportPrefillItem(id: code)
             case .web(let u):
@@ -334,7 +340,7 @@ struct LibraryView: View {
             if let scope = await store.ownerScope(), shared.owner == scope {
                 router.pending = .article(shared.stem)
             } else if shared.type == "community" {
-                tab = .community; selectedRec = nil; showSettings = false; sharedArticle = nil
+                tab = .community; selectedRec = nil; showSettings = false; showUsage = false; sharedArticle = nil
                 selectedPost = CommunityPost(shareId: id, author: nil, title: nil,
                                              firstSharedAt: nil, updatedAt: nil,
                                              count: nil, mine: nil, replyTo: nil)

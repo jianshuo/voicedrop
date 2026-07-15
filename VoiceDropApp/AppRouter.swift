@@ -12,6 +12,7 @@ import SafariServices
 ///   voicedrop://recordings        我的录音（列表根）
 ///   voicedrop://community         VD社区
 ///   voicedrop://settings          设置
+///   voicedrop://usage             算力账单（「文章被投喂」推送点开落这里）
 ///   voicedrop://record            开始录音（全屏）
 ///   voicedrop://record?tag=创业   开始录音，挖出的文章缺省带该标签
 ///   voicedrop://article/<stem>    某篇文章详情（stem 形如 VoiceDrop-2026-07-01-…）
@@ -30,6 +31,7 @@ enum DeepLink: Equatable {
     case recordings
     case community
     case settings
+    case usage
     case record(tag: String?)
     case article(String)
     case shareLink(id: String, fallback: URL)
@@ -63,6 +65,7 @@ final class AppRouter: ObservableObject {
         case "", "recordings", "home": pending = .recordings
         case "community":              pending = .community
         case "settings", "setting":    pending = .settings
+        case "usage", "billing":       pending = .usage
         case "record":
             let tag = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?.first { $0.name == "tag" }?.value
