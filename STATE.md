@@ -25,6 +25,14 @@ kind=article、匿名 403、新 MCP 工具可用。iOS 4 个 commit 已合 main 
   kind=prompt && promptCode && !mine，走 PromptStore.shared.importPrompt）；
   PromptEditView 开关文案改「分享到社区」，403 拉起 Apple 登录重试一次
   （二次拒绝返回可见错误，不伪装成功——review 抓的竞态）。
+- **⚠️ token 坑（2026-07-16 真机 bug，a095346 修）**：`AuthStore.bearer` **永远是
+  anonToken**（Apple 登录后也不变），登录证明在 `AuthStore.shared.session`（JWT）。
+  任何要过「可追责身份」门槛的请求（社区写、prompt-share）必须送 `session ?? bearer`
+  ——CommunityStore.shareToken 与 PromptLogic.shareAuthToken 都是这个式子。只送
+  bearer 会 403 needs_apple_signin 且拉起登录也救不回（重试还是送 bearer）。
+- **已知缺口：MCP 的 share_prompt 对所有人 403**——配对登录发的是 anon 型完整密钥，
+  不是 session JWT，服务端无从验证 Apple 绑定（绑定不落盘，session 即证明）。要解得
+  另立项（配对流程发 session / 服务端持久化绑定标记），暂记录。
 - **真机手测清单（发 TestFlight 后必跑）**：① 开分享→社区三处立见（推荐/最新/提示词
   tab，卡片带角标）② 另一账号打开→全文+收下→长按菜单立即可用 ③ 投币/文章回应
   ④ 关开关→帖码同消（feed+短链「分享已停止」）⑤ 再开→同码同帖 ⑥ 匿名翻开关→
