@@ -723,7 +723,10 @@ final class PromptStore {
         guard first.needsSignin else { return first.message }
         await AuthStore.shared.signInWithApple()
         guard AuthStore.shared.isAuthenticated else { return String(localized: "分享到社区需要先登录") }
-        return await postSharing(id: id, on: on).message
+        // 重试若仍被 needs_apple_signin 拒（token 传播竞态），必须给可见错误，
+        // 不能让 nil message 伪装成成功。
+        let second = await postSharing(id: id, on: on)
+        return second.needsSignin ? String(localized: "分享到社区需要先登录") : second.message
     }
 
     private func postSharing(id: String, on: Bool) async -> (message: String?, needsSignin: Bool) {
