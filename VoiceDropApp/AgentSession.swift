@@ -3,6 +3,55 @@ import Observation
 
 enum AgentState: Equatable { case idle, connecting, working, error }
 
+/// 锚点协议 T3：长按目标（图/行）随请求结构化上传，服务端渲染成独立上下文行。
+/// 只在长按菜单动作时携带（手势天然产生锚点）；语音自由指令没有锚点（nil = 现状）。
+/// Codable 手写：wire 形状 `{type:"image", key}` / `{type:"line", line, text}` 与
+/// docs/superpowers/specs/2026-07-16-anchor-protocol-design.md §3 严格一致，也复用
+/// 同一编解码给磁盘队列持久化（PersistedEdit.anchor）。
+enum EditAnchor: Equatable, Codable {
+    case image(key: String)
+    case line(Int, text: String)
+
+    private enum CodingKeys: String, CodingKey { case type, key, line, text }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let type = try c.decode(String.self, forKey: .type)
+        switch type {
+        case "image":
+            self = .image(key: try c.decode(String.self, forKey: .key))
+        case "line":
+            self = .line(try c.decode(Int.self, forKey: .line), text: try c.decode(String.self, forKey: .text))
+        default:
+            throw DecodingError.dataCorruptedError(forKey: .type, in: c, debugDescription: "unknown anchor type \(type)")
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .image(let key):
+            try c.encode("image", forKey: .type)
+            try c.encode(key, forKey: .key)
+        case .line(let line, let text):
+            try c.encode("line", forKey: .type)
+            try c.encode(line, forKey: .line)
+            try c.encode(text, forKey: .text)
+        }
+    }
+
+    /// WS `instruct` payload 里 `anchor` 字段的字典形状（JSONSerialization 用，键名
+    /// 与服务端 wire 协议严格一致：image → type/key；line → type/line/text）。
+    var wireDict: [String: Any] {
+        switch self {
+        case .image(let key):
+            return ["type": "image", "key": key]
+        case .line(let line, let text):
+            return ["type": "line", "line": line, "text": text]
+        }
+    }
+}
+
 /// A 320×320 thumbnail sent alongside a voice instruction so the model can see
 /// the image and decide where to place it.
 struct AgentImage: Equatable {
@@ -25,8 +74,10 @@ final class ArticleAgentSession: VoiceAgentSession {
         let text: String
         let images: [AgentImage]
         let articleIndex: Int   // which article (chip) was on screen — locator targeting
-        init(id: String = UUID().uuidString, text: String, images: [AgentImage] = [], articleIndex: Int = 0) {
-            self.id = id; self.text = text; self.images = images; self.articleIndex = articleIndex
+        /// 长按目标（图/行），语音自由指令为 nil（现状）。见 EditAnchor 文档注释。
+        let anchor: EditAnchor?
+        init(id: String = UUID().uuidString, text: String, images: [AgentImage] = [], articleIndex: Int = 0, anchor: EditAnchor? = nil) {
+            self.id = id; self.text = text; self.images = images; self.articleIndex = articleIndex; self.anchor = anchor
         }
     }
 
@@ -65,7 +116,7 @@ final class ArticleAgentSession: VoiceAgentSession {
         self.rec = rec
         closed = false
         // Restore any edits persisted before a previous kill (text-only).
-        queue = EditQueueStore.load(stem: rec.stem).map { EditRequest(id: $0.id, text: $0.text, articleIndex: $0.articleIndex ?? 0) }
+        queue = EditQueueStore.load(stem: rec.stem).map { EditRequest(id: $0.id, text: $0.text, articleIndex: $0.articleIndex ?? 0, anchor: $0.anchor) }
         openSocket()
     }
 
@@ -89,10 +140,20 @@ final class ArticleAgentSession: VoiceAgentSession {
     }
 
     /// Queue a spoken instruction (optionally with photos). Persist it, then send.
+    /// Protocol-conformance overload (`VoiceAgentSession.enqueue(_:images:articleIndex:)`
+    /// has a fixed 3-arg signature — Swift witness matching doesn't accept extra
+    /// defaulted params — so anchor gets its own overload below).
     func enqueue(_ instruction: String, images: [AgentImage] = [], articleIndex: Int = 0) {
+        enqueue(instruction, images: images, articleIndex: articleIndex, anchor: nil)
+    }
+
+    /// Same as above, but carries the long-press target (image/line). Only
+    /// long-press menu actions pass one; free-form voice instructions call the
+    /// overload above (anchor stays nil = current behavior).
+    func enqueue(_ instruction: String, images: [AgentImage] = [], articleIndex: Int = 0, anchor: EditAnchor?) {
         let text = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        let reqItem = EditRequest(text: text, images: images, articleIndex: articleIndex)
+        let reqItem = EditRequest(text: text, images: images, articleIndex: articleIndex, anchor: anchor)
         queue.append(reqItem)
         persist()
         send(reqItem)
@@ -131,6 +192,7 @@ final class ArticleAgentSession: VoiceAgentSession {
                 return d
             }
         }
+        if let anchor = item.anchor { payload["anchor"] = anchor.wireDict }
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let str = String(data: data, encoding: .utf8) else { return }
         task.send(.string(str)) { [weak self] err in
@@ -149,7 +211,7 @@ final class ArticleAgentSession: VoiceAgentSession {
     }
 
     private func persist() {
-        EditQueueStore.save(queue.map { PersistedEdit(id: $0.id, text: $0.text, articleIndex: $0.articleIndex) }, stem: stem)
+        EditQueueStore.save(queue.map { PersistedEdit(id: $0.id, text: $0.text, articleIndex: $0.articleIndex, anchor: $0.anchor) }, stem: stem)
     }
 
     private func receive() {

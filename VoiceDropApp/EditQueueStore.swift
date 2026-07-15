@@ -10,6 +10,13 @@ struct PersistedEdit: Codable, Equatable {
     /// edit still targets the right one's line numbers. Optional: pre-existing
     /// saved queues lack the key and decode to nil (→ treated as 0).
     let articleIndex: Int?
+    /// 长按目标（图/行），见 EditAnchor。Optional：老磁盘队列（升级前落盘）缺这个键，
+    /// Codable 对 Optional 字段的缺键解码本就是 nil，不炸、不需要自定义 init(from:)。
+    let anchor: EditAnchor?
+
+    init(id: String, text: String, articleIndex: Int?, anchor: EditAnchor? = nil) {
+        self.id = id; self.text = text; self.articleIndex = articleIndex; self.anchor = anchor
+    }
 }
 
 /// Disk mirror of the per-article edit queue (UserDefaults, keyed by stem).
