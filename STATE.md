@@ -1,6 +1,19 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-07-14（键盘精修 v2 已上 main，v1 曾整体 revert；同日接入 PostHog）
+Last updated: 2026-07-16（投喂到账 APNs 推送 + voicedrop://usage 深链上线）
+
+## 投喂到账推送：文章被投币 → 作者收 APNs，点开进算力账单（2026-07-16）
+
+- **服务端**（jianshuo.dev repo `agent/src/mint.js`）：`POST /agent/feed` 双边
+  grantBucket 之后给 `post.owner` 发 `sendPush`——「{投币者} 投喂了《{标题}》，
+  算力 +X」，`link=voicedrop://usage`、`threadId=feed`。sendPush 尽力而为
+  （缺 secret/无 token 静默 no-op），幂等分支（already）不重复推。
+  测试在 `agent/test/mint.test.js`（vi.mock push.js 断言调用参数）。
+- **iOS**：`DeepLink` 新增 `.usage`（`voicedrop://usage`，`billing` 也认）；
+  LibraryView 新增 `navigationDestination(isPresented: $showUsage) { UsageView() }`
+  ——点通知**直达账单页**，不绕设置页。其余深链分支互斥清理 showUsage
+  （沿用「链接永远干净落地」约定）。
+- 投币者自己不推（动作是他本人发起的）；安卓暂无推送通道，收币照常入账。
 
 ## 提示词社区帖：分享即发帖 + 社区「提示词」tab（2026-07-15，服务端已上线，iOS 待真机手测+TestFlight）
 
