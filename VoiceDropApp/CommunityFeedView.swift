@@ -10,7 +10,7 @@ struct CommunityFeedView: View {
     let onSelect: (CommunityPost) -> Void
     let onUnshare: (CommunityPost) -> Void
 
-    enum FeedTab { case reco, latest, replies }
+    enum FeedTab { case reco, latest, replies, prompts }
     @State private var tab: FeedTab = .reco
     /// coverPhotoKey → 实测宽高比（w/h）。图片加载后回填，masonry 用它重新估高。
     @State private var coverAspects: [String: CGFloat] = [:]
@@ -22,6 +22,7 @@ struct CommunityFeedView: View {
         case .reco:    return store.posts        // reco 排序（applyRanking 后的顺序）
         case .latest:  return store.timeOrdered  // 服务端原始顺序（纯时间序，不经 reco）
         case .replies: return store.posts.filter { $0.replyTo != nil }
+        case .prompts: return store.posts.filter { $0.isPrompt }
         }
     }
 
@@ -53,6 +54,7 @@ struct CommunityFeedView: View {
             tabLabel(String(localized: "推荐"), .reco)
             tabLabel(String(localized: "最新"), .latest)
             tabLabel(String(localized: "回应"), .replies)
+            tabLabel(String(localized: "提示词"), .prompts)
             Spacer()
         }
         .padding(.horizontal, 18)
@@ -60,10 +62,19 @@ struct CommunityFeedView: View {
         .padding(.bottom, 10)
     }
 
+    private func tabAnalyticsName(_ t: FeedTab) -> String {
+        switch t {
+        case .reco: return "推荐"
+        case .latest: return "最新"
+        case .replies: return "回应"
+        case .prompts: return "提示词"
+        }
+    }
+
     private func tabLabel(_ title: String, _ t: FeedTab) -> some View {
         Button {
             tab = t
-            Analytics.capture("社区浏览", ["tab": t == .reco ? "推荐" : t == .latest ? "最新" : "回应"])
+            Analytics.capture("社区浏览", ["tab": tabAnalyticsName(t)])
         } label: {
             Text(title)
                 .font(.system(size: 15, weight: tab == t ? .semibold : .regular))
@@ -214,6 +225,7 @@ private struct TextCoverCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 8) {
+                if post.isPrompt { PromptBadge() }
                 if post.replyTo != nil { ReplyBadge() }
                 Text(post.title ?? String(localized: "(无题)"))
                     .font(.system(size: 16))            // 用户拍板：标题细体不加粗
@@ -255,6 +267,18 @@ private struct ReplyBadge: View {
         .foregroundStyle(Theme.accent)
         .padding(.horizontal, 8).padding(.vertical, 2)
         .background(Theme.accentSoft, in: Capsule())
+    }
+}
+
+// MARK: - 提示词角标（胶囊，正文区顶部，仅提示词帖）
+
+private struct PromptBadge: View {
+    var body: some View {
+        Text("提示词")
+            .font(.system(size: 10, weight: .semibold))
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(Capsule().fill(.white.opacity(0.85)))
+            .foregroundStyle(Theme.ink)
     }
 }
 

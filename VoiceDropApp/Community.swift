@@ -16,6 +16,8 @@ struct CommunityPost: Decodable, Identifiable, Hashable {
     var hasPhoto: Bool? = nil       // 正文含 [[photo:…]] 标记
     var coverPhotoKey: String? = nil // 第一张图完整 R2 key（owner 已拼），走公开 /photo/<key>
     var preview: String? = nil      // 正文前 ~60 字纯文本（无标记无 markdown）
+    var kind: String? = nil          // "prompt" = 提示词帖；nil/"article" = 文章帖
+    var isPrompt: Bool { kind == "prompt" }
     var id: String { shareId }
 }
 
@@ -29,6 +31,9 @@ struct CommunityFullPost: Decodable {
     let replyTo: String?
     let owner: String?          // the photos' "users/<sub>/" prefix → build full photo keys
     let photos: [String]?       // legacy [[photo:N]] resolution; nil for new posts
+    var kind: String? = nil
+    var promptCode: String? = nil    // 提示词帖：7 位分享码（导入用）
+    var appliesTo: [String]? = nil
 }
 
 /// 一篇分享的投币状态（/agent/feed/state 的条目）。
