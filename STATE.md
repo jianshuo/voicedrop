@@ -2,6 +2,25 @@
 
 Last updated: 2026-07-16（邀请好友入口 + voicedrop.cn/i/<码> 落地页上线）
 
+## 归因三修（2026-07-16 排查后落地，jianshuo.dev 6b59c22 已部署冒烟）
+
+「好多人从链接装了但邀请人没反应」排查结论：一周 ~190 新账号仅 6 次归因（4 剪贴板
++2 上线自测）。**主因 = voicedrop.cn 腾讯云反代**：Pages 侧 `CF-Connecting-IP` 恒为
+代理出口 IP（实测响应带 `via: 2.0 Caddy`），IP 指纹层对微信分享流量 100% 失效，
+7-09 起文章分享页同病。三项修复：
+
+- **第一方 beacon**：`POST /agent/referral/hit`（无鉴权，body=码/分享 id，解析不出
+  owner 静默丢）——两个落地页内联 sendBeacon/fetch(no-cors) 让**访客浏览器直连**
+  jianshuo.dev 报到，真实 IP 只有这条路拿得到。服务端 refhit 改为只在直连
+  （无 x-forwarded-host）时写，反代垃圾停写。
+- **剪贴板双保险 + 微信蒙层**：execCommand 同步先行（微信 webview 的
+  navigator.clipboard 常不可用）叠 clipboard API；微信内点下载不跳转，弹
+  「点右上角→浏览器打开」蒙层（剪贴板照写）。
+- **邀请人到账推送**：claim 成功后 sendPush owner「你邀请的朋友装好了，算力 +N」
+  深链 voicedrop://usage（复用投喂通道）——此前奖励静默进桶，成功了邀请人也无感。
+- 测试：invite-link 23 例 / referral-landing 7 例，全量 1120 绿；线上冒烟：hit 204、
+  两落地页含 beacon/execCommand/wx-mask。遗留：安卓端是否实现 claim 未确认。
+
 ## 邀请好友：设置页入口 + 邀请落地页（2026-07-16，服务端已部署，iOS 已合 main 未发 TestFlight）
 
 referral 二期（补掉 2026-07-09 遗留 ④「主动邀请入口」）。设计稿 = claude.ai/design 项目
