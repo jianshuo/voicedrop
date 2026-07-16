@@ -13,6 +13,9 @@ import SafariServices
 ///   voicedrop://community         VD社区
 ///   voicedrop://settings          设置
 ///   voicedrop://usage             算力账单（「文章被投喂」推送点开落这里）
+///   voicedrop://prompt/<7位码>    提示词导入 sheet 预填该码（网页「一键收进
+///                                 我的工具箱」按钮；同域 universal link 在
+///                                 Safari 里不拉起 App，所以走自定义 scheme）
 ///   voicedrop://record            开始录音（全屏）
 ///   voicedrop://record?tag=创业   开始录音，挖出的文章缺省带该标签
 ///   voicedrop://article/<stem>    某篇文章详情（stem 形如 VoiceDrop-2026-07-01-…）
@@ -70,6 +73,11 @@ final class AppRouter: ObservableObject {
         case "community":              pending = .community
         case "settings", "setting":    pending = .settings
         case "usage", "billing":       pending = .usage
+        case "prompt":
+            // 码校验与 universal link 同款（7 位、不以 0 开头）；坏码回列表兜底。
+            let code = url.pathComponents.filter { $0 != "/" }.first ?? ""
+            pending = code.range(of: "^[1-9][0-9]{6}$", options: .regularExpression) != nil
+                ? .promptImport(code: code) : .recordings
         case "record":
             let tag = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?.first { $0.name == "tag" }?.value
