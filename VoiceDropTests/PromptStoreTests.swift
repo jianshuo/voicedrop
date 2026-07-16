@@ -115,6 +115,43 @@ final class PromptStoreTests: XCTestCase {
         XCTAssertEqual(raw["id"] as? String, "p_xyz98765")
     }
 
+    // MARK: - importedFrom（导入幂等标记，2026-07-16）
+
+    func testDecodeImportedFrom() throws {
+        let json = """
+        [{"id":"p_imp00001","type":"action","label":"口播稿","origin":"user",
+          "prompt":"p","appliesTo":["text"],"importedFrom":"4820135"}]
+        """.data(using: .utf8)!
+        let nodes = try JSONDecoder().decode([PromptNode].self, from: json)
+        XCTAssertEqual(nodes[0].importedFrom, "4820135")
+    }
+
+    func testRawItemsRoundTripsImportedFrom() throws {
+        // ⚠️ 整树 PUT 必须带回 importedFrom——丢了它，服务端的导入幂等识别键就没了
+        // （服务端有按 id 补回的兜底，但客户端不该制造这个洞）。
+        let node = PromptNode(id: "p_imp00001", type: "action", label: "口播稿", origin: "user",
+                               prompt: "p", appliesTo: ["text"], importedFrom: "4820135")
+        let raw = PromptLogic.rawItems([node])[0]
+        XCTAssertEqual(raw["importedFrom"] as? String, "4820135")
+        // 没有标记的条目不无中生有
+        let plain = PromptNode(id: "p_plain001", type: "action", label: "x", origin: "user",
+                                prompt: "p", appliesTo: ["text"])
+        XCTAssertNil(PromptLogic.rawItems([plain])[0]["importedFrom"])
+    }
+
+    func testContainsImportFindsTopLevelAndNested() throws {
+        let tree = [
+            PromptNode(id: "sys_a", type: "action", label: "a", origin: "system", prompt: "p", appliesTo: ["text"]),
+            PromptNode(id: "p_group1", type: "group", label: "组", origin: "user", children: [
+                PromptNode(id: "p_imp00001", type: "action", label: "口播稿", origin: "user",
+                           prompt: "p", appliesTo: ["text"], importedFrom: "4820135"),
+            ]),
+        ]
+        XCTAssertTrue(PromptLogic.containsImport(code: "4820135", in: tree))
+        XCTAssertFalse(PromptLogic.containsImport(code: "9999999", in: tree))
+        XCTAssertFalse(PromptLogic.containsImport(code: "4820135", in: []))
+    }
+
     func testRawItemsGroupEntityWithChildren() throws {
         let node = PromptNode(id: "p_group1", type: "group", label: "我的分组", origin: "user", children: [
             PromptNode(id: "p_child1", type: "action", label: "子项", origin: "user", prompt: "内容", appliesTo: ["text"]),

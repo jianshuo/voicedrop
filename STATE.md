@@ -1,6 +1,28 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-07-16（邀请好友入口 + voicedrop.cn/i/<码> 落地页上线）
+Last updated: 2026-07-16（「收下这条提示词」幂等 + 邀请好友入口上线）
+
+## 「收下这条提示词」幂等（2026-07-16 深夜，服务端已部署 worker 6e1b4cab，iOS 已合 main 未发 TestFlight）
+
+反复点「收下」不再重复添加。识别键 = 实体上的 `importedFrom: <7位分享码>`（导入落盘时打上）：
+
+- **服务端**（jianshuo.dev dc9af06）：import 端点先扫用户树（含分组内），同码命中直接返回
+  已有条目 + `already:true`，不追加、不重复 +importCount；存量老副本（无标记但 label+prompt
+  与本次导入完全一致）按内容认领并补标记。**整树 PUT 按 id 从旧文档补回 importedFrom**——
+  老客户端（PromptNode 没建模该字段）整树 PUT 会剥掉标记，服务端兜底防冲。validateList
+  白名单放行（限 action 实体、7 位码格式），resolveList 透传给客户端。测试 prompts.test.js
+  幂等块 8 例，线上冒烟 401/405 守门 + MCP list_prompts 真树正常。
+- **iOS**（已合 main）：PromptNode 建模 importedFrom 并随 rawItems 回写（客户端不制造洞）；
+  社区帖打开时 `PromptLogic.containsImport` 查本地缓存树命中则按钮常显「已收下」；重复点
+  按服务端 already 提示「这条提示词你已经收下过了」（不重复打「社区提示词导入」埋点）。
+  单测 +3（round-trip / containsImport / decode），全量 125 绿。
+- ⚠️ **String Catalog 坑**：`String(localized: cond ? "a" : "b")` 三目里的字面量编译器
+  抽不出 key——必须每个分支各自 `String(localized:)`。另外 xcodebuild 不更新 xcstrings
+  （GUI 构建才会），本次新 key 是手工按 JSON 插入的；xcstrings 因重序列化有一次性格式
+  压缩（数据逐 key 验证过零丢失），下次 Xcode GUI 构建可能再canonicalize一次，勿慌。
+- **存量重复未清**：建硕自己的树里已有历史重复（「改图｜手绘解释风」×3、「公众号题图｜
+  教程步骤」×2、「合照｜日系动画电影」×2 等）——旧行为产物，内容完全一致的会被新逻辑
+  认领，不完全一致的（差一个 [[photo]] token 之类）要在 App 里手动删，服务端不代删。
 
 ## 归因三修（2026-07-16 排查后落地，jianshuo.dev 6b59c22 已部署冒烟）
 

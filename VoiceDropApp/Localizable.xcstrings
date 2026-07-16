@@ -1,9 +1,7 @@
 {
   "sourceLanguage" : "zh-Hans",
   "strings" : {
-    "" : {
-
-    },
+    "" : {},
     "  录音中 · %@  " : {
       "localizations" : {
         "en" : {
@@ -24,65 +22,8 @@
         }
       }
     },
-    "，成文时各生成一篇，在阅读页顶部切换对比。最多选 3 个。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : ", each will produce its own article at write-up — switch between them at the top of the reading page. Pick up to 3."
-          }
-        }
-      }
-    },
-    "(无题)" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "(Untitled)"
-          }
-        }
-      }
-    },
-    "《%@》— %@\n来自 VoiceDrop 社区" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "\"%1$@\" — %2$@\nFrom the VoiceDrop community"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "《%1$@》— %2$@\n来自 VoiceDrop 社区"
-          }
-        }
-      }
-    },
-    "「%@」标签下还没有文章。" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "No articles under \"%@\" yet."
-          }
-        }
-      }
-    },
-    "/月" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "/month"
-          }
-        }
-      }
-    },
-    "%@" : {
-
-    },
+    "%@" : {},
+    "%@ 邀请你用 VoiceDrop" : {},
     "%@%@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -103,9 +44,7 @@
         }
       }
     },
-    "%lld" : {
-
-    },
+    "%lld" : {},
     "%lld / %lld" : {
       "localizations" : {
         "zh-Hans" : {
@@ -116,9 +55,7 @@
         }
       }
     },
-    "%lld / 3" : {
-
-    },
+    "%lld / 3" : {},
     "%lld 字" : {
       "localizations" : {
         "en" : {
@@ -155,9 +92,7 @@
         }
       }
     },
-    "%lld 笔" : {
-
-    },
+    "%lld 笔" : {},
     "%lld 篇" : {
       "localizations" : {
         "en" : {
@@ -178,9 +113,7 @@
         }
       }
     },
-    "%lld 项" : {
-
-    },
+    "%lld 项" : {},
     "%lld/%lld" : {
       "localizations" : {
         "zh-Hans" : {
@@ -191,21 +124,26 @@
         }
       }
     },
-    "≈ %lld 篇" : {
+    "(无题)" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "≈ %lld articles"
+            "value" : "(Untitled)"
           }
         }
       }
     },
-    "⚠️ %@" : {
-
-    },
-    "¥19.9" : {
-
+    "+%lld" : {},
+    "/月" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "/month"
+          }
+        }
+      }
     },
     "4 位" : {
       "localizations" : {
@@ -267,9 +205,6 @@
         }
       }
     },
-    "anon_…" : {
-
-    },
     "AppID 无效，找不到这个公众号" : {
       "localizations" : {
         "en" : {
@@ -290,12 +225,8 @@
         }
       }
     },
-    "AppID（wx...）" : {
-
-    },
-    "AppSecret" : {
-
-    },
+    "AppID（wx...）" : {},
+    "AppSecret" : {},
     "AppSecret 无效" : {
       "localizations" : {
         "en" : {
@@ -316,55 +247,12 @@
         }
       }
     },
-    "iCloud 备份 · 导出数据" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "iCloud backup · Export data"
-          }
-        }
-      }
-    },
-    "iCloud 钥匙串同步" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "iCloud Keychain sync"
-          }
-        }
-      }
-    },
     "IP 白名单" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "IP allowlist"
-          }
-        }
-      }
-    },
-    "token 失效（HTTP %lld）" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Token expired (HTTP %lld)"
-          }
-        }
-      }
-    },
-    "v%lld" : {
-
-    },
-    "v%lld 风格" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "v%lld style"
           }
         }
       }
@@ -429,15 +317,90 @@
         }
       }
     },
-    "voicedrop.cn/%@" : {
-
+    "anon_…" : {},
+    "iCloud 备份 · 导出数据" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud backup · Export data"
+          }
+        }
+      }
     },
-    "一套指令，长按文字或图片时按『适用于』自动筛选。改过的系统项标『已自定义』，自己建的标『自建』。" : {
-
+    "iCloud 钥匙串同步" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud Keychain sync"
+          }
+        }
+      }
     },
-    "一条提示词指令" : {
-
+    "token 失效（HTTP %lld）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Token expired (HTTP %lld)"
+          }
+        }
+      }
     },
+    "v%lld" : {},
+    "v%lld 风格" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "v%lld style"
+          }
+        }
+      }
+    },
+    "voicedrop.cn/%@" : {},
+    "¥19.9" : {},
+    "≈ %lld 篇" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "≈ %lld articles"
+          }
+        }
+      }
+    },
+    "⚠️ %@" : {},
+    "《%@》— %@\n来自 VoiceDrop 社区" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "\"%1$@\" — %2$@\nFrom the VoiceDrop community"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "《%1$@》— %2$@\n来自 VoiceDrop 社区"
+          }
+        }
+      }
+    },
+    "「%@」标签下还没有文章。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No articles under \"%@\" yet."
+          }
+        }
+      }
+    },
+    "一套指令，长按文字或图片时按『适用于』自动筛选。改过的系统项标『已自定义』，自己建的标『自建』。" : {},
+    "一条 VoiceDrop 提示词 · 分享码" : {},
+    "一条提示词指令" : {},
     "上传失败 HTTP %lld" : {
       "localizations" : {
         "en" : {
@@ -538,9 +501,7 @@
         }
       }
     },
-    "也可以在录音时直接对 VoiceDrop 说出数字，或点开 voicedrop.cn 链接自动跳转到这里。" : {
-
-    },
+    "也可以在录音时直接对 VoiceDrop 说出数字，或点开 voicedrop.cn 链接自动跳转到这里。" : {},
     "云端留底，换机不丢" : {
       "localizations" : {
         "en" : {
@@ -551,12 +512,8 @@
         }
       }
     },
-    "仅图片" : {
-
-    },
-    "仅文字" : {
-
-    },
+    "仅图片" : {},
+    "仅文字" : {},
     "今天发布次数到上限了，明天再试" : {
       "localizations" : {
         "en" : {
@@ -567,9 +524,7 @@
         }
       }
     },
-    "今天生成分享码的次数已达上限，明天再试" : {
-
-    },
+    "今天生成分享码的次数已达上限，明天再试" : {},
     "今日算力池已发完，明天再来" : {
       "localizations" : {
         "en" : {
@@ -660,9 +615,7 @@
         }
       }
     },
-    "保存失败，已恢复（%@）" : {
-
-    },
+    "保存失败，已恢复（%@）" : {},
     "保存失败，请重试" : {
       "localizations" : {
         "en" : {
@@ -743,9 +696,7 @@
         }
       }
     },
-    "最新" : {
-
-    },
+    "内容未通过社区审核，无法分享" : {},
     "写作" : {
       "localizations" : {
         "en" : {
@@ -786,9 +737,7 @@
         }
       }
     },
-    "决定在哪种长按里出现" : {
-
-    },
+    "决定在哪种长按里出现" : {},
     "凭据" : {
       "localizations" : {
         "en" : {
@@ -839,12 +788,8 @@
         }
       }
     },
-    "分享…" : {
-
-    },
-    "分享中：社区可见，关闭后分享码失效、社区帖撤下" : {
-
-    },
+    "分享…" : {},
+    "分享中：社区可见，关闭后分享码失效、社区帖撤下" : {},
     "分享到小红书" : {
       "localizations" : {
         "en" : {
@@ -855,12 +800,9 @@
         }
       }
     },
-    "分享到社区" : {
-
-    },
-    "分享到社区需要先登录" : {
-
-    },
+    "分享到社区" : {},
+    "分享到社区需要先登录" : {},
+    "分享功能暂时关闭，稍后再试" : {},
     "分享失败，请稍后再试" : {
       "localizations" : {
         "en" : {
@@ -871,15 +813,9 @@
         }
       }
     },
-    "分享的始终是已保存的版本" : {
-
-    },
-    "分组 · %lld 项" : {
-
-    },
-    "分组名字" : {
-
-    },
+    "分享的始终是已保存的版本" : {},
+    "分组 · %lld 项" : {},
+    "分组名字" : {},
     "切换" : {
       "localizations" : {
         "en" : {
@@ -890,12 +826,8 @@
         }
       }
     },
-    "列表已在别处更新，请重新调整顺序" : {
-
-    },
-    "创建" : {
-
-    },
+    "列表已在别处更新，请重新调整顺序" : {},
+    "创建" : {},
     "创建临时目录失败" : {
       "localizations" : {
         "en" : {
@@ -926,9 +858,7 @@
         }
       }
     },
-    "删除『%@』？此操作不可恢复（可用底部「恢复默认提示词」找回系统项）" : {
-
-    },
+    "删除『%@』？此操作不可恢复（可用底部「恢复默认提示词」找回系统项）" : {},
     "删除分组『%@』和组内 %lld 条？此操作不可恢复（可用底部「恢复默认提示词」找回系统项）" : {
       "localizations" : {
         "zh-Hans" : {
@@ -949,9 +879,7 @@
         }
       }
     },
-    "删除失败，已恢复（%@）" : {
-
-    },
+    "删除失败，已恢复（%@）" : {},
     "删除账户" : {
       "localizations" : {
         "en" : {
@@ -982,9 +910,7 @@
         }
       }
     },
-    "加入我的提示词" : {
-
-    },
+    "加入我的提示词" : {},
     "加载中…" : {
       "localizations" : {
         "en" : {
@@ -1005,12 +931,8 @@
         }
       }
     },
-    "加载失败，显示的可能不是最新列表" : {
-
-    },
-    "加载更早的记录" : {
-
-    },
+    "加载失败，显示的可能不是最新列表" : {},
+    "加载更早的记录" : {},
     "勾选 2–3 个版本" : {
       "localizations" : {
         "en" : {
@@ -1271,9 +1193,7 @@
         }
       }
     },
-    "图片" : {
-
-    },
+    "图片" : {},
     "图片上传失败" : {
       "localizations" : {
         "en" : {
@@ -1294,6 +1214,7 @@
         }
       }
     },
+    "在任意文章里长按屏幕按住说话，说「用 %@ 改这段」——AI 按这条提示词干活，只管这一次，不改你的设置。" : {},
     "在公众号后台 → 开发 → 基本配置 → IP 白名单中加入以下地址，服务器才能正常调用接口推草稿。" : {
       "localizations" : {
         "en" : {
@@ -1395,12 +1316,8 @@
         }
       }
     },
-    "复制数字" : {
-
-    },
-    "复制链接" : {
-
-    },
+    "复制数字" : {},
+    "复制链接" : {},
     "多风格对比" : {
       "localizations" : {
         "en" : {
@@ -1461,15 +1378,9 @@
         }
       }
     },
-    "导入后是你自己的副本，可改名、改内容、随时删除；原作者之后的修改不影响你。" : {
-
-    },
-    "导入失败，请重试" : {
-
-    },
-    "导入提示词" : {
-
-    },
+    "导入后是你自己的副本，可改名、改内容、随时删除；原作者之后的修改不影响你。" : {},
+    "导入失败，请重试" : {},
+    "导入提示词" : {},
     "导出失败" : {
       "localizations" : {
         "en" : {
@@ -1611,9 +1522,7 @@
         }
       }
     },
-    "已加入你的提示词" : {
-
-    },
+    "已加入你的提示词" : {},
     "已在 VD社区可见" : {
       "localizations" : {
         "en" : {
@@ -1644,22 +1553,22 @@
         }
       }
     },
-    "已屏蔽，TA 的内容将不再显示" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Blocked. Their content will no longer be shown"
-          }
-        }
-      }
-    },
     "已屏蔽用户" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
             "value" : "Blocked users"
+          }
+        }
+      }
+    },
+    "已屏蔽，TA 的内容将不再显示" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Blocked. Their content will no longer be shown"
           }
         }
       }
@@ -1710,9 +1619,7 @@
         }
       }
     },
-    "已收下" : {
-
-    },
+    "已收下" : {},
     "已更新草稿" : {
       "localizations" : {
         "en" : {
@@ -1753,9 +1660,7 @@
         }
       }
     },
-    "已被导入 %lld 次" : {
-
-    },
+    "已被导入 %lld 次" : {},
     "已超时，请重新发起" : {
       "localizations" : {
         "en" : {
@@ -1786,9 +1691,7 @@
         }
       }
     },
-    "开启后发布到社区，并得到分享码短链" : {
-
-    },
+    "开启后发布到社区，并得到分享码短链" : {},
     "开始录音" : {
       "localizations" : {
         "en" : {
@@ -1940,6 +1843,7 @@
         }
       }
     },
+    "怎么用" : {},
     "恢复默认" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -1951,9 +1855,8 @@
         }
       }
     },
-    "恢复默认提示词" : {
-
-    },
+    "恢复默认提示词" : {},
+    "想长期用：点下面「收下这条提示词」，之后长按菜单里随手可用。" : {},
     "成文" : {
       "localizations" : {
         "en" : {
@@ -1980,6 +1883,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mimic this tone when writing up"
+          }
+        }
+      }
+    },
+    "我在用 VoiceDrop，动动嘴就能写出好文章%@：%@" : {
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "我在用 VoiceDrop，动动嘴就能写出好文章%1$@：%2$@"
           }
         }
       }
@@ -2035,12 +1948,8 @@
         }
       }
     },
-    "把别人分享的提示词存进你的菜单" : {
-
-    },
-    "把系统自带的提示词补回列表？你自建和改过的都不受影响。" : {
-
-    },
+    "把别人分享的提示词存进你的菜单" : {},
+    "把系统自带的提示词补回列表？你自建和改过的都不受影响。" : {},
     "投币" : {
       "localizations" : {
         "en" : {
@@ -2081,9 +1990,7 @@
         }
       }
     },
-    "拖 ≡ 手柄调顺序；拖到 folder 标题收进去。" : {
-
-    },
+    "拖 ≡ 手柄调顺序；拖到 folder 标题收进去。" : {},
     "拷贝" : {
       "localizations" : {
         "en" : {
@@ -2164,9 +2071,7 @@
         }
       }
     },
-    "推荐" : {
-
-    },
+    "推荐" : {},
     "推送失败，请稍后再试" : {
       "localizations" : {
         "en" : {
@@ -2187,6 +2092,7 @@
         }
       }
     },
+    "提示词太长（上限 4000 字），精简后再分享" : {},
     "插入照片" : {
       "localizations" : {
         "en" : {
@@ -2247,24 +2153,12 @@
         }
       }
     },
-    "操作失败，请重试" : {
-
-    },
-    "收下这条提示词" : {
-
-    },
-    "收纳几个动作，菜单里成二级子菜单" : {
-
-    },
-    "放弃" : {
-
-    },
-    "放弃这次调整的顺序？" : {
-
-    },
-    "放进「%@」" : {
-
-    },
+    "操作失败，请重试" : {},
+    "收下这条提示词" : {},
+    "收纳几个动作，菜单里成二级子菜单" : {},
+    "放弃" : {},
+    "放弃这次调整的顺序？" : {},
+    "放进「%@」" : {},
     "数据" : {
       "localizations" : {
         "en" : {
@@ -2295,9 +2189,7 @@
         }
       }
     },
-    "文字" : {
-
-    },
+    "文字" : {},
     "文案已复制" : {
       "localizations" : {
         "en" : {
@@ -2328,18 +2220,10 @@
         }
       }
     },
-    "新建" : {
-
-    },
-    "新建分组" : {
-
-    },
-    "新建分组失败，已恢复（%@）" : {
-
-    },
-    "新建动作" : {
-
-    },
+    "新建" : {},
+    "新建分组" : {},
+    "新建分组失败，已恢复（%@）" : {},
+    "新建动作" : {},
     "无法开始录音" : {
       "localizations" : {
         "en" : {
@@ -2450,6 +2334,7 @@
         }
       }
     },
+    "最新" : {},
     "有新设备想登录你的账号" : {
       "localizations" : {
         "en" : {
@@ -2460,9 +2345,9 @@
         }
       }
     },
-    "朋友的邀请已到账" : {
-
-    },
+    "朋友的邀请已到账" : {},
+    "朋友装上，双方各得 %lld 算力" : {},
+    "朋友装上，双方都得算力" : {},
     "服务器每小时自动处理一次，过会儿再来看。" : {
       "localizations" : {
         "en" : {
@@ -2533,9 +2418,7 @@
         }
       }
     },
-    "来自 %@" : {
-
-    },
+    "来自 %@" : {},
     "来自 %@ · 已被导入 %lld 次" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2566,9 +2449,7 @@
         }
       }
     },
-    "松手收纳" : {
-
-    },
+    "松手收纳" : {},
     "标准 · AAC" : {
       "localizations" : {
         "en" : {
@@ -2859,6 +2740,7 @@
         }
       }
     },
+    "用平常说话的方式写就行，比如：\n把这张照片重画成水彩\n把这段改得更简洁，意思不变" : {},
     "留空 = 使用默认名「%@」" : {
       "extractionState" : "stale",
       "localizations" : {
@@ -2911,6 +2793,7 @@
         }
       }
     },
+    "登录状态已失效，请重新打开 App 再试" : {},
     "确认操作" : {
       "localizations" : {
         "en" : {
@@ -2941,9 +2824,7 @@
         }
       }
     },
-    "移到分组外" : {
-
-    },
+    "移到分组外" : {},
     "移除" : {
       "localizations" : {
         "en" : {
@@ -2984,6 +2865,22 @@
         }
       }
     },
+    "累计获赠 %lld · 已用 %lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Total granted %lld · Used %lld"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "累计获赠 %1$lld · 已用 %2$lld"
+          }
+        }
+      }
+    },
     "约 1 分钟完成" : {
       "localizations" : {
         "en" : {
@@ -3000,22 +2897,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Enough for about %lld articles"
-          }
-        }
-      }
-    },
-    "累计获赠 %lld · 已用 %lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Total granted %lld · Used %lld"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "累计获赠 %1$lld · 已用 %2$lld"
           }
         }
       }
@@ -3070,9 +2951,7 @@
         }
       }
     },
-    "编辑" : {
-
-    },
+    "编辑" : {},
     "缺少 AppID" : {
       "localizations" : {
         "en" : {
@@ -3093,9 +2972,7 @@
         }
       }
     },
-    "网络出错，请重试" : {
-
-    },
+    "网络出错，请重试" : {},
     "网络错误" : {
       "localizations" : {
         "en" : {
@@ -3166,12 +3043,8 @@
         }
       }
     },
-    "自建" : {
-
-    },
-    "花费总结" : {
-
-    },
+    "自建" : {},
+    "花费总结" : {},
     "草稿已失效，已重建一份" : {
       "localizations" : {
         "en" : {
@@ -3182,9 +3055,7 @@
         }
       }
     },
-    "获得约 %lld 算力，可在设置 → 算力明细查看。" : {
-
-    },
+    "获得约 %lld 算力，可在设置 → 算力明细查看。" : {},
     "菜单里的名字" : {
       "localizations" : {
         "en" : {
@@ -3461,9 +3332,7 @@
         }
       }
     },
-    "输入 7 位魔法数字，或粘贴分享链接" : {
-
-    },
+    "输入 7 位魔法数字，或粘贴分享链接" : {},
     "输入访问令牌" : {
       "localizations" : {
         "en" : {
@@ -3494,9 +3363,7 @@
         }
       }
     },
-    "输入魔法数字导入" : {
-
-    },
+    "输入魔法数字导入" : {},
     "边录边拍" : {
       "localizations" : {
         "en" : {
@@ -3587,9 +3454,8 @@
         }
       }
     },
-    "这个魔法数字无效或已停止分享" : {
-
-    },
+    "这个魔法数字无效或已停止分享" : {},
+    "这是你分享的提示词。把分享码发给朋友，或在 设置 → 提示词 里管理。" : {},
     "这条录音的文件损坏了，没法转写。" : {
       "localizations" : {
         "en" : {
@@ -3610,6 +3476,8 @@
         }
       }
     },
+    "这条提示词你已经收下过了" : {},
+    "这条提示词还没同步到服务器，保存后再试" : {},
     "这段录音听到了，只是没找到能单独成篇的内容——可能太零碎，或者还没说成一件事。把想法讲完整一点、重录一段试试。" : {
       "localizations" : {
         "en" : {
@@ -3686,9 +3554,7 @@
         }
       }
     },
-    "适用于" : {
-
-    },
+    "适用于" : {},
     "选一个版本" : {
       "localizations" : {
         "en" : {
@@ -3719,6 +3585,8 @@
         }
       }
     },
+    "邀请你用 VoiceDrop" : {},
+    "邀请好友" : {},
     "采访" : {
       "localizations" : {
         "en" : {
@@ -3779,9 +3647,7 @@
         }
       }
     },
-    "重命名" : {
-
-    },
+    "重命名" : {},
     "重新生成" : {
       "localizations" : {
         "en" : {
@@ -3964,7 +3830,18 @@
           }
         }
       }
-    }
+    },
+    "，成文时各生成一篇，在阅读页顶部切换对比。最多选 3 个。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : ", each will produce its own article at write-up — switch between them at the top of the reading page. Pick up to 3."
+          }
+        }
+      }
+    },
+    "，用这个链接下载咱俩各得 %lld 算力" : {}
   },
   "version" : "1.0"
 }

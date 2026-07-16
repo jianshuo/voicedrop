@@ -23,6 +23,10 @@ struct PromptNode: Codable, Identifiable, Equatable, Hashable, Sendable {
     var appliesTo: [String]? = nil   // action 才有
     var kind: String? = nil
     var forkedFrom: String? = nil
+    /// 这条是从哪个 7 位分享码导入的（服务端打标，导入幂等的识别键——「收下」按钮
+    /// 据此常显「已收下」）。⚠️ 必须随整树 PUT 回写（见 rawItem），否则一次排序/
+    /// 编辑就把标记冲掉，服务端虽有按 id 补回的兜底，客户端不该依赖它。
+    var importedFrom: String? = nil
     var children: [PromptNode]? = nil // group 才有
 }
 
@@ -69,8 +73,21 @@ enum PromptLogic {
             if let kind = node.kind {
                 dict["kind"] = kind
             }
+            if let importedFrom = node.importedFrom {
+                dict["importedFrom"] = importedFrom
+            }
         }
         return dict
+    }
+
+    /// 树里是否已有从这个分享码导入的条目（含分组内）——社区帖「收下」按钮的
+    /// 本地已收下判定。
+    static func containsImport(code: String, in nodes: [PromptNode]) -> Bool {
+        for node in nodes {
+            if node.importedFrom == code { return true }
+            if let children = node.children, containsImport(code: code, in: children) { return true }
+        }
+        return false
     }
 
     /// 系统项实体化：新 p_ id + forkedFrom + origin=custom，内容字段原样保留。
@@ -655,9 +672,16 @@ final class PromptStore {
         return nil
     }
 
+    /// importPrompt 的成功载荷：already = 服务端判定这个码早已收下过（幂等命中，
+    /// 没有追加新条目，item 是已有的那条）。
+    struct ImportOutcome {
+        let item: PromptNode
+        let already: Bool
+    }
+
     /// POST /agent/prompts/import {code}。成功后刷新整树（服务端已经把新条目
     /// 追加进用户的 prompts.json，本地需要重新 GET 才能拿到完整、带派生字段的列表）。
-    func importPrompt(code: String) async -> Result<PromptNode, PromptError> {
+    func importPrompt(code: String) async -> Result<ImportOutcome, PromptError> {
         guard !token.isEmpty else { return .failure(PromptError(message: String(localized: "请先登录"))) }
         struct P: Encodable { let code: String }
         var req = URLRequest(url: API.agentBase.appendingPathComponent("prompts/import"))
@@ -673,13 +697,14 @@ final class PromptStore {
                 ? String(localized: "这个魔法数字无效或已停止分享")
                 : String(localized: "导入失败，请重试")))
         }
-        struct R: Decodable { let item: PromptNode }
-        guard let item = (try? JSONDecoder().decode(R.self, from: data))?.item else {
+        struct R: Decodable { let item: PromptNode; let already: Bool? }
+        guard let decoded = try? JSONDecoder().decode(R.self, from: data) else {
             return .failure(PromptError(message: String(localized: "导入失败，请重试")))
         }
+        let already = decoded.already == true
         await refresh()
-        Analytics.capture("提示词导入码兑换")
-        return .success(item)
+        Analytics.capture("提示词导入码兑换", ["已收下过": already])
+        return .success(ImportOutcome(item: decoded.item, already: already))
     }
 
     /// POST /agent/prompts/restore-defaults —— 补回模板里缺的，自建/改过的都不受影响。

@@ -535,6 +535,12 @@ struct CommunityPostView: View {
             await store.engage(post.shareId, action: "view")
             full = await store.fetchPost(post.shareId)
             loading = false
+            // 已收下过的提示词帖：按钮直接常显「已收下」。查的是本地缓存树（app 启动时
+            // 已兜底加载），未命中也无妨——服务端导入幂等，重复点只会得到 already 提示。
+            if let code = full?.promptCode,
+               PromptLogic.containsImport(code: code, in: PromptStore.shared.items) {
+                promptImported = true
+            }
             async let repliesTask = store.loadReplies(post.shareId)
             if let replyToId = full?.replyTo ?? post.replyTo {
                 replyToFull = await store.fetchPost(replyToId)
@@ -718,10 +724,12 @@ struct CommunityPostView: View {
                     let r = await PromptStore.shared.importPrompt(code: code)
                     importingPrompt = false
                     switch r {
-                    case .success:
+                    case .success(let outcome):
                         promptImported = true
-                        showToast(String(localized: "已加入你的提示词"))
-                        Analytics.capture("社区提示词导入")
+                        showToast(outcome.already
+                            ? String(localized: "这条提示词你已经收下过了")
+                            : String(localized: "已加入你的提示词"))
+                        if !outcome.already { Analytics.capture("社区提示词导入") }
                     case .failure(let err):
                         showToast(err.message)
                     }

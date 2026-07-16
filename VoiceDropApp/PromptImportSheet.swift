@@ -211,8 +211,8 @@ struct PromptImportSheet: View {
         defer { importing = false }
         let result = await PromptStore.shared.importPrompt(code: code)
         switch result {
-        case .success(let node):
-            onImported(node)
+        case .success(let outcome):
+            onImported(outcome.item)
             dismiss()
         case .failure(let err):
             previewState = .error(err.message)
