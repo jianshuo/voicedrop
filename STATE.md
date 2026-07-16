@@ -1195,7 +1195,7 @@ gear → **设置** (redesign "方案二"; the old `ContentView` 3-tab `TabView`
 
 ## Release state (as of 2026-07-15)
 
-- **App Store**: **1.3 在售**（2026-07-15 过审自动发布，guard_not_in_review 放行 1.4 提审即为旁证）；**1.4 / build 247（`1beb7de`，PostHog 24 事件 + 上下文 super properties）已提审 `WAITING_FOR_REVIEW`**（2026-07-15，`automatic_release: true` 过审即发布）。ASC 隐私标签用户已手动更新（2026-07-15：标识符→用户 ID + 使用数据→产品交互，关联身份、用途=分析、不追踪）。提审流程：project.yml MARKETING_VERSION 垫到目标版本 + 更新双语 `fastlane/metadata/*/release_notes.txt` → push main（不带 `[tf]`，只验编译）→ dispatch `appstore`（`fastlane release skip_build:true` 复用 TestFlight 已处理 build）→ 打 `release/<v>` tag 推远端（CI 里 lane 打的 tag 不会推回来）。(Resubmit = cancel review submission via ASC API `PATCH reviewSubmissions/{id} canceled:true`, then dispatch `appstore`.)
+- **App Store**: **1.4 在售**（2026-07-16 过审自动发布）；**1.5 / build 258（`0d62814`，邀请好友入口 + `/i/` 邀请链接剪贴板识别 + 提示词社区分享/导入 + 长按锚点 + 算力账单深链）已提审 `WAITING_FOR_REVIEW`**（2026-07-16，`automatic_release: true` 过审即发布）。ASC 隐私标签用户已手动更新（2026-07-15：标识符→用户 ID + 使用数据→产品交互，关联身份、用途=分析、不追踪）。提审流程：project.yml MARKETING_VERSION 垫到目标版本 + 更新双语 `fastlane/metadata/*/release_notes.txt` → push main（不带 `[tf]`，只验编译）→ dispatch `appstore`（`fastlane release skip_build:true` 复用 TestFlight 已处理 build）→ 打 `release/<v>` tag 推远端（CI 里 lane 打的 tag 不会推回来）。(Resubmit = cancel review submission via ASC API `PATCH reviewSubmissions/{id} canceled:true`, then dispatch `appstore`.)
 - **TestFlight public beta**: external group "Public Beta", link **https://testflight.apple.com/join/PbzFFRS2** (works once build 18 passes Beta App Review). Private group "Private Beta" has `gyjll@hotmail.com`.
 - Beta review contact reused from Cathier app: Jianshuo Wang / jianshuo@hotmail.com / +8613916146826.
 
