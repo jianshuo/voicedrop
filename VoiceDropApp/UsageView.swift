@@ -42,7 +42,10 @@ struct UsageView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 heroCard
-                subscriptionCard
+                // 售卖开关（服务端零部署）没开就整卡隐藏；已订阅用户始终可见（管理/续费入口）。
+                if store.enabled || store.active {
+                    subscriptionCard
+                }
                 if !sources.isEmpty {
                     section(String(localized: "算力来源")) { SettingsCard { sourceRows } }
                 }

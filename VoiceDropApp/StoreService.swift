@@ -16,6 +16,9 @@ final class StoreService: ObservableObject {
 
     @Published var product: Product?
     @Published var active = false
+    /// 售卖开关（服务端 R2 config/iap.json，零部署启停）。false = 算力页不显示订阅卡；
+    /// 已订阅用户（active）不受开关影响，永远能看到管理入口。
+    @Published var enabled = false
     @Published var expiresDate: Date?
     @Published var purchasing = false
     @Published var lastError: String?
@@ -109,7 +112,7 @@ final class StoreService: ObservableObject {
         if r.granted == true { Analytics.capture("订阅算力到账", ["算力": r.suanli ?? 0]) }
     }
 
-    private struct Status: Decodable { let active: Bool; let expires_date: Int? }
+    private struct Status: Decodable { let active: Bool; let enabled: Bool?; let expires_date: Int? }
 
     func loadStatus() async {
         var req = URLRequest(url: API.agentBase.appending(path: "iap/status"))
@@ -117,6 +120,7 @@ final class StoreService: ObservableObject {
         guard let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
               let s = try? JSONDecoder().decode(Status.self, from: data) else { return }
         active = s.active
+        enabled = s.enabled ?? false
         expiresDate = s.expires_date.map { Date(timeIntervalSince1970: Double($0) / 1000) }
     }
 }

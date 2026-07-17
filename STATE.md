@@ -4,6 +4,13 @@ Last updated: 2026-07-17（苹果订阅 P3+P4：¥19.9/月 → 每月 200 算力
 
 ## 苹果订阅（2026-07-17，服务端已部署冒烟，iOS 已合 main；⚠️ 需 ASC 手工建产品才能真买）
 
+**售卖开关（2026-07-17 晚追加，当前=关）**：订阅卡默认隐藏——服务端 `/agent/iap/status`
+回 `enabled`（读 R2 `config/iap.json`，文件不存在/坏 = false），iOS 只在 `enabled || active`
+时显示订阅卡（已订户永远可见管理入口）。**要开闸**：往 R2 写
+`config/iap.json` = `{"enabled":true}`（`npx wrangler r2 object put
+jianshuo-dev-files/config/iap.json --file=<f> --remote`），零部署即时生效；claim/ASN
+通知不受开关影响。TestFlight build 260 的卡是常显的（开关前打的包），261 起隐藏。
+
 spec = jianshuo.dev repo `docs/superpowers/specs/2026-06-30-voicedrop-subscription-credits-design.md`
 （当年 P1 分桶/P2 活动赠送已上线，这次补 P3 服务端 + P4 iOS），plan 同 repo
 `docs/superpowers/plans/2026-07-17-voicedrop-subscription-p3p4.md`。
