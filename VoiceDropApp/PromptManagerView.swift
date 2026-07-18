@@ -140,11 +140,13 @@ struct PromptManagerView: View {
         .postHogMask()   // 隐私红线：提示词（指令文本）不进 session replay 截屏
         .onAppear { Analytics.screen("提示词管理") }
         .task { await store.refresh() }
+        // 弹框里的「删除」绝不能挂 .disabled：confirmationDialog 对 disabled 的按钮不是置灰
+        // 而是整个不渲染，连「取消」都会一起消失，只剩标题气泡（最小工程实测，iOS 26 模拟器）。
+        // 在途保护改在 performDelete 里等待——见那边注释。
         .confirmationDialog(deleteDialogTitle, isPresented: deleteDialogBinding, titleVisibility: .visible) {
             Button(String(localized: "删除"), role: .destructive) {
                 if let node = deleteTarget { Task { await performDelete(node) } }
             }
-            .disabled(store.isMutating)
             Button(String(localized: "取消"), role: .cancel) {}
         }
         .confirmationDialog(String(localized: "把系统自带的提示词补回列表？你自建和改过的都不受影响。"),
@@ -1069,7 +1071,16 @@ struct PromptManagerView: View {
     }
 
     private func performDelete(_ node: PromptNode) async {
-        guard !store.isMutating else { return }
+        // 上一个整树 PUT 在途可达秒级——等它写完再删（而不是静默丢弃这次确认：store.delete
+        // 的重入 guard 返回 nil 会被下面当成「删除成功」）。全程 MainActor，等完到调用
+        // store.delete 之间没有挂起点，不会被别的删除插队。10s 兜底防网络卡死时无限等。
+        for _ in 0..<100 where store.isMutating {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        guard !store.isMutating else {
+            showToast(String(localized: "上一个操作还没完成，请稍后再试"))
+            return
+        }
         guard let err = await store.delete(id: node.id) else {
             // 只有确认成功之后才收起展开态（MINOR 3）——回滚的组要带着原来的展开状态重新出现，
             // 不能在还不知道 save() 成不成功时就先收起。
