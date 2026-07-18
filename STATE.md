@@ -1165,7 +1165,7 @@ Spec/计划：`docs/superpowers/specs/2026-06-27-voicedrop-usage-billing-design.
   新 D1 `voicedrop-usage`（binding `USAGE`，id `317b7cd5-e926-49f0-a6c9-497e4740aea8`），`agent/migrations/0001_usage.sql`。
 - **计价单一真源 `agent/src/usage.js`**：`FX=7.3` `RATE=23`；`PRICE`（sonnet $3/$15、haiku $1/$5 每 Mtok）；ASR `¥0.8/小时`。
   钱一律 **微元（1e-6 元）整数**存，`Math.ceil` 算（只多收不少收，绝不亏）；未知模型成本 0。显示用 `uyToSuanli`/`uyToYuan`。
-  手感：典型录音挖一篇 ≈ 2 算力，haiku 改一刀 ≈ 1.4、sonnet ≈ 4；新用户一次性送 **500 算力**。
+  手感：典型录音挖一篇 ≈ 2 算力，haiku 改一刀 ≈ 1.4、sonnet ≈ 4；新用户一次性送 **200 算力**（2026-07-19 从 500 下调，只影响新账号；帮助页中英文文案已同步）。
 - **D1 两表 `agent/src/usage_store.js`**：`account`(user_sub PK, balance_uy/granted_uy/spent_uy 微元) + `ledger`(只追加流水, kind=grant|spend, reason, detail JSON, balance_uy 快照)。
   `ensureAccount` 懒建 + 首次送 500（`INSERT OR IGNORE` 防并发首触竞态，只有真创建者落 signup 行）；`debit`/`grant` 用 `db.batch()` 原子化；
   `editCount` = `COUNT(DISTINCT json_extract(detail,'$.turn_id'))`（数**真实编辑次数**，不是 Claude 调用次数——一次编辑是 agentic 循环含多次调用）。
