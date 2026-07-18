@@ -590,7 +590,8 @@ final class PromptStore {
     /// 在 await save() 网络往返期间悄悄挪位，按旧索引插回可能插进另一个节点里；
     /// `rawItem` 只序列化 group 的 children，插进 action 节点的子项下次 save 会静默消失）。
     /// `isMutating` 关住重入窗口：删除在途时忽略新的 delete 调用，视图对应地在此为 true
-    /// 时禁用删除入口，两个删除永远不会重叠，索引/快照错位从根上不可能发生。
+    /// 时禁用确认框里的「删除」键（左滑入口不禁用——只是弹确认框，禁了反而在 PUT 在途的
+    /// 秒级窗口里静默吞点击），两个删除永远不会重叠，索引/快照错位从根上不可能发生。
     /// nil = 成功；非 nil = 给用户看的错误文案（此时 items 已经恢复原状）。
     func delete(id: String) async -> String? {
         guard !isMutating else { return nil }

@@ -404,11 +404,14 @@ struct PromptManagerView: View {
                 .exclusively(before: TapGesture().onEnded { editTarget = node })
         )
         .accessibilityAddTraits(.isButton)
-        .swipeActions(edge: .trailing) {
+        // `allowsFullSwipe: false`（三处 swipeActions 同此）：这里的删除 action 只是弹确认框、
+        // 不立刻删行——full-swipe 会把破坏性按钮拉通整行，行卡在拉伸态点不动（LibraryView 同款
+        // 关法）。按钮也不再 `.disabled(store.isMutating)`：上一条删除的 PUT 在途时那会静默吞点击
+        //（整树 PUT 网络往返可达秒级）；重入保护在 performDelete / store.delete 的 guard 里。
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive) { deleteTarget = node } label: {
                 Label(String(localized: "删除"), systemImage: "trash")
             }
-            .disabled(store.isMutating)
         }
     }
 
@@ -440,17 +443,16 @@ struct PromptManagerView: View {
         // 长按手势识别器，和这个页面新加的「长按任意行进排序态」在同一行上直接抢手势，两个
         // 长按谁触发说不准。挪到左滑（分组行专属，action 行没有这个需要）彻底避开冲突，
         // 也顺应本次改造把「行内操作」统一收进 swipeActions 的方向——比留在 contextMenu 更干净。
-        .swipeActions(edge: .leading) {
+        .swipeActions(edge: .leading, allowsFullSwipe: false) {
             Button { renameTarget = node } label: {
                 Label(String(localized: "重命名"), systemImage: "pencil")
             }
             .tint(Theme.accent)
         }
-        .swipeActions(edge: .trailing) {
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
             Button(role: .destructive) { deleteTarget = node } label: {
                 Label(String(localized: "删除"), systemImage: "trash")
             }
-            .disabled(store.isMutating)
         }
     }
 
