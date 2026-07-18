@@ -21,11 +21,16 @@ Last updated: 2026-07-18（App Store 推荐提名已提交）
   第 9 位。前 3 张（搜索可见）= 海报×2 + 真 UI×1。
 - **App 预览视频**：`fastlane/app_preview/zh-Hans/voicedrop-preview-zh-886x1920.mp4`
   （886×1920、30fps、19.7s、H.264+静音 AAC，规格合规）。三段真实 UI 缓推 +
-  字幕条 + 品牌尾卡。⚠️ **fastlane deliver 传不了 app preview——要在 ASC 网页
-  版本页手动上传**（每 locale 每设备档最多 3 支）。Apple 官方偏好真实录屏，
-  静帧+动效有小概率被拒，被拒就撤视频重交（不影响 app 审核结论）。
-- ⚠️ 1.5 在审（WAITING_FOR_REVIEW）没动；这批素材随下个 release lane 自动上
-  （截图会被 deliver 全量替换上传），视频永远手动。
+  字幕条 + 品牌尾卡。Apple 官方偏好真实录屏，静帧+动效有小概率被拒，被拒就
+  撤视频重交（不影响 app 审核结论）。
+- **已上传到 ASC（2026-07-18）**：1.5 过审上架后，用 ASC API 开了 **1.6 草稿版本**
+  （id `da34ce41-08e8-4e34-af3e-0f00adc5128d`），zh-Hans 6.9" 截图集清旧换新
+  （9 张）+ 预览视频均已上传，assetDeliveryState 全部 COMPLETE。脚本思路：
+  appScreenshots/appPreviews 三步走（POST 预留 → PUT uploadOperations 分片 →
+  PATCH uploaded+md5），**fastlane deliver 传不了 preview 但裸 API 可以**。
+  ⚠️ 下次 release lane 跑 deliver 时 zh-Hans 截图会被 fastlane/screenshots/
+  同一套内容重传（无害）；预览视频 deliver 不会碰，已在版本上。
+  en-US 截图/预览未动，仍是旧的英文海报套装。
 
 ## 苹果订阅（2026-07-17，服务端已部署冒烟，iOS 已合 main；⚠️ 需 ASC 手工建产品才能真买）
 
