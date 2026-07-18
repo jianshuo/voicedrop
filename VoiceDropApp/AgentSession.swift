@@ -76,8 +76,10 @@ final class ArticleAgentSession: VoiceAgentSession {
         let articleIndex: Int   // which article (chip) was on screen — locator targeting
         /// 长按目标（图/行），语音自由指令为 nil（现状）。见 EditAnchor 文档注释。
         let anchor: EditAnchor?
-        init(id: String = UUID().uuidString, text: String, images: [AgentImage] = [], articleIndex: Int = 0, anchor: EditAnchor? = nil) {
-            self.id = id; self.text = text; self.images = images; self.articleIndex = articleIndex; self.anchor = anchor
+        /// 长按菜单被调指令的 id（服务端出图时精确解析魔法数字进 XMP）；语音自由指令为 nil。
+        let itemId: String?
+        init(id: String = UUID().uuidString, text: String, images: [AgentImage] = [], articleIndex: Int = 0, anchor: EditAnchor? = nil, itemId: String? = nil) {
+            self.id = id; self.text = text; self.images = images; self.articleIndex = articleIndex; self.anchor = anchor; self.itemId = itemId
         }
     }
 
@@ -116,7 +118,7 @@ final class ArticleAgentSession: VoiceAgentSession {
         self.rec = rec
         closed = false
         // Restore any edits persisted before a previous kill (text-only).
-        queue = EditQueueStore.load(stem: rec.stem).map { EditRequest(id: $0.id, text: $0.text, articleIndex: $0.articleIndex ?? 0, anchor: $0.anchor) }
+        queue = EditQueueStore.load(stem: rec.stem).map { EditRequest(id: $0.id, text: $0.text, articleIndex: $0.articleIndex ?? 0, anchor: $0.anchor, itemId: $0.itemId) }
         openSocket()
     }
 
@@ -150,10 +152,10 @@ final class ArticleAgentSession: VoiceAgentSession {
     /// Same as above, but carries the long-press target (image/line). Only
     /// long-press menu actions pass one; free-form voice instructions call the
     /// overload above (anchor stays nil = current behavior).
-    func enqueue(_ instruction: String, images: [AgentImage] = [], articleIndex: Int = 0, anchor: EditAnchor?) {
+    func enqueue(_ instruction: String, images: [AgentImage] = [], articleIndex: Int = 0, anchor: EditAnchor?, itemId: String? = nil) {
         let text = instruction.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
-        let reqItem = EditRequest(text: text, images: images, articleIndex: articleIndex, anchor: anchor)
+        let reqItem = EditRequest(text: text, images: images, articleIndex: articleIndex, anchor: anchor, itemId: itemId)
         queue.append(reqItem)
         persist()
         send(reqItem)
@@ -193,6 +195,7 @@ final class ArticleAgentSession: VoiceAgentSession {
             }
         }
         if let anchor = item.anchor { payload["anchor"] = anchor.wireDict }
+        if let itemId = item.itemId { payload["itemId"] = itemId }
         guard let data = try? JSONSerialization.data(withJSONObject: payload),
               let str = String(data: data, encoding: .utf8) else { return }
         task.send(.string(str)) { [weak self] err in
@@ -211,7 +214,7 @@ final class ArticleAgentSession: VoiceAgentSession {
     }
 
     private func persist() {
-        EditQueueStore.save(queue.map { PersistedEdit(id: $0.id, text: $0.text, articleIndex: $0.articleIndex, anchor: $0.anchor) }, stem: stem)
+        EditQueueStore.save(queue.map { PersistedEdit(id: $0.id, text: $0.text, articleIndex: $0.articleIndex, anchor: $0.anchor, itemId: $0.itemId) }, stem: stem)
     }
 
     private func receive() {

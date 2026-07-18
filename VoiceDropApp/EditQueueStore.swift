@@ -13,9 +13,11 @@ struct PersistedEdit: Codable, Equatable {
     /// 长按目标（图/行），见 EditAnchor。Optional：老磁盘队列（升级前落盘）缺这个键，
     /// Codable 对 Optional 字段的缺键解码本就是 nil，不炸、不需要自定义 init(from:)。
     let anchor: EditAnchor?
+    /// 长按菜单被调指令的 id（出图溯源用，随 WS 上行）。Optional：老磁盘队列缺键解码为 nil。
+    let itemId: String?
 
-    init(id: String, text: String, articleIndex: Int?, anchor: EditAnchor? = nil) {
-        self.id = id; self.text = text; self.articleIndex = articleIndex; self.anchor = anchor
+    init(id: String, text: String, articleIndex: Int?, anchor: EditAnchor? = nil, itemId: String? = nil) {
+        self.id = id; self.text = text; self.articleIndex = articleIndex; self.anchor = anchor; self.itemId = itemId
     }
 }
 

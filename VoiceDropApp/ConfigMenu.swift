@@ -41,7 +41,8 @@ struct LongpressPresentation: Identifiable {
     let frame: CGRect            // 被按元素的 global frame（呈现时换算成 overlay 本地坐标）
     let menu: UIMenuConfig
     let fill: (String) -> String
-    let onPick: (String) -> Void
+    /// (成品指令文本, 被点菜单项的 id)。id 随 WS 上行做出图溯源；本地行不经过这里。
+    let onPick: (String, String?) -> Void
     var localRows: [LongpressLocalRow] = []   // 客户端本地行（拷贝），追加为最后一组
 }
 
@@ -221,7 +222,7 @@ struct LongpressMenuOverlay: View {
             .overlay(alignment: .bottom) { if !isLast { hairline.frame(height: 1) } }
         } else if let instruction = node.instruction {
             Button {
-                model.onPick(model.fill(instruction))
+                model.onPick(model.fill(instruction), node.id)
                 dismiss()
             } label: {
                 HStack {
