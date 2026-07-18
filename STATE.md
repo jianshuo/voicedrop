@@ -1,6 +1,31 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-07-18（App Store 推荐提名已提交）
+Last updated: 2026-07-19（提示词分享带分组落位已上线）
+
+## 提示词分享带分组落位（2026-07-19，纯服务端已上线冒烟，iOS 零改动）
+
+「收下这条提示词」不再全堆顶层。jianshuo.dev repo befa835（worker 7f1a2fd0 +
+Pages Action 已部署），全量 1179 测试绿：
+
+- **分享副本记 `groupPath`**：铸码/写穿时 `effectiveLeaf` 记下这条提示词在作者树里的
+  父分组名，存进 `shares/<码>` 的 `groupPath: ["合影照片"]`。**数组格式是给未来放宽
+  层数留的**（用户拍板：暂不做三层菜单，树保持两级封顶，所以至多一段；导入侧也只
+  消费第一段）。作者把项挪组/挪顶层再保存，syncActiveShares 写穿刷新跟着变。
+- **导入按组落位**：收下时同名顶层分组（系统组/自建组，trim 后精确匹配）命中就合并
+  进去；没有就新建同名自建组；副本没带 groupPath（老码）→ 照旧落顶层。幂等不变。
+  导入响应的 `item` 改为按 id 扁平查找（不能再取「最后一个顶层项」）。
+- **标题「分组｜名字」**：`promptPostTitle`（functions/lib/community-store.js 单一真源）
+  用在 D1 索引 title、community/get 合成、落地页 `<h1>`、分享前关键词审核（分组名
+  公开展示了必须一并过审）四处。
+- **iOS 零改动**：importPrompt 成功后 `refresh()` 重拉整树，落位自动生效；SharePreview
+  多出的 groupPath 字段老客户端 Decodable 自动忽略。
+- 存量边界：老 dotted id（voice-editor.longpress.*）的在分享副本刷不动（effectiveLeaf
+  不认，既有边界），无 groupPath 导入落顶层；建硕自己的 p_c12hsv8l/p_50zo83oa 已手动
+  重开刷新验证（落地页/社区帖标题「合影照片｜…」双域已验）。
+- **三层菜单已调研未做**（2026-07-19 用户拍板暂缓）：iOS 数据层/长按菜单数据生成天然
+  递归，但 PromptManagerView 两套摊平行模型 + PromptDragEngine（Scope/落点几何/
+  「组进组」双重防御）写死两级，是未来放开的大头；服务端 validateList 两处
+  `depth > 0`、resolveList/sanitizeStoredItems 非递归。届时 groupPath 已是数组无需迁移。
 
 ## App Store 推荐提名（Featuring Nomination，2026-07-18 已提交）
 
