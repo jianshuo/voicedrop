@@ -1079,7 +1079,7 @@ struct WechatSettingsSheet: View {
                                 }
                                 .foregroundStyle(Theme.accent)
                             }
-                            Text("点上方链接打开公众平台后台，出现登录二维码时长按识别、用公众号管理员微信确认登录；然后进「设置与开发 → 基本配置」：AppID 直接复制，AppSecret 首次需点「生成」（或忘记了就「重置」）、管理员扫码确认后才会显示。")
+                            Text("点上方链接打开公众平台后台，出现登录二维码时先截屏，再打开微信「扫一扫 → 右上角相册」选中截图，选择要绑定的公众号完成登录；进「设置与开发 → 基本配置」：AppID 直接复制，AppSecret 需点「生成」（或「重置」）、管理员扫码确认后显示；同时在该页把下方的 IP 地址加入「IP 白名单」。")
                                 .font(.system(size: 12.5)).foregroundStyle(Theme.faint)
                                 .fixedSize(horizontal: false, vertical: true)
                         }

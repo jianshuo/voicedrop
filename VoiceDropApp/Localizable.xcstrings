@@ -2680,12 +2680,12 @@
         }
       }
     },
-    "点上方链接打开公众平台后台，出现登录二维码时长按识别、用公众号管理员微信确认登录；然后进「设置与开发 → 基本配置」：AppID 直接复制，AppSecret 首次需点「生成」（或忘记了就「重置」）、管理员扫码确认后才会显示。" : {
+    "点上方链接打开公众平台后台，出现登录二维码时先截屏，再打开微信「扫一扫 → 右上角相册」选中截图，选择要绑定的公众号完成登录；进「设置与开发 → 基本配置」：AppID 直接复制，AppSecret 需点「生成」（或「重置」）、管理员扫码确认后显示；同时在该页把下方的 IP 地址加入「IP 白名单」。" : {
       "localizations" : {
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Tap the link above to open the WeChat Official Account console. When the login QR code appears, long-press it and confirm login with the account admin's WeChat. Then go to Settings & Development → Basic Configuration: copy the AppID directly; for the AppSecret, tap Generate (or Reset if lost) and it will be shown after the admin confirms by scanning."
+            "value" : "Tap the link above to open the WeChat Official Account console. When the login QR code appears, take a screenshot, then open WeChat Scan → Album (top right), pick the screenshot, and choose the account to bind. In Settings & Development → Basic Configuration: copy the AppID directly; for the AppSecret, tap Generate (or Reset) and it appears after the admin confirms by scanning. On the same page, add the IP address below to the IP allowlist."
           }
         }
       }
