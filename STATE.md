@@ -1,6 +1,27 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-07-19（提示词分享带分组落位已上线）
+Last updated: 2026-07-19（提示词保存提速 + 删除弹框/左滑修复）
+
+## 提示词保存提速：分享同步挪后台（2026-07-19，纯服务端已上线并线上验证）
+
+「提示词保存慢」根因不在 App：`PUT /agent/prompts` 是**整树 PUT**，服务端每次保存都
+把用户**全部在分享中的副本**重刷一遍——`collectSavedIds` 收整棵树的 id，凡在分享中
+的都命中，逐条 `refreshPromptShare`（各 ~4-5 次串行 R2 往返）。分享 11 条的用户一次
+保存 ≈ 50-60 次串行往返，卡 2-3 秒。删除/改名/排序全走这条 PUT，都一样慢。
+
+修（jianshuo.dev repo，worker 已 deploy，1180 测试绿）：
+- **rekey + syncActiveShares 整体挪进 `ctx.waitUntil` 后台**（prompt-routes.js PUT 分支）。
+  响应体 `resolved(tpl, body.items)` 只用手上的 body、不读 R2，落盘成功即返回。
+  waitUntil-or-await：线上有 ctx 后台跑；单测 `worker.fetch(req,env)` 不传 ctx →
+  await 内联，保持「保存后副本已刷新/码已 rekey」的同步断言（同 openPromptShare 发帖）。
+- **两处 for-await 串行改 Promise.all**：syncActiveShares 逐条 refresh、shareStates 逐条
+  head（后者也在 iOS 分享卡 GET /agent/prompt-shares 热路径上）。
+- **线上验证**：原样回写 PUT 后，命中树的分享副本 `updatedAt` 在响应返回之后才推进
+  （证明同步确在后台跑），响应本身不再等它。
+- **未做（第二层，待用户拍语义）**：把自动 write-through 整条删掉，分享改「铸码拍快照
+  + 作者显式点更新」，与「导入=独立快照」语义对齐。rekey 保留（管分享卡身份跟 fork 走）。
+
+## 提示词分享带分组落位（2026-07-19，纯服务端已上线冒烟，iOS 零改动）
 
 ## 提示词分享带分组落位（2026-07-19，纯服务端已上线冒烟，iOS 零改动）
 
