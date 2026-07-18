@@ -874,6 +874,13 @@ runs ON that VPS and calls `api.weixin.qq.com` directly.
   `wechat-pub` → proxied CNAME `wechat-pub.jianshuo.dev` → `127.0.0.1:8848`. Inbound auth = header
   `X-Relay-Secret` (= Pages `WECHAT_RELAY_SECRET` = VPS `/opt/wechat-relay/relay.env`). WeChat egress
   still exits `66.42.45.128`, so the whitelist is unaffected. **No fallback** by design — failures surface.
+- **保存前真验证 (2026-07-18)：** relay 加了 `POST /validate`（同 secret 鉴权，body `{appid,secret}`）——
+  从白名单 IP 真拿一次 access_token，返回 `{ok:true}` 或微信原始 `{ok:false,errcode,errmsg}`。
+  Pages Function 对应 `POST /files/api/wechat-validate`（登录态，转发给 relay，不落盘凭据）；
+  App 的 `saveWechat`（`SettingsView.swift` `validateWechatCreds`）先本地格式检查、再打这个端点，
+  **验证不过（含 40164 白名单没加好）就报错不写 WECHAT.json**。测试在
+  `agent/test/wechat-validate.test.js`。同页的「去哪里找 AppID/AppSecret」链接改开
+  `developers.weixin.qq.com/console/`，附截屏→微信扫一扫→基本配置取号+加白名单的指引文案。
 - `mining/mine.py`, `mining/publish_wechat.py`, and `.github/workflows/publish-wechat.yml` were all
   **deleted (2026-06-26)**. `mine.py`'s mining half was long superseded by the Worker miner
   (`agent/src/miner.js`, "port of mine.py to JS"); its WeChat half was the relay's only live use, now
