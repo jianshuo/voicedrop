@@ -1,6 +1,31 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-07-17（苹果订阅 P3+P4：¥19.9/月 → 每月 200 算力）
+Last updated: 2026-07-18（App Store 推荐提名已提交）
+
+## App Store 推荐提名（Featuring Nomination，2026-07-18 已提交）
+
+- 已通过 App Store Connect API 提交中国大陆区推荐提名：类型 APP_ENHANCEMENTS，
+  提名 id `e435f73b-aff9-4adb-be1c-0831d68bd346`，状态 SUBMITTED，期望推荐窗口
+  2026-08-15 ～ 2026-09-30，territory CHN / locale zh-Hans / iPhone。
+- 内容围绕 1.5 大更新（追问 / 拍照插图 / 提示词社区 / ¥19.9 包月订阅 / 邀请奖励）。
+- 工具：`POST /v1/nominations`，JWT 用 fastlane 同一把 ASC key（S6363V64RS）。
+  ASC 网页端「Featuring Nominations」可查看/编辑。以后每次大版本都值得再提一次
+  （最少提前 3 周，最多提前 3 个月）。
+
+## 中文产品页素材打磨（2026-07-18，已进 main，随下一个 release 上传）
+
+- **截图集重排**（fastlane/screenshots/zh-Hans/，9 张）：GPT Image 2 海报（假 UI）
+  与「海报式真截图」交替——3 张真机截图（语音改稿/录音+拍照/主页归档）套上
+  米色渐变底+大标题+深色圆角手机框（合成脚本思路：PingFang SC Semibold 116px
+  标题、980px 宽截图、r=148 外框），与海报家族视觉统一；Claude Code 那张挪到
+  第 9 位。前 3 张（搜索可见）= 海报×2 + 真 UI×1。
+- **App 预览视频**：`fastlane/app_preview/zh-Hans/voicedrop-preview-zh-886x1920.mp4`
+  （886×1920、30fps、19.7s、H.264+静音 AAC，规格合规）。三段真实 UI 缓推 +
+  字幕条 + 品牌尾卡。⚠️ **fastlane deliver 传不了 app preview——要在 ASC 网页
+  版本页手动上传**（每 locale 每设备档最多 3 支）。Apple 官方偏好真实录屏，
+  静帧+动效有小概率被拒，被拒就撤视频重交（不影响 app 审核结论）。
+- ⚠️ 1.5 在审（WAITING_FOR_REVIEW）没动；这批素材随下个 release lane 自动上
+  （截图会被 deliver 全量替换上传），视频永远手动。
 
 ## 苹果订阅（2026-07-17，服务端已部署冒烟，iOS 已合 main；⚠️ 需 ASC 手工建产品才能真买）
 
