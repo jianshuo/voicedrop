@@ -266,11 +266,11 @@ final class SettingsStore {
         do { _ = try await URLSession.shared.upload(for: req, from: body) } catch {}
     }
 
-    /// Validate the WeChat credentials before saving. WeChat checks
-    /// appid → IP whitelist → secret, so from the app we can format-check both and
-    /// catch a non-existent appid (40013); a well-formed secret can only be fully
-    /// verified from the whitelisted server (we get 40164 here), so it's accepted
-    /// and confirmed at publish time. Returns nil if OK, else an error message.
+    /// Validate the WeChat credentials before saving. Format-checks locally, then
+    /// asks the server (`POST wechat-validate`) to fetch a REAL access_token from
+    /// the whitelisted relay IP — so a wrong AppID/AppSecret AND a missing
+    /// IP-whitelist entry both block the save with a concrete error, instead of
+    /// surfacing at first publish. Returns nil if OK, else an error message.
     func validateWechatCreds() async -> String? {
         let appid = wechatAppId.trimmingCharacters(in: .whitespacesAndNewlines)
         let secret = wechatSecret.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -280,29 +280,31 @@ final class SettingsStore {
         guard secret.range(of: "^[0-9a-f]{32}$", options: .regularExpression) != nil else {
             return String(localized: "AppSecret 格式不对（应为 32 位小写十六进制，别把 AppID 填进来）")
         }
-        var c = URLComponents(string: "https://api.weixin.qq.com/cgi-bin/token")!
-        c.queryItems = [
-            .init(name: "grant_type", value: "client_credential"),
-            .init(name: "appid", value: appid),
-            .init(name: "secret", value: secret),
-        ]
-        guard let url = c.url else { return nil }
+        var req = URLRequest(url: base.appending(path: "wechat-validate"))
+        req.httpMethod = "POST"
+        req.setBearer(token)
+        req.setValue("application/json; charset=utf-8", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["appid": appid, "secret": secret])
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
+            let (data, resp) = try await URLSession.shared.data(for: req)
             let obj = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-            if obj?["access_token"] != nil { return nil }
-            switch obj?["errcode"] as? Int ?? -1 {
-            case 0, 40164: return nil                                   // appid OK; IP not whitelisted (expected from the phone)
-            case 40013:    return String(localized: "AppID 无效，找不到这个公众号")
-            case 40125:    return String(localized: "AppSecret 无效")
-            case 41002:    return String(localized: "缺少 AppID")
-            case 41004:    return String(localized: "缺少 AppSecret")
+            guard resp.isOK, let obj else {
+                return String(localized: "暂时连不上验证服务，请稍后再试（配置未保存）")
+            }
+            if obj["ok"] as? Bool == true { return nil }
+            switch obj["errcode"] as? Int ?? -1 {
+            case 40164:
+                return String(localized: "服务器 IP 还没生效：把下方 IP 加入公众号后台的「IP 白名单」，保存白名单后等一两分钟再点保存")
+            case 40013: return String(localized: "AppID 无效，找不到这个公众号")
+            case 40125: return String(localized: "AppSecret 无效")
+            case 41002: return String(localized: "缺少 AppID")
+            case 41004: return String(localized: "缺少 AppSecret")
             default:
-                let msg = obj?["errmsg"] as? String ?? String(localized: "未知错误")
+                let msg = obj["errmsg"] as? String ?? String(localized: "未知错误")
                 return String(localized: "验证失败：\(msg)")
             }
         } catch {
-            return nil   // can't reach WeChat — format already checked; don't block the save
+            return String(localized: "暂时连不上验证服务，请稍后再试（配置未保存）")
         }
     }
 

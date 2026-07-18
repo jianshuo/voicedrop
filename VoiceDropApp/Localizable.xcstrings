@@ -2314,6 +2314,16 @@
         }
       }
     },
+    "暂时连不上验证服务，请稍后再试（配置未保存）" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can't reach the verification service right now — please try again later (config not saved)."
+          }
+        }
+      }
+    },
     "更多" : {
       "localizations" : {
         "en" : {
@@ -2348,6 +2358,16 @@
     "朋友的邀请已到账" : {},
     "朋友装上，双方各得 %lld 算力" : {},
     "朋友装上，双方都得算力" : {},
+    "服务器 IP 还没生效：把下方 IP 加入公众号后台的「IP 白名单」，保存白名单后等一两分钟再点保存" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The server IP isn't whitelisted yet: add the IP below to the account's IP allowlist in the WeChat console, wait a minute or two after saving it, then tap Save again."
+          }
+        }
+      }
+    },
     "服务器每小时自动处理一次，过会儿再来看。" : {
       "localizations" : {
         "en" : {

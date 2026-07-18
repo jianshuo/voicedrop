@@ -534,6 +534,19 @@ def _wechat_err(exc):
     }
 
 
+def _validate(payload):
+    """Credential check for the app's save flow: fetch a real access_token from THIS
+    box (the whitelisted IP), so a wrong appid/secret or a missing IP-whitelist entry
+    surfaces before the config is saved — not at first publish. RuntimeError (a real
+    WeChat errcode) is turned into {ok:False,errcode,errmsg} by the caller."""
+    appid = payload.get("appid")
+    secret = payload.get("secret")
+    if not appid or not secret:
+        raise ValueError("missing appid/secret")
+    wechat_access_token(appid, secret)
+    return {"ok": True}
+
+
 def _publish(payload):
     """Run the synchronous WeChat publish and return the JSON-able result dict."""
     appid = payload.get("appid")
@@ -590,7 +603,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": "not found"})
 
     def do_POST(self):
-        if self.path != "/publish":
+        if self.path not in ("/publish", "/validate"):
             return self._send(404, {"error": "not found"})
         # Auth: constant-time compare of the shared secret.
         got = self.headers.get("X-Relay-Secret", "")
@@ -608,6 +621,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"error": "invalid json"})
 
         try:
+            if self.path == "/validate":
+                return self._send(200, _validate(payload))
             return self._send(200, _publish(payload))
         except ValueError as e:
             log(f"   ✗ publish rejected: {e}")
