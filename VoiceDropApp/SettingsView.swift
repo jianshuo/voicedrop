@@ -1070,7 +1070,7 @@ struct WechatSettingsSheet: View {
                             Text("凭证只保存在你的设备与服务器的加密配置里，不会出现在文章中。")
                                 .font(.system(size: 12.5)).foregroundStyle(Theme.faint)
                                 .fixedSize(horizontal: false, vertical: true)
-                            Link(destination: URL(string: "https://developers.weixin.qq.com/doc/offiaccount/Basic_Information/Get_access_token.html")!) {
+                            Link(destination: URL(string: "https://developers.weixin.qq.com/console/")!) {
                                 HStack(spacing: 4) {
                                     Image(systemName: "safari").font(.system(size: 11))
                                     Text("去哪里找 AppID / AppSecret？")
@@ -1079,6 +1079,9 @@ struct WechatSettingsSheet: View {
                                 }
                                 .foregroundStyle(Theme.accent)
                             }
+                            Text("点上方链接打开公众平台后台，出现登录二维码时长按识别、用公众号管理员微信确认登录；然后进「设置与开发 → 基本配置」：AppID 直接复制，AppSecret 首次需点「生成」（或忘记了就「重置」）、管理员扫码确认后才会显示。")
+                                .font(.system(size: 12.5)).foregroundStyle(Theme.faint)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
 
                         if let e = store.wechatError { Text(e).font(.system(size: 13)).foregroundStyle(.orange) }

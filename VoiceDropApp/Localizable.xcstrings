@@ -2680,6 +2680,16 @@
         }
       }
     },
+    "点上方链接打开公众平台后台，出现登录二维码时长按识别、用公众号管理员微信确认登录；然后进「设置与开发 → 基本配置」：AppID 直接复制，AppSecret 首次需点「生成」（或忘记了就「重置」）、管理员扫码确认后才会显示。" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tap the link above to open the WeChat Official Account console. When the login QR code appears, long-press it and confirm login with the account admin's WeChat. Then go to Settings & Development → Basic Configuration: copy the AppID directly; for the AppSecret, tap Generate (or Reset if lost) and it will be shown after the admin confirms by scanning."
+          }
+        }
+      }
+    },
     "点下面的红键录一条，过会儿服务器会自动转写并挖成文章。" : {
       "localizations" : {
         "en" : {
