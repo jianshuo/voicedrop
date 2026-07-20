@@ -33,7 +33,14 @@ extension String {
 /// Compiled into BOTH targets (this file is in VoiceDropShare too).
 enum API {
     static let host = "jianshuo.dev"
+    /// 照片原图专用主机：走 voicedrop.cn（腾讯 EdgeOne 国内边缘缓存），国内用户
+    /// 读原图命中境内节点、不跨洋回源 WNAM。照片是公开、写后不变、可长缓存的
+    /// （源站对 200 发 max-age=1y immutable，EdgeOne cache-rules 对 /files/api/photo/*
+    /// FollowOrigin 缓存），所以切到 CDN 安全且是数量级提速。
+    /// 只切原图——缩略图走 CF 的 /cdn-cgi/image/ 边缘缩放，EdgeOne 无等价物，留在 host。
+    static let photoHost = "voicedrop.cn"
     static let filesBase = URL(string: "https://\(host)/files/api")!   // Files API (articles, files, photos, share, wechat, community)
+    static let photoBase = URL(string: "https://\(photoHost)/files/api")!  // 照片原图（EdgeOne 国内缓存）
     static let agentBase = URL(string: "https://\(host)/agent")!       // Agent worker (mine trigger, usage, link REST)
     static let recoBase  = URL(string: "https://\(host)/reco")!        // Reco worker (ranking, engagement)
     static let agentWS   = "wss://\(host)/agent"                        // WebSocket base: append /edit, /status, /asr (+ query)

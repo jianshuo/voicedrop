@@ -119,7 +119,8 @@ enum PhotoService {
         guard !fullKey.isEmpty else { return nil }
         let file = diskURL(fullKey)
         if !ignoringLocalCache, let d = try? Data(contentsOf: file), !d.isEmpty { return d }
-        guard let url = URL(string: "\(API.filesBase.absoluteString)/photo/\(fullKey.urlPathEncoded)")
+        // 原图走 photoBase（voicedrop.cn / EdgeOne 国内边缘缓存），不走跨洋的 jianshuo.dev。
+        guard let url = URL(string: "\(API.photoBase.absoluteString)/photo/\(fullKey.urlPathEncoded)")
         else { return nil }
         var req = URLRequest(url: url)
         if ignoringLocalCache { req.cachePolicy = .reloadIgnoringLocalCacheData }
