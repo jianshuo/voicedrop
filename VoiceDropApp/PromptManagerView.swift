@@ -63,6 +63,7 @@ struct PromptManagerView: View {
     /// 不留一个悬空的 EditDragState 卡住浮层或污染下一次拖动。
     @Environment(\.scenePhase) private var scenePhase
     @State private var store = PromptStore.shared
+    @State private var marketModel = PromptMarketModel()   // 8a 社区热门段的数据源
     @State private var expandedGroups: Set<String> = []
     @State private var deleteTarget: PromptNode?
     @State private var showRestoreConfirm = false
@@ -305,6 +306,22 @@ struct PromptManagerView: View {
                     }
                     Section {
                         normalCardSection
+                    }
+                    // 8a 社区热门：我的列表下方续接（设计稿第 8 轮）。排序编辑态不进这里
+                    //（normalModeList 本身只在正常态渲染）。导入成功 → 刷新我的树 + 滚动高亮新行。
+                    Section {
+                        PromptMarketSection(model: marketModel, store: store) { _, newID in
+                            Task {
+                                await store.refresh()
+                                highlightedID = newID
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                    if highlightedID == newID { highlightedID = nil }
+                                }
+                            }
+                        }
+                        .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 4, trailing: 0))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                     }
                     Section {
                         importBox
