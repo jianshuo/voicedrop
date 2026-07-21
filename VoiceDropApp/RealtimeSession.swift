@@ -14,7 +14,9 @@ import Foundation
 ///   send:    input_audio_buffer.append / .clear / response.create / response.cancel
 @MainActor
 final class RealtimeSession {
-    enum State: String { case idle, connecting, live, degraded }
+    // .degraded = 可恢复的掉线（跨境弱网等）→ 调用方静默重连。
+    // .unavailable = 服务端硬拒绝（OpenAI 余额/配额耗尽等）→ 重连无益，调用方停手 + 提示。
+    enum State: String { case idle, connecting, live, degraded, unavailable }
 
     // Callbacks injected by RealtimeInterviewer.
     var onAudioDelta: ((Data) -> Void)?      // decoded PCM16 24k mono bytes of AI speech
@@ -29,6 +31,9 @@ final class RealtimeSession {
     private var task: URLSessionWebSocketTask?
     private var urlSession: URLSession?
     private var closed = false
+    // 一旦收到服务端硬拒绝（配额/计费）就置位：随后的 socket 关闭 receive .failure 不再
+    // 退回 .degraded 触发重连，保持 .unavailable 终态。每次新连接重置。
+    private var fatal = false
     // Connection generation. The interview is now toggled on/off repeatedly within one
     // recording, so a CANCELLED task's pending receive-completion can land AFTER the
     // next connect() has reset `closed` — without this token the stale .failure would
@@ -40,6 +45,7 @@ final class RealtimeSession {
         guard task == nil else { return }
         generation += 1
         closed = false
+        fatal = false
         state = .connecting
         let token = AuthStore.shared.bearer
         // fmt=pcmu 向 relay 声明本包上行是 G.711 μ-law @8kHz（EngineRecorder 的 tee）；
@@ -62,7 +68,15 @@ final class RealtimeSession {
                 guard let self, gen == self.generation, !self.closed else { return }
                 switch result {
                 case .failure:
-                    self.state = .degraded            // relay/network dropped — recording continues (caller guarantees)
+                    // 区分「可恢复掉线」与「服务端硬拒绝」：后者重连只会风暴，置终态 .unavailable。
+                    // 硬拒绝信号：已由 error 事件置 fatal，或 WS 关闭帧带 1013/配额原因（OpenAI
+                    // 额度耗尽经 relay 原样透传 close code+reason）。
+                    if self.fatal || self.isFatalClose() {
+                        self.fatal = true
+                        self.state = .unavailable
+                    } else {
+                        self.state = .degraded        // relay/network dropped — recording continues (caller guarantees)
+                    }
                 case .success(let message):
                     switch message {
                     case .string(let str): self.handle(str)
@@ -87,10 +101,32 @@ final class RealtimeSession {
             if let b64 = obj["delta"] as? String, let d = Data(base64Encoded: b64) { onAudioDelta?(d) }
         case "response.done":
             onResponseDone?()
+        case "error":
+            // OpenAI 先发 error 事件、再关 WS。若是配额/计费类硬错误，立刻置终态——
+            // 不等 socket 关闭，也不让随后的 .failure 退回 .degraded 触发重连。
+            let err = obj["error"] as? [String: Any]
+            let blob = [err?["code"], err?["type"], err?["message"]]
+                .compactMap { $0 as? String }.joined(separator: " ")
+            if Self.isFatalReason(blob) { fatal = true; state = .unavailable }
         default:
             // First-connect: log unhandled types to confirm names against the live relay.
             break
         }
+    }
+
+    /// WS 关闭帧是否代表服务端硬拒绝（OpenAI 额度/计费耗尽）。1013=try-again-later，
+    /// OpenAI 配额耗尽正是用它关闭；relay 原样透传 code+reason，reason 里带
+    /// "insufficient_quota"。
+    private func isFatalClose() -> Bool {
+        if task?.closeCode.rawValue == 1013 { return true }
+        if let d = task?.closeReason, let s = String(data: d, encoding: .utf8), Self.isFatalReason(s) { return true }
+        return false
+    }
+
+    private static func isFatalReason(_ s: String) -> Bool {
+        let t = s.lowercased()
+        return t.contains("insufficient_quota") || t.contains("exceeded_current_quota")
+            || t.contains("account_deactivated") || t.contains("billing")
     }
 
     // MARK: - Send

@@ -123,9 +123,21 @@ final class RealtimeInterviewer: RecordingBackend {
 
     private func wireCallbacks() {
         session.onStateChange     = { [weak self] s in
-            self?.connState = s
-            if s == .live { self?.reconnectAttempt = 0 }
-            if s == .degraded { self?.scheduleReconnect() }
+            guard let self else { return }
+            self.connState = s
+            if s == .live { self.reconnectAttempt = 0 }
+            if s == .degraded { self.scheduleReconnect() }
+            if s == .unavailable {
+                // 服务端硬拒绝（OpenAI 额度/计费耗尽）：重连只会风暴，就地停手。停上行
+                // tee（不再为死连接缓冲/计费），取消重连，保留 .unavailable 终态让录音界面
+                // 显示「采访暂不可用」。录音全程不受影响；用户可手动点「采访」关掉旁路。
+                self.reconnectTask?.cancel(); self.reconnectTask = nil
+                self.reconnectAttempt = 0
+                self.engine.teeEnabled = false
+                self.aiSpeaking = false; self.aiTurnEnded = false
+                self.engine.stopAIPlayback()
+                Analytics.capture("采访不可用")
+            }
         }
         session.onResponseCreated = { [weak self] in self?.beginAiTurn() }             // AI about to speak
         session.onAudioDelta      = { [weak self] pcm in

@@ -46,6 +46,7 @@ struct RecordSession: View {
         case .connecting: return String(localized: "AI 连接中…")
         case .live: return String(localized: "AI 采访中 · 再点一下结束")
         case .degraded: return String(localized: "AI 已断开 · 录音继续")
+        case .unavailable: return String(localized: "AI 采访暂不可用 · 录音继续")
         case .idle: return ""
         }
     }
