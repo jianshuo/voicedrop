@@ -273,10 +273,9 @@ struct PromptMarketDetailView: View {
     }
 
     private var statsCard: some View {
+        // 「好评」格已砍（建硕 2026-07-22：没有 rating 数据，占位没意义；真要做时再加回）。
         HStack(spacing: 0) {
             statCell(String(item.importCount), String(localized: "被导入"))
-            statDivider
-            statCell("—", String(localized: "好评"))   // rating 留位：互动数据接上后填真值
             statDivider
             statCell(appliesText, String(localized: "适用于"))
         }
