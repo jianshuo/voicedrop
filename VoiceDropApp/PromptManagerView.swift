@@ -57,6 +57,10 @@ import UIKit
 // （`body` 的 `onChange`）。`cancelReorder`/`commitReorder`/`exitReorderDiscarding` 早就会
 // 清 `editDrag`/`dropTarget`，原样保留。
 struct PromptManagerView: View {
+    /// 主页「提示词」tab 内嵌模式（2026-07-22）：隐藏返回键与页内大标题（tab 头
+    /// 已经写着「提示词」），并在列表顶部加「写作风格」入口。设置 → 提示词的
+    /// push 用法（默认 false）完全不变——同一个视图两处复用，不复制。
+    var embedded = false
     @Environment(\.dismiss) private var dismiss
     /// 安全网第三层：切后台/锁屏等场景离开 active 时清空拖拽态（见 body 里的 onChange）——
     /// 万一某次 onEnded 真没触发（系统中断等边界情况，正常路径已被下面两层挡住），
@@ -69,6 +73,10 @@ struct PromptManagerView: View {
     @State private var showRestoreConfirm = false
     @State private var showNewSheet = false
     @State private var showImportSheet = false
+    /// embedded 模式顶部「写作风格」入口 → 弹同一个 WritingStyleSheet（设置里也在用；
+    /// sheet 自己 .task 拉取版本历史，SettingsStore 按 RecordingDetailView 同款局部实例）。
+    @State private var showStyleSheet = false
+    @State private var styleSettings = SettingsStore()
     @State private var toast: String?
     /// ＋ →「新建动作」交回的草稿（还没进 store.items）：sheet 关掉之后（`onDismiss`）
     /// 才 push 编辑页，避免 sheet 收起动画和 push 动画打架。
@@ -176,6 +184,7 @@ struct PromptManagerView: View {
             .presentationDetents([.height(300)])
             .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showStyleSheet) { WritingStyleSheet(store: styleSettings) }
         .sheet(isPresented: $showImportSheet) {
             PromptImportSheet { newNode in
                 // 成功回调先于 sheet 自己的 dismiss() 跑：先标记高亮 id，等 sheet 收起动画
@@ -223,10 +232,12 @@ struct PromptManagerView: View {
                 }
                 .buttonStyle(.plain)
                 .frame(width: 36, height: 36, alignment: .leading)
-            } else {
+            } else if !embedded {
                 NavSquare(systemName: "chevron.left", size: 36) { dismiss() }
             }
-            Text("提示词").font(.system(size: 26, weight: .semibold)).foregroundStyle(Theme.ink)
+            if !embedded {
+                Text("提示词").font(.system(size: 26, weight: .semibold)).foregroundStyle(Theme.ink)
+            }
             Spacer()
             if reordering {
                 Button { commitReorder() } label: {
@@ -256,6 +267,21 @@ struct PromptManagerView: View {
     private var normalModeList: some View {
         ScrollViewReader { proxy in
             List {
+                // embedded（主页 tab）专属：顶部「写作风格」入口——复用设置页同款
+                // SettingsCard/SettingsRow/WritingStyleSheet，只是换了个入口。
+                if embedded {
+                    Section {
+                        SettingsCard {
+                            Button { showStyleSheet = true } label: {
+                                SettingsRow(tileBG: Theme.tileNeutral, symbol: "pencil", tileFG: Theme.secondary,
+                                            title: String(localized: "写作风格"), subtitle: String(localized: "成文时模仿这套语气")) { settingsChevron }
+                            }.buttonStyle(.plain)
+                        }
+                        .listRowInsets(EdgeInsets(top: 2, leading: 0, bottom: 8, trailing: 0))
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                    }
+                }
                 Section {
                     Text(introText)
                         .font(.system(size: 12.5)).foregroundStyle(Theme.secondary)

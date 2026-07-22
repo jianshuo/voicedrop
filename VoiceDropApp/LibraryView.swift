@@ -5,7 +5,7 @@ import UIKit
 /// pure-red record key at the bottom opens the full-screen recording takeover;
 /// the gear pushes Settings. Pulls fresh data on appear and drains any pending
 /// local uploads.
-enum HomeTab: Hashable { case recordings, community, tag(String) }
+enum HomeTab: Hashable { case recordings, community, prompts, tag(String) }
 
 struct LibraryView: View {
     @State private var store = LibraryStore()
@@ -166,6 +166,9 @@ struct LibraryView: View {
             switch tab {
             case .recordings: recordingsContent
             case .community: communityContent
+            // 与设置 → 提示词同一个视图（embedded 只是收掉返回键/页内标题并加
+            // 「写作风格」顶部入口），见 PromptManagerView.embedded。
+            case .prompts: PromptManagerView(embedded: true)
             case .tag(let t): tagContent(t)
             }
         }
@@ -187,7 +190,8 @@ struct LibraryView: View {
         .overlay(alignment: .bottom) {
             // The red key (record + press-and-hold voice commands) lives on 我的
             // 录音 AND every tag page — a tag page is the same list, filtered.
-            if tab != .community {
+            // 提示词 tab 是管理页，不放录音键（它有自己的 ＋ 和列表交互）。
+            if tab != .community && tab != .prompts {
                 recordButton
             } else {
                 EmptyView()
@@ -400,6 +404,7 @@ struct LibraryView: View {
             HStack(alignment: .firstTextBaseline, spacing: 20) {
                 tabLabel(String(localized: "我的录音"), .recordings)
                 tabLabel(String(localized: "VD社区"), .community)
+                tabLabel(String(localized: "提示词"), .prompts)
                 ForEach(allTags, id: \.self) { t in
                     tabLabel(t, .tag(t))
                 }
