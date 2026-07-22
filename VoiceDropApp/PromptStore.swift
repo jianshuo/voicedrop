@@ -518,6 +518,9 @@ struct SharePreview: Decodable {
 struct ShareState: Decodable {
     let code: String
     let sharing: Bool
+    /// 溯源转发（2026-07-22）：true = 未修改的导入件在转发【原作者的】码——不是
+    /// 自有码，关闭只是停止转发，码本身不会失效。老服务端响应无此字段 → nil。
+    let borrowed: Bool?
 }
 
 @MainActor

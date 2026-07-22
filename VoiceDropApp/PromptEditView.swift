@@ -315,12 +315,17 @@ struct PromptEditView: View {
     // 数据源换成 store.shareStates()/store.setSharing(id:on:)，分享键 = 当前节点 id）
 
     @ViewBuilder private var shareCard: some View {
-        let sharing = shareStates[currentID]?.sharing ?? false
+        let state = shareStates[currentID]
+        let sharing = state?.sharing ?? false
+        // 溯源转发：未修改的导入件分享的是【原作者的】码——文案不能说「关闭后码失效」
+        //（关闭只停止自己这边的转发，码还活在原作者手里）。
+        let borrowed = state?.borrowed ?? false
         VStack(alignment: .leading, spacing: 10) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("分享到社区").font(.system(size: 15)).foregroundStyle(Theme.ink)
-                    Text(sharing ? "分享中：社区可见，关闭后分享码失效、社区帖撤下"
+                    Text(sharing ? (borrowed ? "转发中：这是原作者的分享码，关闭只停止转发，码不会失效"
+                                             : "分享中：社区可见，关闭后分享码失效、社区帖撤下")
                                  : "开启后发布到社区，并得到分享码短链")
                         .font(.system(size: 12)).foregroundStyle(Theme.faint)
                 }
@@ -362,7 +367,11 @@ struct PromptEditView: View {
                             sharePayload = ShareCodePayload(code: code, label: nameDraft.isEmpty ? (node?.label ?? "") : nameDraft)
                         }
                     }
-                    if dirty {
+                    if borrowed {
+                        // 服务端在「改正文并保存」时会自动停止转发（borrowed 条目撤掉）。
+                        Text("转发原作者的版本；改动正文保存后会自动停止转发")
+                            .font(.system(size: 12)).foregroundStyle(Theme.faint)
+                    } else if dirty {
                         Text("分享的始终是已保存的版本").font(.system(size: 12)).foregroundStyle(Theme.faint)
                     }
                 }
