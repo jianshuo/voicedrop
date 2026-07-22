@@ -57,10 +57,6 @@ import UIKit
 // （`body` 的 `onChange`）。`cancelReorder`/`commitReorder`/`exitReorderDiscarding` 早就会
 // 清 `editDrag`/`dropTarget`，原样保留。
 struct PromptManagerView: View {
-    /// 主页「提示词」tab 内嵌模式（2026-07-22）：隐藏返回键与页内大标题（tab 头
-    /// 已经写着「提示词」），并在列表顶部加「写作风格」入口。设置 → 提示词的
-    /// push 用法（默认 false）完全不变——同一个视图两处复用，不复制。
-    var embedded = false
     @Environment(\.dismiss) private var dismiss
     /// 安全网第三层：切后台/锁屏等场景离开 active 时清空拖拽态（见 body 里的 onChange）——
     /// 万一某次 onEnded 真没触发（系统中断等边界情况，正常路径已被下面两层挡住），
@@ -73,10 +69,6 @@ struct PromptManagerView: View {
     @State private var showRestoreConfirm = false
     @State private var showNewSheet = false
     @State private var showImportSheet = false
-    /// embedded 模式顶部「写作风格」入口 → 弹同一个 WritingStyleSheet（设置里也在用；
-    /// sheet 自己 .task 拉取版本历史，SettingsStore 按 RecordingDetailView 同款局部实例）。
-    @State private var showStyleSheet = false
-    @State private var styleSettings = SettingsStore()
     @State private var toast: String?
     /// ＋ →「新建动作」交回的草稿（还没进 store.items）：sheet 关掉之后（`onDismiss`）
     /// 才 push 编辑页，避免 sheet 收起动画和 push 动画打架。
@@ -129,11 +121,7 @@ struct PromptManagerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // embedded 非排序态 header 已空（返回键/标题/＋ 都收掉了），整行不画；
-            // 排序态仍要它承载「取消/完成」。
-            if !embedded || reordering {
-                header
-            }
+            header
 
             if reordering {
                 editModeScrollView
@@ -152,11 +140,7 @@ struct PromptManagerView: View {
         .toolbar(.hidden, for: .navigationBar)
         .postHogMask()   // 隐私红线：提示词（指令文本）不进 session replay 截屏
         .onAppear { Analytics.screen("提示词管理") }
-        .task {
-            await store.refresh()
-            // embedded：写作风格卡副题要显示风格首行摘要（styleSubtitle）。
-            if embedded { await styleSettings.load() }
-        }
+        .task { await store.refresh() }
         // 弹框里的「删除」绝不能挂 .disabled：confirmationDialog 对 disabled 的按钮不是置灰
         // 而是整个不渲染，连「取消」都会一起消失，只剩标题气泡（最小工程实测，iOS 26 模拟器）。
         // 在途保护改在 performDelete 里等待——见那边注释。
@@ -192,7 +176,6 @@ struct PromptManagerView: View {
             .presentationDetents([.height(300)])
             .presentationDragIndicator(.visible)
         }
-        .sheet(isPresented: $showStyleSheet) { WritingStyleSheet(store: styleSettings) }
         .sheet(isPresented: $showImportSheet) {
             PromptImportSheet { newNode in
                 // 成功回调先于 sheet 自己的 dismiss() 跑：先标记高亮 id，等 sheet 收起动画
@@ -218,19 +201,9 @@ struct PromptManagerView: View {
     }
 
     private var introText: String {
-        if reordering { return String(localized: "拖 ≡ 手柄调顺序；拖到 folder 标题收进去。") }
-        // embedded（主页 tab）用设计稿 Prompt Tab 1a 的短脚注；push 用法保留详细说明。
-        if embedded { return String(localized: "选中文字或图片长按时出现的动作，点了就跑。") }
-        return String(localized: "一套指令，长按文字或图片时按『适用于』自动筛选。改过的系统项标『已自定义』，自己建的标『自建』，收下别人分享的标『导入』。")
-    }
-
-    /// 写作风格卡副题（设计稿：「口语，像跟邻居聊天」· 成文时都带上）——取风格
-    /// 首行做摘要；没设过风格就只剩后半句。styleSettings 在 embedded 的 .task 里拉。
-    private var styleSubtitle: String {
-        let first = styleSettings.style.split(separator: "\n").first
-            .map { String($0).trimmingCharacters(in: .whitespaces) } ?? ""
-        if first.isEmpty { return String(localized: "成文时都带上") }
-        return "「\(first.prefix(14))」· " + String(localized: "成文时都带上")
+        reordering
+            ? String(localized: "拖 ≡ 手柄调顺序；拖到 folder 标题收进去。")
+            : String(localized: "一套指令，长按文字或图片时按『适用于』自动筛选。改过的系统项标『已自定义』，自己建的标『自建』，收下别人分享的标『导入』。")
     }
 
     private func addGroup(named name: String) async {
@@ -250,12 +223,10 @@ struct PromptManagerView: View {
                 }
                 .buttonStyle(.plain)
                 .frame(width: 36, height: 36, alignment: .leading)
-            } else if !embedded {
+            } else {
                 NavSquare(systemName: "chevron.left", size: 36) { dismiss() }
             }
-            if !embedded {
-                Text("提示词").font(.system(size: 26, weight: .semibold)).foregroundStyle(Theme.ink)
-            }
+            Text("提示词").font(.system(size: 26, weight: .semibold)).foregroundStyle(Theme.ink)
             Spacer()
             if reordering {
                 Button { commitReorder() } label: {
@@ -263,9 +234,7 @@ struct PromptManagerView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(store.isMutating)
-            } else if !embedded {
-                // embedded（主页 tab）时 ＋ 不在顶栏——挪到列表里「长按菜单」节标题右侧
-                //（设计稿 Prompt Tab 1a）；push 用法（设置 → 提示词）保持原位。
+            } else {
                 addButton
             }
         }
@@ -287,46 +256,6 @@ struct PromptManagerView: View {
     private var normalModeList: some View {
         ScrollViewReader { proxy in
             List {
-                // embedded（主页 tab）专属：设计稿 Prompt Tab 1a 的三段结构头两段——
-                // 「写作风格」节（卡片 + 脚注）→「长按菜单」节标题（右侧 ＋）。
-                // 组件全部复用设置页（SettingsCard/SettingsRow/settingsSectionLabel/
-                // WritingStyleSheet），只换文案与摆位。
-                if embedded {
-                    Section {
-                        settingsSectionLabel(String(localized: "写作风格"))
-                            .listRowInsets(EdgeInsets(top: 2, leading: 2, bottom: 8, trailing: 0))
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                        SettingsCard {
-                            Button { showStyleSheet = true } label: {
-                                SettingsRow(tileBG: Theme.tileNeutral, symbol: "pencil", tileFG: Theme.secondary,
-                                            title: String(localized: "我的写作风格"), subtitle: styleSubtitle) { settingsChevron }
-                            }.buttonStyle(.plain)
-                        }
-                        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                        Text("始终生效的底子——每次成文默认带上。")
-                            .font(.system(size: 11.5)).foregroundStyle(Theme.faint)
-                            .listRowInsets(EdgeInsets(top: 7, leading: 6, bottom: 0, trailing: 4))
-                            .listRowSeparator(.hidden)
-                            .listRowBackground(Color.clear)
-                        HStack {
-                            settingsSectionLabel(String(localized: "长按菜单"))
-                            Spacer()
-                            Button { showNewSheet = true } label: {
-                                RoundedRectangle(cornerRadius: 7)
-                                    .fill(Theme.accentSoft)
-                                    .frame(width: 24, height: 24)
-                                    .overlay(Image(systemName: "plus").font(.system(size: 12, weight: .semibold)).foregroundStyle(Theme.accent))
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .listRowInsets(EdgeInsets(top: 22, leading: 2, bottom: 2, trailing: 2))
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                    }
-                }
                 Section {
                     Text(introText)
                         .font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
