@@ -11,7 +11,7 @@ struct CommunityFeedView: View {
     let onSelect: (CommunityPost) -> Void
     let onUnshare: (CommunityPost) -> Void
 
-    enum FeedTab { case reco, latest, replies, prompts }
+    enum FeedTab { case reco, latest, replies }
     @State private var tab: FeedTab = .reco
     /// coverPhotoKey → 实测宽高比（w/h）。图片加载后回填，masonry 用它重新估高。
     @State private var coverAspects: [String: CGFloat] = [:]
@@ -23,7 +23,6 @@ struct CommunityFeedView: View {
         case .reco:    return store.posts        // reco 排序（applyRanking 后的顺序）
         case .latest:  return store.timeOrdered  // 服务端原始顺序（纯时间序，不经 reco）
         case .replies: return store.posts.filter { $0.replyTo != nil }
-        case .prompts: return store.posts.filter { $0.isPrompt }
         }
     }
 
@@ -56,7 +55,6 @@ struct CommunityFeedView: View {
             tabLabel(String(localized: "推荐"), .reco)
             tabLabel(String(localized: "最新"), .latest)
             tabLabel(String(localized: "回应"), .replies)
-            tabLabel(String(localized: "提示词"), .prompts)
             Spacer()
         }
         .padding(.horizontal, 18)
@@ -69,7 +67,6 @@ struct CommunityFeedView: View {
         case .reco: return "推荐"
         case .latest: return "最新"
         case .replies: return "回应"
-        case .prompts: return "提示词"
         }
     }
 
