@@ -80,6 +80,7 @@ struct LongpressMenuOverlay: View {
             let origin = geo.frame(in: .global).origin
             let anchor = CGRect(x: model.frame.minX - origin.x, y: model.frame.minY - origin.y,
                                 width: model.frame.width, height: model.frame.height)
+            let maxCardHeight = geo.size.height - 32   // 上下各留 16pt，超出就卡内滚动
             ZStack(alignment: .topLeading) {
                 // 压暗 scrim（正文的模糊由父视图做）——点空白处收起
                 ink.opacity(0.18)
@@ -90,9 +91,10 @@ struct LongpressMenuOverlay: View {
                 liftedAnchor(anchor)
                     .allowsHitTesting(false)
 
-                menuCard
+                menuCard(maxHeight: maxCardHeight)
                     .frame(width: menuWidth)
-                    .offset(menuOffset(in: geo.size, anchor: anchor))
+                    .offset(menuOffset(in: geo.size, anchor: anchor,
+                                       height: min(estimatedHeight, maxCardHeight)))
             }
         }
         .onAppear { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
@@ -122,10 +124,10 @@ struct LongpressMenuOverlay: View {
         }
     }
 
-    // MARK: 菜单卡定位：优先贴在元素下方 12pt，放不下翻到上方，横向钳在屏内
+    // MARK: 菜单卡定位：优先贴在元素下方 12pt，放不下翻到上方，横向钳在屏内。
+    // height 已按屏幕可用高度封顶，上方也放不下时钳回 16pt——此时卡内可滚动，不会截断。
 
-    private func menuOffset(in size: CGSize, anchor: CGRect) -> CGSize {
-        let h = estimatedHeight
+    private func menuOffset(in size: CGSize, anchor: CGRect, height h: CGFloat) -> CGSize {
         let below = anchor.maxY + 12
         let y: CGFloat
         if below + h <= size.height - 16 {
@@ -145,30 +147,57 @@ struct LongpressMenuOverlay: View {
             .filter { !$0.isEmpty }
     }
 
-    private var estimatedHeight: CGFloat {
-        if let sub = openSubmenu {
-            return backRowHeight + CGFloat((sub.children ?? []).count) * rowHeight
-        }
+    private var rootContentHeight: CGFloat {
         let groups = renderableGroups
         let rows = groups.reduce(0) { $0 + $1.count } + model.localRows.count
         let seps = max(0, groups.count - 1) + (model.localRows.isEmpty ? 0 : 1)
         return CGFloat(rows) * rowHeight + CGFloat(seps) * 7
     }
 
-    // MARK: 菜单卡
+    private func submenuChildrenHeight(_ sub: UIMenuNode) -> CGFloat {
+        CGFloat((sub.children ?? []).count) * rowHeight
+    }
 
-    private var menuCard: some View {
+    private var estimatedHeight: CGFloat {
+        if let sub = openSubmenu {
+            return backRowHeight + submenuChildrenHeight(sub)
+        }
+        return rootContentHeight
+    }
+
+    // MARK: 菜单卡（内容超过屏幕可用高度时卡内滚动；submenu 的返回行固定在顶部）
+
+    private func menuCard(maxHeight: CGFloat) -> some View {
         VStack(spacing: 0) {
             if let sub = openSubmenu {
-                submenuLevel(sub)
+                backRow(sub)
+                scrollIfNeeded(contentHeight: submenuChildrenHeight(sub),
+                               maxHeight: maxHeight - backRowHeight) {
+                    submenuLevel(sub)
+                }
             } else {
-                rootLevel
+                scrollIfNeeded(contentHeight: rootContentHeight, maxHeight: maxHeight) {
+                    rootLevel
+                }
             }
         }
         .background(paper.opacity(0.97))
         .clipShape(RoundedRectangle(cornerRadius: 13))
         .shadow(color: ink.opacity(0.32), radius: 22, x: 0, y: 18)
         .animation(.easeOut(duration: 0.16), value: openSubmenu?.id)
+    }
+
+    @ViewBuilder
+    private func scrollIfNeeded<Content: View>(contentHeight: CGFloat, maxHeight: CGFloat,
+                                               @ViewBuilder content: () -> Content) -> some View {
+        if contentHeight > maxHeight {
+            ScrollView {
+                VStack(spacing: 0) { content() }
+            }
+            .frame(height: maxHeight)
+        } else {
+            content()
+        }
     }
 
     @ViewBuilder
@@ -188,9 +217,9 @@ struct LongpressMenuOverlay: View {
         }
     }
 
+    /// submenu 的子项列表（返回行由 menuCard 固定在滚动区外）。
     @ViewBuilder
     private func submenuLevel(_ sub: UIMenuNode) -> some View {
-        backRow(sub)
         let children = (sub.children ?? []).filter {
             ($0.type == "submenu" && !($0.children ?? []).isEmpty) || $0.instruction != nil
         }
