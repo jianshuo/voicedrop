@@ -64,12 +64,17 @@ final class PromptMarketModel {
     /// 本地缓存（与 PromptStore.promptsCache.v1 同款纪律）：打开页面先显示上次的
     /// 列表，网络回来再原地刷新——「社区热门」不再每次开页都空转菊花等一个
     /// 跨境 RTT。只缓存默认筛选（热门）那一页；切筛选是显式动作，等网络可接受。
-    private static let cacheKey = "promptMarketCache.v1"
+    private static let cacheName = "prompt-market-cache.json"
 
     init() {
-        if let data = UserDefaults.standard.data(forKey: Self.cacheKey),
-           let cached = try? JSONDecoder().decode([MarketItem].self, from: data) {
+        if let cached = DiskCache.load([MarketItem].self, Self.cacheName) {
             items = cached
+        } else if let legacy = UserDefaults.standard.data(forKey: "promptMarketCache.v1"),
+                  let cached = try? JSONDecoder().decode([MarketItem].self, from: legacy) {
+            // 一次性迁移：老版本存 UserDefaults——搬家后清老 key。
+            items = cached
+            DiskCache.saveData(legacy, Self.cacheName)
+            UserDefaults.standard.removeObject(forKey: "promptMarketCache.v1")
         }
     }
 
@@ -82,9 +87,7 @@ final class PromptMarketModel {
         if let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
            let decoded = try? JSONDecoder().decode(R.self, from: data) {
             items = decoded.items
-            if filter == .hot, let enc = try? JSONEncoder().encode(decoded.items) {
-                UserDefaults.standard.set(enc, forKey: Self.cacheKey)
-            }
+            if filter == .hot { DiskCache.save(decoded.items, Self.cacheName) }
         } else if items.isEmpty {
             failed = true
         }

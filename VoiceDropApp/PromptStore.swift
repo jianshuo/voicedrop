@@ -537,11 +537,18 @@ final class PromptStore {
     /// 覆盖掉第二个已经成功的改动。
     private(set) var isMutating = false
 
-    private static let cacheKey = "promptsCache.v1"
+    private static let cacheName = "prompts-cache.json"
     private var token: String { AuthStore.shared.bearer }
 
     private init() {
-        let cached = UserDefaults.standard.data(forKey: Self.cacheKey)
+        // 一次性迁移：老版本缓存在 UserDefaults（promptsCache.v1）——首启读不到新
+        // 文件就回老 key 兜一把并搬家，老用户升级后离线冷启动不丢自定义菜单。
+        var cached = DiskCache.loadData(Self.cacheName)
+        if cached == nil, let legacy = UserDefaults.standard.data(forKey: "promptsCache.v1") {
+            cached = legacy
+            DiskCache.saveData(legacy, Self.cacheName)
+            UserDefaults.standard.removeObject(forKey: "promptsCache.v1")
+        }
         items = PromptLogic.effectiveItems(fetched: nil, cached: cached, builtin: PromptLogic.builtin)
     }
 
@@ -560,7 +567,7 @@ final class PromptStore {
         }
         error = nil
         items = fresh
-        UserDefaults.standard.set(data, forKey: Self.cacheKey)
+        DiskCache.saveData(data, Self.cacheName)
     }
 
     /// PUT 整树（rawItems(items)）。nil = 成功；非 nil = 给用户看的错误文案。
@@ -581,7 +588,7 @@ final class PromptStore {
         guard resp.isOK else { return String(localized: "保存失败，请重试") }
         if let fresh = PromptLogic.decodeItems(data) {
             items = fresh
-            UserDefaults.standard.set(data, forKey: Self.cacheKey)
+            DiskCache.saveData(data, Self.cacheName)
         }
         Analytics.capture("提示词保存")
         return nil
@@ -720,7 +727,7 @@ final class PromptStore {
         guard let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
               let fresh = PromptLogic.decodeItems(data) else { return false }
         items = fresh
-        UserDefaults.standard.set(data, forKey: Self.cacheKey)
+        DiskCache.saveData(data, Self.cacheName)
         return true
     }
 

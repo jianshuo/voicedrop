@@ -374,30 +374,19 @@ final class LibraryStore {
         var covers: [String: String] = [:]
         var tags: [String: [String]] = [:]
     }
-    private nonisolated static var metaCacheURL: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appending(path: "article-meta-cache.json")
-    }
 
-    // 列表快照（SWR：先旧后新）：上次成功的 GET /recordings 原始响应落盘。冷启动
-    // init 里同步重放它把列表立即画出来（0 等待），随后 load() 的网络刷新原地覆盖
-    // ——SwiftUI 按 id diff，内容没变不闪、变了只动那几行。快照与 meta 缓存同一
-    // 家法：Caches 目录、成功才覆盖、写失败无所谓（下次网络刷新兜底）。
-    private nonisolated static var listCacheURL: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appending(path: "recordings-list-cache.json")
-    }
+    // 列表快照（SWR：先旧后新）：上次成功的 GET /recordings 原始响应落盘（DiskCache）。
+    // 冷启动 init 里同步重放它把列表立即画出来（0 等待），随后 load() 的网络刷新
+    // 原地覆盖——SwiftUI 按 id diff，内容没变不闪、变了只动那几行。
+    private static let listCacheName = "recordings-list-cache.json"
 
     init() {
-        let loaded = (try? Data(contentsOf: Self.metaCacheURL)).flatMap {
-            try? JSONDecoder().decode(ArticleMetaCache.self, from: $0)
-        } ?? ArticleMetaCache()
+        let loaded = DiskCache.load(ArticleMetaCache.self, "article-meta-cache.json") ?? ArticleMetaCache()
         titleCache = loaded.titles
         coverCache = loaded.covers
         tagsCache = loaded.tags
         // 快照重放走与网络刷新完全相同的发布管线（publishRows）——合并/排序纪律只写一处。
-        if let data = try? Data(contentsOf: Self.listCacheURL),
-           let r = try? JSONDecoder().decode(RecordingsResponse.self, from: data) {
+        if let r = DiskCache.load(RecordingsResponse.self, Self.listCacheName) {
             publishRows(Self.rows(from: r))
         }
     }
@@ -405,13 +394,8 @@ final class LibraryStore {
     /// Persist the meta caches (fire-and-forget, off the main actor). Called after
     /// batch fills and after invalidations — a lost write just means a refetch.
     private func persistMetaCache() {
-        let snapshot = ArticleMetaCache(titles: titleCache, covers: coverCache, tags: tagsCache)
-        let url = Self.metaCacheURL
-        Task.detached(priority: .utility) {
-            if let data = try? JSONEncoder().encode(snapshot) {
-                try? data.write(to: url, options: .atomic)
-            }
-        }
+        DiskCache.save(ArticleMetaCache(titles: titleCache, covers: coverCache, tags: tagsCache),
+                       "article-meta-cache.json")
     }
 
     private struct ListResponse: Decodable {
@@ -453,9 +437,7 @@ final class LibraryStore {
         req.setBearer(token)
         if let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
            let r = try? JSONDecoder().decode(RecordingsResponse.self, from: data) {
-            // 成功才落快照；fire-and-forget，丢一次写只是下回冷启动多等一次网络。
-            let url = Self.listCacheURL
-            Task.detached(priority: .utility) { try? data.write(to: url, options: .atomic) }
+            DiskCache.saveData(data, Self.listCacheName)   // 成功才落快照
             return Self.rows(from: r)
         }
         var listReq = URLRequest(url: base.appending(path: "list"))
@@ -652,22 +634,17 @@ final class LibraryStore {
         return data
     }
 
-    // 文章 doc 快照（SWR：详情页先显示上次的 doc，网络回来原地覆盖）。按 stem 一文件，
-    // Caches 目录（磁盘紧张 iOS 自动清）；只在 fetchDoc 成功后覆盖写。
+    // 文章 doc 快照（SWR：详情页先显示上次的 doc，网络回来原地覆盖）。按 stem 一文件；
+    // 只在 fetchDoc 成功后覆盖写。
     // fetchDocRaw【故意不接缓存】——那是键盘精修 PUT 前的合并基准，必须是服务器当前真身。
-    private nonisolated static func docCacheURL(forStem stem: String) -> URL {
-        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appending(path: "article-doc-cache", directoryHint: .isDirectory)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let safe = stem.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? stem
-        return dir.appending(path: "\(safe).json")
+    private nonisolated static func docCacheName(forStem stem: String) -> String {
+        "article-doc-cache/\(stem.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? stem).json"
     }
 
     /// 上次成功拉过的 doc（没有 → nil）。详情页开页时先用它渲染，0 等待。
     func cachedDoc(_ rec: Recording) -> ArticleDoc? {
         guard rec.hasArticles else { return nil }
-        guard let data = try? Data(contentsOf: Self.docCacheURL(forStem: rec.stem)) else { return nil }
-        return try? JSONDecoder().decode(ArticleDoc.self, from: data)
+        return DiskCache.load(ArticleDoc.self, Self.docCacheName(forStem: rec.stem))
     }
 
     /// Fetch the mined article document for a recording (nil if not mined yet).
@@ -683,8 +660,7 @@ final class LibraryStore {
             let (data, resp) = try await URLSession.shared.data(for: req)
             guard resp.isOK else { return nil }
             let doc = try JSONDecoder().decode(ArticleDoc.self, from: data)
-            let cacheURL = Self.docCacheURL(forStem: rec.stem)
-            Task.detached(priority: .utility) { try? data.write(to: cacheURL, options: .atomic) }
+            DiskCache.saveData(data, Self.docCacheName(forStem: rec.stem))
             return doc
         } catch { return nil }
     }

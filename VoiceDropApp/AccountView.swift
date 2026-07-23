@@ -262,6 +262,7 @@ struct AccountView: View {
            let items = try? fm.contentsOfDirectory(at: docs, includingPropertiesForKeys: nil) {
             for u in items { try? fm.removeItem(at: u) }
         }
+        DiskCache.wipe()   // Caches 里的快照（录音列表/文章 doc/feed/照片）也是「本机数据」，一并清
         if let bid = Bundle.main.bundleIdentifier {
             UserDefaults.standard.removePersistentDomain(forName: bid)
         }

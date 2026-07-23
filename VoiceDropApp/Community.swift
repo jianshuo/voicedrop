@@ -65,8 +65,8 @@ final class CommunityStore {
     private let recoBase = API.recoBase
     private var token: String { AuthStore.shared.bearer }
 
-    // feed 快照（SWR：先旧后新，与 LibraryStore 列表快照同一家法）：开页先显示上次
-    // 的社区列表，网络回来原地覆盖；成功才写、写失败无所谓。
+    // feed 快照（SWR：先旧后新，DiskCache 家法）：开页先显示上次的社区列表，
+    // 网络回来原地覆盖；成功才写。
     private struct FeedCache: Codable {
         var posts: [CommunityPost] = []
         var timeOrdered: [CommunityPost] = []
@@ -74,14 +74,10 @@ final class CommunityStore {
         var replyCounts: [String: Int] = [:]
         var liked: [String] = []
     }
-    private nonisolated static var feedCacheURL: URL {
-        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-            .appending(path: "community-feed-cache.json")
-    }
+    private static let feedCacheName = "community-feed-cache.json"
 
     init() {
-        if let data = try? Data(contentsOf: Self.feedCacheURL),
-           let c = try? JSONDecoder().decode(FeedCache.self, from: data) {
+        if let c = DiskCache.load(FeedCache.self, Self.feedCacheName) {
             posts = c.posts.filter { !BlockStore.isBlocked($0.author) }
             timeOrdered = c.timeOrdered.filter { !BlockStore.isBlocked($0.author) }
             likeCounts = c.likeCounts
@@ -91,15 +87,9 @@ final class CommunityStore {
     }
 
     private func persistFeedCache() {
-        let snapshot = FeedCache(posts: posts, timeOrdered: timeOrdered,
+        DiskCache.save(FeedCache(posts: posts, timeOrdered: timeOrdered,
                                  likeCounts: likeCounts, replyCounts: replyCounts,
-                                 liked: Array(likedShareIds))
-        let url = Self.feedCacheURL
-        Task.detached(priority: .utility) {
-            if let data = try? JSONEncoder().encode(snapshot) {
-                try? data.write(to: url, options: .atomic)
-            }
-        }
+                                 liked: Array(likedShareIds)), Self.feedCacheName)
     }
 
     /// Community WRITES (share / unshare) need an Apple-verified identity — the server
@@ -411,6 +401,9 @@ final class CommunityStore {
         if let on { body["on"] = on }
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
         _ = try? await URLSession.shared.data(for: req)
+        // 点赞等互动改了 likedShareIds（视图直接改 store），把 feed 快照跟着落盘——
+        // 否则杀掉 App 冷启动重放旧快照，红心闪回未点状态，像丢了赞。
+        persistFeedCache()
     }
 
     /// Report a post for objectionable content (Apple 1.2). The server HIDES it from

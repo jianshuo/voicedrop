@@ -183,6 +183,7 @@ final class AuthStore {
         keychainSave(token, account: anonAccount)
         anonToken = token
         AppGroup.publishBearer(anonToken)   // keep the Share Extension in sync
+        DiskCache.wipe()   // 身份换了——上一个身份的私有快照不能带进新身份
     }
 
     /// Adopt an anon_… token received from another device (device-link login).
@@ -195,6 +196,7 @@ final class AuthStore {
         keychainSave(token, account: anonAccount)
         anonToken = token
         AppGroup.publishBearer(anonToken)   // keep the Share Extension in sync
+        DiskCache.wipe()   // 身份换了——上一个身份的私有快照不能带进新身份
     }
 
     // MARK: - Keychain (synchronizable = iCloud Keychain)
