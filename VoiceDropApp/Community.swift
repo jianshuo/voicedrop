@@ -313,6 +313,14 @@ final class CommunityStore {
         } catch { return false }
     }
 
+    // 帖子正文快照（SWR）：只读内容按 shareId 一文件（shareId 是 b64url，文件名安全）。
+    private static func postCacheName(_ shareId: String) -> String { "community-post-cache/\(shareId).json" }
+
+    /// 上次成功拉过的帖子正文（没有 → nil）。详情页开页先用它渲染。
+    func cachedPost(_ shareId: String) -> CommunityFullPost? {
+        DiskCache.load(CommunityFullPost.self, Self.postCacheName(shareId))
+    }
+
     func fetchPost(_ shareId: String) async -> CommunityFullPost? {
         guard !token.isEmpty else { return nil }
         var req = URLRequest(url: base.appending(path: "community").appending(path: "get").appending(path: shareId))
@@ -320,7 +328,9 @@ final class CommunityStore {
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
             guard resp.isOK else { return nil }
-            return try JSONDecoder().decode(CommunityFullPost.self, from: data)
+            let post = try JSONDecoder().decode(CommunityFullPost.self, from: data)
+            DiskCache.saveData(data, Self.postCacheName(shareId))
+            return post
         } catch { return nil }
     }
 
@@ -564,8 +574,14 @@ struct CommunityPostView: View {
         .task {
             liked = store.likedShareIds.contains(post.shareId)
             Task { await store.loadFeedStates([post.shareId]) }
+            // SWR（先旧后新）：有上次的正文快照就立即渲染，网络回来原地覆盖；
+            // 网络失败保留快照，不清屏。
+            if full == nil, let cached = store.cachedPost(post.shareId) {
+                full = cached
+                loading = false
+            }
             await store.engage(post.shareId, action: "view")
-            full = await store.fetchPost(post.shareId)
+            if let fresh = await store.fetchPost(post.shareId) { full = fresh }
             loading = false
             // 已收下过的提示词帖：按钮直接常显「已收下」。查的是本地缓存树（app 启动时
             // 已兜底加载），未命中也无妨——服务端导入幂等，重复点只会得到 already 提示。
@@ -575,7 +591,8 @@ struct CommunityPostView: View {
             }
             async let repliesTask = store.loadReplies(post.shareId)
             if let replyToId = full?.replyTo ?? post.replyTo {
-                replyToFull = await store.fetchPost(replyToId)
+                replyToFull = store.cachedPost(replyToId)                   // 先快照
+                if let fresh = await store.fetchPost(replyToId) { replyToFull = fresh }
             }
             replies = await repliesTask
             await loadReplyPreviews()

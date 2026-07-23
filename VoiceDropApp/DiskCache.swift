@@ -51,7 +51,8 @@ enum DiskCache {
             let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]
             for name in ["recordings-list-cache.json", "community-feed-cache.json",
                          "prompts-cache.json", "prompt-market-cache.json",
-                         "article-meta-cache.json", "article-doc-cache", "photo-cache"] {
+                         "article-meta-cache.json", "article-doc-cache",
+                         "community-post-cache", "photo-cache"] {
                 try? fm.removeItem(at: caches.appending(path: name))
             }
         }
