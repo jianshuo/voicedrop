@@ -379,6 +379,15 @@ final class LibraryStore {
             .appending(path: "article-meta-cache.json")
     }
 
+    // 列表快照（SWR：先旧后新）：上次成功的 GET /recordings 原始响应落盘。冷启动
+    // init 里同步重放它把列表立即画出来（0 等待），随后 load() 的网络刷新原地覆盖
+    // ——SwiftUI 按 id diff，内容没变不闪、变了只动那几行。快照与 meta 缓存同一
+    // 家法：Caches 目录、成功才覆盖、写失败无所谓（下次网络刷新兜底）。
+    private nonisolated static var listCacheURL: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appending(path: "recordings-list-cache.json")
+    }
+
     init() {
         let loaded = (try? Data(contentsOf: Self.metaCacheURL)).flatMap {
             try? JSONDecoder().decode(ArticleMetaCache.self, from: $0)
@@ -386,6 +395,11 @@ final class LibraryStore {
         titleCache = loaded.titles
         coverCache = loaded.covers
         tagsCache = loaded.tags
+        // 快照重放走与网络刷新完全相同的发布管线（publishRows）——合并/排序纪律只写一处。
+        if let data = try? Data(contentsOf: Self.listCacheURL),
+           let r = try? JSONDecoder().decode(RecordingsResponse.self, from: data) {
+            publishRows(Self.rows(from: r))
+        }
     }
 
     /// Persist the meta caches (fire-and-forget, off the main actor). Called after
@@ -422,19 +436,27 @@ final class LibraryStore {
     /// 直出，~0.5s）；老服务端没有这个路由 → 回退全量 GET /list 客户端自筛
     /// （~2.5s 的老行为，翻全部 R2 对象）。返回 nil = 服务端明确拒绝（老路径
     /// 非 200），调用方显示「加载失败」。
+    /// RecordingsResponse → 行元组（网络路径与冷启动快照重放共用的唯一映射）。
+    private nonisolated static func rows(from r: RecordingsResponse) -> [(rec: Recording, blocked: Bool, hasTags: Bool)] {
+        r.recordings
+            .filter { RecordingName.isRecordingFile($0.name) }
+            .map { (rec: Recording(audioName: $0.name,
+                                   uploaded: $0.uploaded ?? "",
+                                   hasArticles: $0.hasArticles,
+                                   isEmpty: $0.isEmpty),
+                    blocked: $0.blocked ?? false,
+                    hasTags: $0.hasTags ?? false) }
+    }
+
     private func fetchRecordingRows() async throws -> [(rec: Recording, blocked: Bool, hasTags: Bool)]? {
         var req = URLRequest(url: base.appending(path: "recordings"))
         req.setBearer(token)
         if let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
            let r = try? JSONDecoder().decode(RecordingsResponse.self, from: data) {
-            return r.recordings
-                .filter { RecordingName.isRecordingFile($0.name) }
-                .map { (rec: Recording(audioName: $0.name,
-                                       uploaded: $0.uploaded ?? "",
-                                       hasArticles: $0.hasArticles,
-                                       isEmpty: $0.isEmpty),
-                        blocked: $0.blocked ?? false,
-                        hasTags: $0.hasTags ?? false) }
+            // 成功才落快照；fire-and-forget，丢一次写只是下回冷启动多等一次网络。
+            let url = Self.listCacheURL
+            Task.detached(priority: .utility) { try? data.write(to: url, options: .atomic) }
+            return Self.rows(from: r)
         }
         var listReq = URLRequest(url: base.appending(path: "list"))
         listReq.setBearer(token)
@@ -487,6 +509,37 @@ final class LibraryStore {
         } while loadQueued
     }
 
+    /// rows → recordings 的同步发布段（网络刷新与冷启动快照重放共用；合并/排序纪律只写这一处）。
+    private func publishRows(_ rows: [(rec: Recording, blocked: Bool, hasTags: Bool)]) {
+        // The ONE place recordings get ordered — newest first. Every consumer
+        // (LibraryView, ExportSheet) reads this order; nobody re-sorts. See Recording.newestFirst.
+        var next = rows.map { $0.rec }.sorted(by: Recording.newestFirst)
+
+        // Re-apply in-flight processing state from WebSocket, and prune stems
+        // that are now done (article or empty marker already landed in R2).
+        for i in next.indices {
+            let stem = next[i].stem
+            if let ph = processingPhase[stem] {
+                if next[i].hasArticles || next[i].isEmpty {
+                    processingPhase[stem] = nil   // done — clear the in-flight marker
+                } else {
+                    next[i].phase = ph
+                }
+            }
+        }
+
+        // Apply EVERY cached enrichment (title / cover / tags) BEFORE publishing
+        // the new array. The tag tabs derive from recordings' tags — publishing
+        // un-enriched rows made allTags transiently empty on every reload, which
+        // bounced the user off the tag page they were on.
+        for i in next.indices where next[i].hasArticles {
+            next[i].articleTitle = titleCache[next[i].articleKey]
+            next[i].coverPhotoKey = coverCache[next[i].articleKey].flatMap { $0.isEmpty ? nil : $0 }
+            next[i].tags = tagsCache[next[i].articleKey].flatMap { $0.isEmpty ? nil : $0 }
+        }
+        recordings = next
+    }
+
     private func loadOnce() async {
         guard !token.isEmpty else { error = String(localized: "请先登录"); return }
         loading = true; error = nil
@@ -497,33 +550,7 @@ final class LibraryStore {
             }
             let blockedStems = Set(rows.filter { $0.blocked }.map { $0.rec.stem })
             let taggedStems = Set(rows.filter { $0.hasTags }.map { $0.rec.stem })
-            // The ONE place recordings get ordered — newest first. Every consumer
-            // (LibraryView, ExportSheet) reads this order; nobody re-sorts. See Recording.newestFirst.
-            var next = rows.map { $0.rec }.sorted(by: Recording.newestFirst)
-
-            // Re-apply in-flight processing state from WebSocket, and prune stems
-            // that are now done (article or empty marker already landed in R2).
-            for i in next.indices {
-                let stem = next[i].stem
-                if let ph = processingPhase[stem] {
-                    if next[i].hasArticles || next[i].isEmpty {
-                        processingPhase[stem] = nil   // done — clear the in-flight marker
-                    } else {
-                        next[i].phase = ph
-                    }
-                }
-            }
-
-            // Apply EVERY cached enrichment (title / cover / tags) BEFORE publishing
-            // the new array. The tag tabs derive from recordings' tags — publishing
-            // un-enriched rows made allTags transiently empty on every reload, which
-            // bounced the user off the tag page they were on.
-            for i in next.indices where next[i].hasArticles {
-                next[i].articleTitle = titleCache[next[i].articleKey]
-                next[i].coverPhotoKey = coverCache[next[i].articleKey].flatMap { $0.isEmpty ? nil : $0 }
-                next[i].tags = tagsCache[next[i].articleKey].flatMap { $0.isEmpty ? nil : $0 }
-            }
-            recordings = next
+            publishRows(rows)
 
             // ── Async late enrichment (in place, after publish) ──────────────────
 
@@ -625,6 +652,24 @@ final class LibraryStore {
         return data
     }
 
+    // 文章 doc 快照（SWR：详情页先显示上次的 doc，网络回来原地覆盖）。按 stem 一文件，
+    // Caches 目录（磁盘紧张 iOS 自动清）；只在 fetchDoc 成功后覆盖写。
+    // fetchDocRaw【故意不接缓存】——那是键盘精修 PUT 前的合并基准，必须是服务器当前真身。
+    private nonisolated static func docCacheURL(forStem stem: String) -> URL {
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appending(path: "article-doc-cache", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let safe = stem.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? stem
+        return dir.appending(path: "\(safe).json")
+    }
+
+    /// 上次成功拉过的 doc（没有 → nil）。详情页开页时先用它渲染，0 等待。
+    func cachedDoc(_ rec: Recording) -> ArticleDoc? {
+        guard rec.hasArticles else { return nil }
+        guard let data = try? Data(contentsOf: Self.docCacheURL(forStem: rec.stem)) else { return nil }
+        return try? JSONDecoder().decode(ArticleDoc.self, from: data)
+    }
+
     /// Fetch the mined article document for a recording (nil if not mined yet).
     /// Uses the articles API (not raw download) so schema-3 docs get their current
     /// head version's articles reconstructed at the top level.
@@ -637,7 +682,10 @@ final class LibraryStore {
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
             guard resp.isOK else { return nil }
-            return try JSONDecoder().decode(ArticleDoc.self, from: data)
+            let doc = try JSONDecoder().decode(ArticleDoc.self, from: data)
+            let cacheURL = Self.docCacheURL(forStem: rec.stem)
+            Task.detached(priority: .utility) { try? data.write(to: cacheURL, options: .atomic) }
+            return doc
         } catch { return nil }
     }
 

@@ -204,8 +204,19 @@ struct RecordingDetailView: View {
             if recording.isEmpty {
                 emptyReason = await store.fetchEmptyReason(recording)
             } else {
-                doc = await store.fetchDoc(recording)
-                followup.load(doc)   // 有未答追问 → 说话条右侧亮星标（缺省收起）
+                // SWR（先旧后新）：有上次的 doc 快照就立即渲染（0 等待），网络回来
+                // 原地覆盖；网络失败保留快照内容，不再把页面清回「还没成文」。
+                if doc == nil, let cached = store.cachedDoc(recording) {
+                    doc = cached
+                    followup.load(doc)
+                    loadingDoc = false
+                }
+                if let fresh = await store.fetchDoc(recording) {
+                    doc = fresh
+                    followup.load(doc)   // 有未答追问 → 说话条右侧亮星标（缺省收起）
+                } else if doc == nil {
+                    followup.load(nil)   // 真没有（未成文/网络失败且无快照）——维持原行为
+                }
             }
             loadingDoc = false
             published = doc?.hasWechatDraft ?? false

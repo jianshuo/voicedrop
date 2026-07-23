@@ -3,7 +3,7 @@ import UIKit
 import Observation
 
 /// One community post as listed (metadata only).
-struct CommunityPost: Decodable, Identifiable, Hashable {
+struct CommunityPost: Codable, Identifiable, Hashable {
     let shareId: String
     let author: String?
     let title: String?
@@ -64,6 +64,43 @@ final class CommunityStore {
     private let base = API.filesBase
     private let recoBase = API.recoBase
     private var token: String { AuthStore.shared.bearer }
+
+    // feed 快照（SWR：先旧后新，与 LibraryStore 列表快照同一家法）：开页先显示上次
+    // 的社区列表，网络回来原地覆盖；成功才写、写失败无所谓。
+    private struct FeedCache: Codable {
+        var posts: [CommunityPost] = []
+        var timeOrdered: [CommunityPost] = []
+        var likeCounts: [String: Int] = [:]
+        var replyCounts: [String: Int] = [:]
+        var liked: [String] = []
+    }
+    private nonisolated static var feedCacheURL: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appending(path: "community-feed-cache.json")
+    }
+
+    init() {
+        if let data = try? Data(contentsOf: Self.feedCacheURL),
+           let c = try? JSONDecoder().decode(FeedCache.self, from: data) {
+            posts = c.posts.filter { !BlockStore.isBlocked($0.author) }
+            timeOrdered = c.timeOrdered.filter { !BlockStore.isBlocked($0.author) }
+            likeCounts = c.likeCounts
+            replyCounts = c.replyCounts
+            likedShareIds = Set(c.liked)
+        }
+    }
+
+    private func persistFeedCache() {
+        let snapshot = FeedCache(posts: posts, timeOrdered: timeOrdered,
+                                 likeCounts: likeCounts, replyCounts: replyCounts,
+                                 liked: Array(likedShareIds))
+        let url = Self.feedCacheURL
+        Task.detached(priority: .utility) {
+            if let data = try? JSONEncoder().encode(snapshot) {
+                try? data.write(to: url, options: .atomic)
+            }
+        }
+    }
 
     /// Community WRITES (share / unshare) need an Apple-verified identity — the server
     /// 403s a bare anon token. Everything else (incl. reco engage/rank, uploads, lists)
@@ -134,6 +171,7 @@ final class CommunityStore {
             likeCounts = rows.reduce(into: [:]) { $0[$1.shareId] = $1.likes ?? 0 }
             replyCounts = rows.reduce(into: [:]) { if let n = $1.replies, n > 0 { $0[$1.shareId] = n } }
             likedShareIds = Set(rows.filter { $0.liked == true }.map(\.shareId))
+            persistFeedCache()
             return true
         } catch { return false }
     }
@@ -153,6 +191,7 @@ final class CommunityStore {
                 if let to = p.replyTo { acc[to, default: 0] += 1 }
             }
             await applyRanking()
+            persistFeedCache()
         } catch { self.error = error.localizedDescription }
     }
 
