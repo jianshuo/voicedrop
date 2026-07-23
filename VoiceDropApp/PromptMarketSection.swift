@@ -11,7 +11,7 @@ import SwiftUI
 
 // MARK: - 数据
 
-struct MarketItem: Decodable, Identifiable, Equatable {
+struct MarketItem: Codable, Identifiable, Equatable {
     let code: String
     let label: String
     let appliesTo: [String]
@@ -26,7 +26,7 @@ struct MarketItem: Decodable, Identifiable, Equatable {
     enum CodingKeys: String, CodingKey { case code, label, appliesTo, kind, author, importCount, createdAt, example }
 }
 
-struct MarketExample: Decodable, Equatable {
+struct MarketExample: Codable, Equatable {
     let input: String?
     let output: String?
     let imageKey: String?
@@ -61,6 +61,18 @@ final class PromptMarketModel {
     var failed = false
     var filter: MarketFilter = .hot
 
+    /// 本地缓存（与 PromptStore.promptsCache.v1 同款纪律）：打开页面先显示上次的
+    /// 列表，网络回来再原地刷新——「社区热门」不再每次开页都空转菊花等一个
+    /// 跨境 RTT。只缓存默认筛选（热门）那一页；切筛选是显式动作，等网络可接受。
+    private static let cacheKey = "promptMarketCache.v1"
+
+    init() {
+        if let data = UserDefaults.standard.data(forKey: Self.cacheKey),
+           let cached = try? JSONDecoder().decode([MarketItem].self, from: data) {
+            items = cached
+        }
+    }
+
     func load() async {
         loading = items.isEmpty
         failed = false
@@ -70,6 +82,9 @@ final class PromptMarketModel {
         if let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
            let decoded = try? JSONDecoder().decode(R.self, from: data) {
             items = decoded.items
+            if filter == .hot, let enc = try? JSONEncoder().encode(decoded.items) {
+                UserDefaults.standard.set(enc, forKey: Self.cacheKey)
+            }
         } else if items.isEmpty {
             failed = true
         }
