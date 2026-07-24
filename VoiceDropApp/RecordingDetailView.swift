@@ -352,6 +352,19 @@ struct RecordingDetailView: View {
             // user taps elsewhere on the page — no auto-dismiss timer.
             agentReply = AgentReply(text: text, ok: ok)
         }
+        agent.onResolved = { [self] in
+            // 兜底收敛：指令终态后主动重拉权威 doc（见 AgentSession.onResolved 注释）。
+            // onUpdate 若已应用过同版内容，这里的覆盖是幂等的。
+            Task {
+                if let fresh = await store.fetchDoc(recording) {
+                    let oldArticles = articles
+                    doc = fresh
+                    articleIndex = min(articleIndex, max(0, fresh.resolvedArticles.count - 1))
+                    flashChanges(from: oldArticles, to: fresh.resolvedArticles)
+                    followup.merge(fresh)
+                }
+            }
+        }
         // 流式预览的 UI 已撤（打字机在正文里渲染引入了难排查的布局 bug，用户拍板
         // 回退「一次性出结果」）；只保留 preview-done 这个完成信号——长文重写的
         // 生成可能超过 HTTP 超时，它保证断线也能正常收尾。其余预览消息被忽略。

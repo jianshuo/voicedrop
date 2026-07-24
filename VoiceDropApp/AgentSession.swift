@@ -92,6 +92,12 @@ final class ArticleAgentSession: VoiceAgentSession {
 
     var onUpdate: ((ArticleDoc?, [String]) -> Void)?
     var onReply: ((String, Bool) -> Void)?
+    /// 指令到达终态（updated / error / 重连快照对账）都会触发——详情页借此主动
+    /// HTTP 重拉一次权威 doc 兜底（2026-07-25）。WS 在弱网下常断，updated 广播
+    /// 可能落在死连接上；快照偶发带不上 article 时对账也会消掉任务芯片却不更新
+    /// 正文（占位图丢失/插图不显示/长按 key 过期的共同根源）。收敛不再依赖任何
+    /// 单一下行消息成功送达。
+    var onResolved: (() -> Void)?
 
     /// 实时预览（换风格/重写/语音整篇改写）：服务端边生成边推的纯文本增量。
     /// a = 文章下标，field = "title" | "body"。
@@ -211,6 +217,7 @@ final class ArticleAgentSession: VoiceAgentSession {
         queue.removeAll { $0.id == id }
         persist()
         state = queue.isEmpty ? .idle : .working
+        onResolved?()
     }
 
     private func persist() {
