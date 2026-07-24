@@ -1,6 +1,24 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-07-24（文风 undo 不再截断历史 + CZ 版本恢复；编辑 loop 写后校验）
+Last updated: 2026-07-24（多风格对比整体下线；文风 undo 不再截断历史）
+
+## 多风格对比整体下线（2026-07-24，两端已改，worker 3b5603d3 已部署）
+
+「勾选 2–3 个文风版本、成文时各挖一篇并排对比」的功能全删：
+
+- **iOS**（SettingsView.swift + Theme.swift）：写作风格页的「多风格对比」开关、
+  勾选 UI、对比态版本栏、「完成」按钮全部移除；`Prefs.multiStyle` / `Prefs.styles`
+  删掉（UserDefaults 里的旧 key 残留无害，无人再读）。`SettingsStore.saveStyles` /
+  `serverStyles` / `StyleResponse.styles` 一并删除。版本下拉恢复为纯单选切换。
+- **服务端**（jianshuo.dev repo 81c4099）：`functions/files/api/[[path]].js` 的
+  GET /style 不再返回 `styles`，PUT /style 忽略 `body.styles`（旧客户端「关掉开关」
+  会 PUT {styles:[]} → 400 empty_content，App 端 fire-and-forget 不受影响）。
+  `agent/src/miner.js` 挖矿只按 head 文风挖一篇：picks/toMine/variants 循环、
+  cacheMode "transcript" 分支全删（"transcript" 机制保留，改稿路径还在用）。
+  已存在用户 CLAUDE.json 里的 `profile.styles` 字段留着但无人再读——之前选过
+  非 head 单风格的用户会静默回到 head 文风，这是预期行为。
+- 测试：style-api.test.js 两条多风格用例改为「已下线」断言，全量 1296 绿。
+  iOS BUILD SUCCEEDED。
 
 ## 文风 undo 后再写不再截断未来版本（2026-07-24，已部署活体验证）
 

@@ -44,7 +44,6 @@ final class SettingsStore {
     var name = ""                            // profile.name（CLAUDE.json），署名 + 挖文章称呼
     var styleVersions: [StyleVersion] = []   // oldest-first, from /style/history
     var styleHead = 0
-    var serverStyles: [Int] = []   // profile.styles (多风格对比 selection) from GET /style
     var suanliBalance: Double = 0  // 算力余额，给设置主列表「算力」行显示
     var suanliLoaded = false
     var loading = false
@@ -66,7 +65,7 @@ final class SettingsStore {
 
     // 文风存在 CLAUDE.json，单独走 /style（版本化）。
     private struct StylePayload: Encodable { let style: String }
-    private struct StyleResponse: Decodable { let style: String?; let name: String?; let styles: [Int]? }
+    private struct StyleResponse: Decodable { let style: String?; let name: String? }
 
     func load() async {
         guard !token.isEmpty else { error = String(localized: "请先登录"); return }
@@ -82,7 +81,6 @@ final class SettingsStore {
                 if let obj = try? JSONDecoder().decode(StyleResponse.self, from: data) {
                     style = obj.style ?? ""
                     name = obj.name ?? ""
-                    serverStyles = obj.styles ?? []
                 }
             } else if code != 404 {
                 error = String(localized: "加载失败")
@@ -149,19 +147,6 @@ final class SettingsStore {
         let body = (try? JSONEncoder().encode(["name": trimmed])) ?? Data()
         _ = try? await URLSession.shared.upload(for: req, from: body)
         name = trimmed
-    }
-
-    /// Persist the 多风格对比 selection to profile.styles (PUT /style {styles}) — the
-    /// miner reads it. No 文风 version is created. Empty array = single-style.
-    func saveStyles(_ styles: [Int]) async {
-        guard !token.isEmpty else { return }
-        var req = URLRequest(url: base.appending(path: "style"))
-        req.httpMethod = "PUT"
-        req.setBearer(token)
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let body = (try? JSONEncoder().encode(["styles": styles])) ?? Data()
-        _ = try? await URLSession.shared.upload(for: req, from: body)
-        serverStyles = styles
     }
 
     func saveStyle() async {
@@ -794,7 +779,6 @@ struct WritingStyleSheet: View {
     @State private var showVersions = false
     @State private var selectedV: Int?     // version loaded in the editor; nil → head
     @State private var originalStyle = ""  // baseline at open; 保存 enables only on a real diff
-    @State private var prefs = Prefs.shared
 
     private var currentV: Int { selectedV ?? store.styleHead }
     private var versionsDesc: [StyleVersion] { store.styleVersions.reversed() }
@@ -821,22 +805,6 @@ struct WritingStyleSheet: View {
     /// 保存 should only MOVE the head (no new version) when the user merely switched to a
     /// different saved version and didn't touch the text.
     private var saveJustMovesHead: Bool { textUnchangedFromLoaded && currentV != store.styleHead }
-
-    // 多风格对比（设置侧 UI；选择存 Prefs。挖矿/阅读页暂未接入——本版只做选择）。
-    private var compareOn: Bool { prefs.multiStyle }
-    private var selectedVersions: [Int] { prefs.styles.sorted(by: >) }
-    private func toggleCompareSelect(_ v: Int) {
-        if let idx = prefs.styles.firstIndex(of: v) {
-            prefs.styles.remove(at: idx)
-        } else if prefs.styles.count < 3 {
-            prefs.styles.append(v)
-        }
-    }
-    private var compareFooter: String {
-        let vs = selectedVersions
-        let head = vs.isEmpty ? String(localized: "勾选 2–3 个版本") : String(localized: "完成后将分别用 ") + vs.map { "v\($0)" }.joined(separator: "、")
-        return head + String(localized: "，成文时各生成一篇，在阅读页顶部切换对比。最多选 3 个。")
-    }
 
     var body: some View {
         NavigationStack {
@@ -881,33 +849,24 @@ struct WritingStyleSheet: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { Button("取消") { dismiss() } }
                 ToolbarItem(placement: .topBarTrailing) {
-                    if compareOn {
-                        // 对比模式：「完成」把选择写进 profile.styles（miner 读它）。
-                        Button("完成") {
-                            Task { await store.saveStyles(prefs.styles); dismiss() }
-                        }.bold()
-                    } else {
-                        Button {
-                            Task {
-                                // Switched version, no edit → just move the head pointer.
-                                // Actually edited → write a new version.
-                                if saveJustMovesHead { await store.setStyleHead(currentV) }
-                                else { await store.saveStyle() }
-                                if store.error == nil { dismiss() }
-                            }
-                        } label: {
-                            if store.saving { ProgressView() } else { Text("保存").bold() }
+                    Button {
+                        Task {
+                            // Switched version, no edit → just move the head pointer.
+                            // Actually edited → write a new version.
+                            if saveJustMovesHead { await store.setStyleHead(currentV) }
+                            else { await store.saveStyle() }
+                            if store.error == nil { dismiss() }
                         }
-                        .disabled(!canSave || store.saving)
+                    } label: {
+                        if store.saving { ProgressView() } else { Text("保存").bold() }
                     }
+                    .disabled(!canSave || store.saving)
                 }
             }
             .task {
                 await store.loadStyleHistory()
                 if selectedV == nil { selectedV = store.styleHead }
                 originalStyle = store.styleVersions.first { $0.v == store.styleHead }?.style ?? store.style
-                // Seed the compare selection from the server (profile.styles is the source of truth).
-                if !store.serverStyles.isEmpty { prefs.styles = store.serverStyles; prefs.multiStyle = true }
             }
         }
     }
@@ -915,69 +874,37 @@ struct WritingStyleSheet: View {
     private var versionBar: some View {
         Button { withAnimation(.easeOut(duration: 0.15)) { showVersions.toggle() } } label: {
             HStack(spacing: 10) {
-                if compareOn {
-                    HStack(spacing: 6) {
-                        Image(systemName: "rectangle.split.2x1").font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
-                        Text("对比").font(.system(size: 13, weight: .bold)).foregroundStyle(.white)
-                        Image(systemName: showVersions ? "chevron.up" : "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Theme.accent, in: RoundedRectangle(cornerRadius: 6))
-                    Text(selectedVersions.isEmpty ? String(localized: "未选版本") : String(localized: "已选 ") + selectedVersions.map { "v\($0)" }.joined(separator: "、"))
-                        .font(.system(size: 13)).foregroundStyle(Theme.secondary).lineLimit(1)
-                    Spacer(minLength: 8)
-                    Text("\(prefs.styles.count) / 3").font(.system(size: 13)).foregroundStyle(Theme.faint)
-                } else {
-                    HStack(spacing: 6) {
-                        Text("v\(currentV)").font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
-                            .lineLimit(1).fixedSize(horizontal: true, vertical: false)   // 「v10」不折行
-                        Image(systemName: showVersions ? "chevron.up" : "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Theme.ink, in: RoundedRectangle(cornerRadius: 6))
-                    Text(StyleNaming.name(store.style)).font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.ink).lineLimit(1)
-                    Text("\(store.style.count) 字").font(.system(size: 13)).foregroundStyle(Theme.secondary).layoutPriority(1)
-                    if let d = currentDate {
-                        Circle().fill(Theme.chevron).frame(width: 3, height: 3)
-                        Text(DateFormatter.zh("M月d日 HH:mm").string(from: d)).font(.system(size: 13)).foregroundStyle(Theme.secondary)
-                    }
-                    Spacer(minLength: 8)
-                    Text("共 \(store.styleVersions.count) 版").font(.system(size: 13)).foregroundStyle(Theme.faint)
+                HStack(spacing: 6) {
+                    Text("v\(currentV)").font(.system(size: 14, weight: .bold)).foregroundStyle(.white)
+                        .lineLimit(1).fixedSize(horizontal: true, vertical: false)   // 「v10」不折行
+                    Image(systemName: showVersions ? "chevron.up" : "chevron.down").font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
                 }
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(Theme.ink, in: RoundedRectangle(cornerRadius: 6))
+                Text(StyleNaming.name(store.style)).font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Theme.ink).lineLimit(1)
+                Text("\(store.style.count) 字").font(.system(size: 13)).foregroundStyle(Theme.secondary).layoutPriority(1)
+                if let d = currentDate {
+                    Circle().fill(Theme.chevron).frame(width: 3, height: 3)
+                    Text(DateFormatter.zh("M月d日 HH:mm").string(from: d)).font(.system(size: 13)).foregroundStyle(Theme.secondary)
+                }
+                Spacer(minLength: 8)
+                Text("共 \(store.styleVersions.count) 版").font(.system(size: 13)).foregroundStyle(Theme.faint)
             }
             .padding(.horizontal, 12).padding(.vertical, 9)
             .background(Theme.card, in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke((showVersions || compareOn) ? Theme.ink : Theme.inputBorder, lineWidth: 1))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(showVersions ? Theme.ink : Theme.inputBorder, lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
 
     private var versionDropdown: some View {
         VStack(spacing: 0) {
-            // 多风格对比 开关
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("多风格对比").font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.ink)
-                    Text("勾选多个版本，成文时各生成一篇并排挑").font(.system(size: 12)).foregroundStyle(Theme.faint)
-                }
-                Spacer(minLength: 8)
-                Toggle("", isOn: Binding(get: { prefs.multiStyle }, set: { on in
-                    prefs.multiStyle = on
-                    if !on { prefs.styles = []; Task { await store.saveStyles([]) } }   // 关 → 清空 profile.styles，miner 回到单篇
-                })).labelsHidden().tint(Theme.accent)
-            }
-            .padding(.horizontal, 15).padding(.vertical, 11).background(Theme.appBG)
-            Rectangle().fill(Theme.dividerInCard).frame(height: 1)
-
             ForEach(Array(versionsDesc.enumerated()), id: \.element.id) { i, ver in
-                let sel = compareOn ? prefs.styles.contains(ver.v) : (ver.v == currentV)
+                let sel = ver.v == currentV
                 Button {
-                    if compareOn { toggleCompareSelect(ver.v) }
-                    else {
-                        store.style = ver.style; selectedV = ver.v
-                        withAnimation(.easeOut(duration: 0.15)) { showVersions = false }
-                    }
+                    store.style = ver.style; selectedV = ver.v
+                    withAnimation(.easeOut(duration: 0.15)) { showVersions = false }
                 } label: {
                     HStack(spacing: 8) {
                         Text("v\(ver.v)").font(.system(size: 15, weight: .bold))
@@ -987,11 +914,7 @@ struct WritingStyleSheet: View {
                         Spacer(minLength: 8)
                         Text("\(ver.charCount) 字 · \(DateFormatter.zh("M月d日").string(from: ver.date))")
                             .font(.system(size: 12)).foregroundStyle(Theme.faint).lineLimit(1)
-                        if compareOn {
-                            RoundedRectangle(cornerRadius: 5).fill(sel ? Theme.accent : Color.clear).frame(width: 20, height: 20)
-                                .overlay(RoundedRectangle(cornerRadius: 5).stroke(sel ? Theme.accent : Theme.inputBorder, lineWidth: 1.5))
-                                .overlay(sel ? Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(.white) : nil)
-                        } else if sel {
+                        if sel {
                             Image(systemName: "checkmark").font(.system(size: 12, weight: .bold)).foregroundStyle(Theme.accent)
                         }
                     }
@@ -1003,12 +926,6 @@ struct WritingStyleSheet: View {
                 if i < versionsDesc.count - 1 { Rectangle().fill(Theme.dividerInCard).frame(height: 1) }
             }
 
-            if compareOn {
-                Rectangle().fill(Theme.dividerInCard).frame(height: 1)
-                Text(compareFooter).font(.system(size: 12)).foregroundStyle(Theme.faint).lineSpacing(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, 15).padding(.vertical, 11).background(Theme.appBG)
-            }
         }
         .background(Theme.card, in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.inputBorder, lineWidth: 1))

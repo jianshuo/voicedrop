@@ -171,18 +171,11 @@ final class Prefs {
     /// AVAudioRecorder 经典路径（无 AI 采访）。稳定一两个版本后可删。
     var classicRecorder: Bool { didSet { d.set(classicRecorder, forKey: "pref.classicRecorder") } }
 
-    // 多风格对比：multiStyle = 开关（本地 UI）；styles = 选中的文风版本号（最多 3 个，
-    // 同步进 profile.styles 供 miner 读）。
-    var multiStyle: Bool { didSet { d.set(multiStyle, forKey: "pref.multiStyle") } }
-    var styles: [Int] { didSet { d.set(styles, forKey: "pref.styles") } }
-
     private init() {
         iCloudBackup = d.object(forKey: "pref.iCloudBackup") as? Bool ?? true
         deleteLocalAfterUpload = d.object(forKey: "pref.deleteLocal") as? Bool ?? true
         highQuality = d.object(forKey: "pref.highQuality") as? Bool ?? false
         classicRecorder = d.object(forKey: "pref.classicRecorder") as? Bool ?? false
-        multiStyle = d.object(forKey: "pref.multiStyle") as? Bool ?? false
-        styles = (d.array(forKey: "pref.styles") as? [Int]) ?? []
     }
 
     /// AVAudioRecorder settings, tuned for SPEECH → ASR (not music). The audio is only
