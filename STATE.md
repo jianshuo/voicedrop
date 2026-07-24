@@ -1,6 +1,29 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-07-24（多风格对比整体下线；文风 undo 不再截断历史）
+Last updated: 2026-07-25（语音编辑提速三件套已部署）
+
+## 语音编辑提速三件套（2026-07-25，纯服务端，worker 3aee7388 已部署，iOS 零改动）
+
+起因：2026-07-24 llmlog 实测 prompt market 图片 prompt 一次点击要 6.4–12.7s 纯 LLM
+才开始出图（Sonnet 第一轮 5–8s 逐字复读 prompt 进 edit_photo + 第二轮 1.5–4s 纯确认），
+批量套风格被串行队列放大（10 张图最后一张 2 分钟后才排到）。jianshuo.dev repo 58cc97a：
+
+- **① photo 工具短路**（loop.js）：`edit_photo`/`new_photo` 进 `TERMINAL_TOOLS`——
+  出图是异步的，工具已返回「🎨 正在生成…」文案，省掉确认轮。edit-turn 无 summary
+  时用该文案兜底回复（比「改好了」诚实，图还没出来）。
+- **② 长按图片 prompt 确定性直通**（edit-turn.js）：itemId 对应菜单 kind=image 条目
+  + 锚点是本篇真实存在的图 + instruction 无残留 `{{…}}` 占位符 + 无随手拍新图 →
+  跳过 LLM 直接调 `edit_photo`（iOS 发送前已把 {{KEY}} 换成目标 key，instruction
+  就是最终 prompt）。7–12s → <1s，且零 token 成本。任何条件不满足或工具失败都
+  落回原 LLM 路径。toolRuns 里带 `fast:true` 标记，llmlog 可查直通命中率。
+- **③ 写后校验只验高风险编辑**（edit-turn.js verify 闸门）：write_article 整篇重写 /
+  带锚点 / 一次 ≥2 op 才跑 haiku 质检；单 op 无锚点的小改（加粗/删行）跳过——
+  haiku 往返实测 1.9–3.5s（不是当初预估的 ~1s），接近小编辑本身耗时。
+- 测试：`agent/test/edit-fastpath.test.js` 锁三块行为（直通/回退×4/短路/校验门×3），
+  全量 1307 绿。**真机手测清单**：① 长按图 → prompt market 的图片 prompt →
+  占位图应 ~1s 内出现（原来 7–12s）② 语音说「把图2改成贴纸」（无 itemId 路径）→
+  走 LLM 但只一轮，回复是「🎨 正在…」③ 单 op 小改（加粗某段）不再有 haiku 校验
+  延迟 ④ admin llmlog 看 tool_runs 里的 fast:true。
 
 ## 系统缺省「合影照片」组减到 4 个动作（2026-07-24，worker 31a2d94f 已部署）
 
