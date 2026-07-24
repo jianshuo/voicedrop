@@ -2,6 +2,14 @@
 
 Last updated: 2026-07-24（多风格对比整体下线；文风 undo 不再截断历史）
 
+## 系统缺省「合影照片」组减到 4 个动作（2026-07-24，worker 31a2d94f 已部署）
+
+按建硕要求删掉「电影感调色」（sys_gp_cinema）和「日系动画电影」（sys_gp_anime）
+两个改图动作（jianshuo.dev e600220，agent/src/prompt-template.js）。模板叶子
+18→16、prompt-registry 24→22，计数断言同步更新，1296 测试绿。线上没有
+R2 `config/prompt-template.json` 覆盖，内置字面量即真源，部署即生效。
+已有用户自己 prompts.json 里的副本不受影响（那是用户数据，不是系统缺省）。
+
 ## 多风格对比整体下线（2026-07-24，两端已改，worker 3b5603d3 已部署）
 
 「勾选 2–3 个文风版本、成文时各挖一篇并排对比」的功能全删：
