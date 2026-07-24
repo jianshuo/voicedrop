@@ -1,6 +1,39 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-07-25（语音编辑提速三件套已部署）
+Last updated: 2026-07-25（语音编辑提速四轮全上线：fast path→DO 钉美西→直写存储→快照加固）
+
+## 语音编辑提速第二~四轮（2026-07-25 凌晨，纯服务端，worker ce966caa）
+
+第一轮（见下节）上线后实测还慢，连续打点（llmlog laps + Workers Observability）逐层
+剥出三个真凶，全部修掉。jianshuo.dev repo d1703e4 / 25303b9 / 01abf81：
+
+- **轮 2：DO 钉 wnam**（index.js）。R2 桶在 WNAM、Anthropic 在美国，而国内用户的
+  ArticleEditor/LibraryAgent DO 建在 HKG——每次 I/O 跨太平洋，晚高峰单次 1.5~20s
+  （实测一次 fast path 出图 42s 零 LLM）。`getAgentByName(..., {locationHint:"wnam"})`
+  + DO 名加代号 `w1:` 强制重建（旧 DO 编辑对话 history 丢弃，可接受）。顺带
+  `config/model.json` 加 60s isolate 缓存（cachedModelConfig）。**改桶位置不可行**：
+  R2 无香港区、位置建桶即焊死、Anthropic 封 HKG 出口。
+- **轮 3：文章写入直连 article-store 库**（tools.js 四处 HTTP PUT 全换 writeArticleDoc
+  直调）。wnam DO 里 binding 读 doc 0.1s，但绕 HTTP 调自己 /files/api/articles/ 写
+  要 8~22s。agent worker 与 Pages 同绑 FILES/CORE、同一份库，直写语义不变。**顺手修
+  真 bug**：tag_article 删空标签 `delete doc.tags` 会被 writeArticleDoc 合并语义复活
+  （最后一个标签永远删不掉），改显式 `undefined` 覆盖。测试断言从「抓 HTTP 请求体」
+  改「读 R2 落盘 doc」（6 个文件）。
+- **paint 异步收单**（paint/src，VPS 已部署）：POST /api/jobs 不再同步跨洋下载
+  image_url 原图（提交方干等 5~8s），提交时只校验 URL/SSRF，下载挪到 worker 起跑前；
+  下载失败走 job 失败回调（VoiceDrop 失败分支写回原图）。paint_post 5.4s→0.85s 实测。
+- **轮 4：连接快照加固**（index.js onConnect）。占位图不出现的疑似根因：编辑中 WS
+  断线（中国↔CF 直连常态，EO 不透传 WS），重连快照若恰逢 R2 偶发 internal error，
+  loadDoc 吞错返回 null——App reconcile 照样消掉任务芯片但正文不更新。现 loadDoc
+  失败重试一次 + 打日志（`[edit] snapshot loadDoc`）。**iOS 侧兜底未做**（snapshot
+  article 为 null 时应主动 HTTP 拉一次 doc），下次 iOS 发版可加。
+- **实测数字**（fast path 出图，点击→占位标记落盘+出图任务提交）：42s → **6~8s**
+  （queue 0.6~1.1s + setup 0.1~0.2s + find_item 0.1~0.4s + put_article ~3s +
+  paint_post 0.8~3.2s）。put_article 3s 还有压缩空间（doc 版本链大、R2 读写×4+D1）。
+  出图全程（点击→成品图落 R2）实测 ~58s。
+- **常开打点**：`[edit] turn … queue_wait/setup`、`[edit-turn] fast path find_item/tool`、
+  `[edit_photo] total account/doc/put_article/dims/paint_post`。查法：Workers
+  Observability API（记忆 voicedrop-realtime-quota-alert 有 curl 模板）或 admin llmlog。
 
 ## 语音编辑提速三件套（2026-07-25，纯服务端，worker 3aee7388 已部署，iOS 零改动）
 
