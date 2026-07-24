@@ -55,7 +55,7 @@ struct RecordingDetailView: View {
     @State private var restyling = false         // /agent/restyle in flight
     @State private var lpMenu: LongpressPresentation?   // 长按操作菜单（自绘覆盖层）
 
-    // 图片可点提示（三点）：页面 2 秒没动（滚动/开菜单/切文章/进编辑都算「动」）后，
+    // 图片可点提示（三点）：页面 3 秒没动（滚动/开菜单/切文章/进编辑都算「动」）后，
     // 每张已出图右下角缓慢浮现三个小点，点它 = 长按——给不知道图能长按的用户一个
     // 看得见的入口。任何「动」都先把点收掉并重启计时。
     @State private var showImageHint = false
@@ -205,9 +205,9 @@ struct RecordingDetailView: View {
         // 只有值变了。task 必须跟着值重跑，否则 fetchDoc 永远被旧 flag 挡住，
         // 页面卡死在「还没成文」，只能退出重进。
         .onAppear { Analytics.screen("录音详情", stem: recording.stem) }
-        // 图片可点提示的 2 秒空闲计时：token 变化即重启（task(id:) 自带取消旧计时）。
+        // 图片可点提示的 3 秒空闲计时：token 变化即重启（task(id:) 自带取消旧计时）。
         .task(id: imageHintIdleToken) {
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard !Task.isCancelled, lpMenu == nil, editingLine == nil else { return }
             showImageHint = true
         }
@@ -735,7 +735,7 @@ struct RecordingDetailView: View {
             .padding(.bottom, 8)
         }
         .contentMargins(.bottom, 96, for: .scrollContent)   // clear the floating pill
-        // 图片可点提示：滚动算「动」，重置 2 秒空闲计时。offset 按 60pt 分桶——
+        // 图片可点提示：滚动算「动」，重置 3 秒空闲计时。offset 按 60pt 分桶——
         // 只有跨桶才触发（每帧触发会让 task(id:) 疯狂重启）。
         .onScrollGeometryChange(for: Int.self, of: { Int($0.contentOffset.y / 60) }) { _, _ in
             bumpImageHintIdle()
@@ -940,7 +940,7 @@ struct RecordingDetailView: View {
         editingLine = nil
     }
 
-    /// 图片可点提示：任何「动」= 收点 + 重启 2 秒计时。
+    /// 图片可点提示：任何「动」= 收点 + 重启 3 秒计时。
     private func bumpImageHintIdle() {
         showImageHint = false
         imageHintIdleToken &+= 1
@@ -1257,8 +1257,8 @@ struct PhotoTile: View {
     /// 缺省 nil = 无长按行为。仅已出图（image != nil）时手势才挂载——制作中/失败态
     /// 编辑一张还没出的图必然失败，直接不给入口（失败态的重试按钮也不能被挡）。
     var onLongPress: ((UIImage, CGRect) -> Void)? = nil
-    /// 图片可点提示（详情页 2 秒空闲后由父视图置 true）：右下角三个小点，点它 = 长按。
-    /// 出现 2s 缓动，消失瞬时（父视图一有「动」就立刻置 false）。
+    /// 图片可点提示（详情页 3 秒空闲后由父视图置 true）：右下角三个小点，点它 = 长按。
+    /// 出现 0.5s 缓动，消失瞬时（父视图一有「动」就立刻置 false）。
     var hintVisible = false
 
     @State private var image: UIImage?
@@ -1314,8 +1314,8 @@ struct PhotoTile: View {
                                 .background(Capsule().fill(.black.opacity(0.32)))
                                 .padding(9)
                                 .opacity(hintVisible ? 1 : 0)
-                                // 出现 2s 缓动；消失不挂动画（nil）= 瞬时。
-                                .animation(hintVisible ? .easeOut(duration: 2) : nil, value: hintVisible)
+                                // 出现 0.5s 缓动；消失不挂动画（nil）= 瞬时。
+                                .animation(hintVisible ? .easeOut(duration: 0.5) : nil, value: hintVisible)
                                 .onTapGesture { onLongPress(img, geo.frame(in: .global)) }
                                 .allowsHitTesting(hintVisible)
                             }
