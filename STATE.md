@@ -1,6 +1,24 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-07-24（编辑 loop 写后校验 + 语音用长按菜单提示词）
+Last updated: 2026-07-24（文风 undo 不再截断历史 + CZ 版本恢复；编辑 loop 写后校验）
+
+## 文风 undo 后再写不再截断未来版本（2026-07-24，已部署活体验证）
+
+- **行为变更**（jianshuo.dev repo 3addf11，worker 64d6bb33 + Pages 446727d6 已部署）：
+  `writeStyleDoc`（functions/lib/style-store.js）以前在 undo（head 后移）之后再写会把
+  head 之后的版本全部丢弃（git 式截断）。现在**整链保留**，新版本号 = max(v)+1 接链尾，
+  head 指向它；只有 STYLE_MAX_VERSIONS(20) 上限还会挤掉最老的。线上用一次性账号
+  活体验证过（undo 到 v1 再写 → v2 幸存、新版 v3）。**文章 doc（article-store.js）的
+  同款截断没改**——只动了文风。
+- **起因**：用户 CZ（短码 15A15A）7-15 撤回 v9 后语音改文风，v10–v16 七个版本被截断；
+  更早 v1–v5 被当时的 10 版上限挤掉（07-19 才升到 20）。
+- **恢复**：从夜间备份桶 `jianshuo-dev-files-backup` 的 `trash/2026-07-12 / 07-15 / 07-16`
+  三份快照拼出全集，按时间重排 v1–v15 直接 r2 put 回
+  `users/anon-15a15a…/CLAUDE.json`（head=15 = 原当前生效的庆山风，挖矿不受影响）。
+  v1–v5 的 trash 快照 07-17 已过 14 天清理期，真没了。
+  ⚠️ 版本号是重排过的：她文章上旧的 `articles[i].style = N` 标签对不上新链号
+  （截断那一刻就已经对不上了，不是恢复引入的）。恢复用的三份备份快照留在
+  `~/.claude/jobs/fdf92bd2/tmp/cz-backup-*.json`。
 
 ## 编辑 loop 写后校验 + 长按菜单开放给语音（2026-07-24，纯服务端已部署 worker 0e3956a7，iOS 零改动）
 
