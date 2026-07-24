@@ -62,7 +62,7 @@ enum PhotoService {
 
     /// 边缘缩图 URL：长边 512px、质量 60（原格式输出，UIImage 直接解）。
     private static func transformURL(_ fullKey: String) -> URL? {
-        URL(string: "https://\(API.host)/cdn-cgi/image/width=512,quality=60/files/api/photo/\(fullKey.urlPathEncoded)")
+        URL(string: "https://\(API.cfHost)/cdn-cgi/image/width=512,quality=60/files/api/photo/\(fullKey.urlPathEncoded)")
     }
 
     /// Fetch + decode a photo, front-loaded by the in-process image cache: a repeat

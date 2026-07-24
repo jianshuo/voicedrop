@@ -153,7 +153,7 @@ struct UsageView: View {
                     Text("恢复购买").font(.system(size: 12)).foregroundStyle(Theme.secondary)
                 }
                 .buttonStyle(.plain)
-                Link(String(localized: "隐私政策"), destination: URL(string: "https://jianshuo.dev/voicedrop/privacy/")!)
+                Link(String(localized: "隐私政策"), destination: URL(string: "https://voicedrop.cn/privacy/")!)
                     .font(.system(size: 12)).foregroundStyle(Theme.secondary)
                 Link(String(localized: "用户协议"), destination: URL(string: "https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")!)
                     .font(.system(size: 12)).foregroundStyle(Theme.secondary)
