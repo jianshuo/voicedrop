@@ -1,6 +1,34 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-07-24（App HTTP API 入口切 voicedrop.cn / EdgeOne）
+Last updated: 2026-07-24（编辑 loop 写后校验 + 语音用长按菜单提示词）
+
+## 编辑 loop 写后校验 + 长按菜单开放给语音（2026-07-24，纯服务端已部署 worker 0e3956a7，iOS 零改动）
+
+agent 端 agentic 化第一批（jianshuo.dev repo a4d89ae，全量 1296 测试绿）：
+
+- **写后校验（haiku 质检员）**：`runAgentLoop` 新增 `verify` 钩子——终结编辑工具
+  （edit_current_article / write_article）落盘后、短路收尾前，`claude-haiku-4-5` 对照
+  「指令 + 锚点 + 正文 diff」判 `{ok, issue}`；不合格把 issue 追加进同一条 tool_result
+  消息（保持 user/assistant 交替）让编辑模型再修一轮，**每回合至多验一次**。
+  best-effort 铁律：校验器抛错 / 输出不合法 / 读不到 doc / 正文无 diff（如只改标题）
+  一律放行——绝不把成功的编辑拖成失败。diff 是多重集合逐行比对（`diffBodyLines`，
+  不做 LCS，宁可放行）。DO 侧 `callVerify` 走 `_makeLoggedCall`（同 turnId 进 llmlog、
+  model 字段区分、同一套算力计费；与主 callClaude 各有 step 计数器，序号可能重叠，
+  只影响日志观感）。出图（edit_photo/new_photo 异步）和发公众号等动作不校验。
+  代价：每次成功文字编辑多 ~1s haiku 往返。
+- **语音用长按菜单（use_my_prompt）**：新工具按名字取用户提示词库（长按菜单同款）
+  某条全文——exact→fuzzy 匹配、**完全同名多条（历史重复导入）取首条不算歧义**、
+  近名多条返回 ambiguous 候选让模型跟用户确认。`edit-turn` 往上下文注入一行
+  【我的提示词菜单】目录（只有标签几十字，与分享码 fast path `Promise.all` 并行拉，
+  不加串行往返；R2 挂了 loader 自己回退模板目录）。EDIT_SYSTEM 教了占位符规则：
+  kind=image → {{KEY}} 换目标图 KEY 后 edit_photo / 新图当 new_photo prompt；
+  文字类 → {{LINE}}/{{QUOTE}} 换目标行号和行首原文后 edit_current_article。
+  **iOS 零改动**（语音指令走原 WS 链路）。锚点回归锁测试⑥已更新为含目录行的新形状。
+- 线上验证：worker 部署后 MCP list_prompts 正常吐全树（真树含「公众号题图｜教程步骤」×2
+  历史重复，取首条逻辑覆盖）。**真机手测清单**：① 语音说「把图2改成白边贴纸」→
+  use_my_prompt 命中 sys_gp_sticker → edit_photo 出图 ② 说「这段更简洁」长按/不长按
+  两路 ③ 故意含糊的指令看写后校验是否打回重修（admin llmlog 看 haiku verdict）
+  ④ 原有编辑指令回归（校验放行不增加失败）。
 
 ## App API 入口收敛到 voicedrop.cn（2026-07-24，iOS 已 push main，EO 已部署）
 
