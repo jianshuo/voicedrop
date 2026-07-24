@@ -1,6 +1,19 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-07-21（采访 OpenAI 额度耗尽报警 + iOS 停重连风暴）
+Last updated: 2026-07-24（App HTTP API 入口切 voicedrop.cn / EdgeOne）
+
+## App API 入口收敛到 voicedrop.cn（2026-07-24，iOS 已 push main，EO 已部署）
+
+`API.host` = voicedrop.cn：files / agent / reco / agentLink 的 HTTP 请求全部从腾讯
+EdgeOne 境内边缘进，EO 跨境回源通道回 CF——国内用户不再直连 CF anycast。
+两个豁免留在新增的 `API.cfHost`（jianshuo.dev 直连）：**WebSocket**（/agent/edit、
+/status、/asr、/realtime——EO 边缘函数 WS 透传未验证）和 **/cdn-cgi/image 缩略图**
+（CF 专有）。EO 侧：边缘函数把 /agent/*、/reco/* 同源透传 + 规则引擎 ModifyOrigin
+改源站到 jianshuo.dev zone worker 路由（真相在 jianshuo.dev repo
+`infra/voicedrop-cn-edgeone/`）。**踩过的死胡同**：EO 边缘函数里直接 fetch 外部 URL
+走节点裸公网出境——workers.dev 被墙 545、jianshuo.dev 超时；只有配置/规则改写的
+源站走 EO 回源专线。100MB PUT 实测穿透（EO 无 413 上限）。回滚 = iOS 把 host 改回
+jianshuo.dev 即可，EO 侧规则无害可留。
 
 ## 采访「从国内连不上」根因 = OpenAI 额度耗尽，非跨境（2026-07-21，已部署）
 
