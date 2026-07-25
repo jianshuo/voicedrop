@@ -66,9 +66,19 @@ updated/error/快照对账都触发）；RecordingDetailView 借此**主动 HTTP
 生效。服务端两道加固（快照 loadDoc 重试 + 图片锚点 healPhotoAnchorKey 漂移自愈）
 已先行部署兜住旧版 App 的大部分场景。
 
-遗留观察项：writeArticleDoc 直写 current:doc 会把顶层 articles 字段留在存量 doc 里
-（resolveArticles 以 versions[head] 优先，读侧无害；schema 洁癖问题，后续可在
-writeArticleDoc 里 strip）。
+~~遗留观察项：writeArticleDoc 直写 current:doc 顶层 articles 泄漏~~ **已修**
+（jianshuo.dev d5eaa82，worker 79cd2ddb）：current 侧同款字段清洗 + opts.current
+先过 migrateToV3（否则老 schema-2 doc 直写会重置版本链）。泄漏的危害不只洁癖：
+undo 后 raw /download 和 DO 连接快照会把过期顶层正文当权威发出。受影响用户
+141 个存量 doc 已批量清洗（CF REST API 直写 R2，S3 凭据只读不可用）；其他用户
+历史泄漏由下次写入 lazy 自愈。回归测试在 edit-fastpath.test.js（1317 绿）。
+
+**iOS 心跳（41f695f，待 TestFlight）**：编辑 WS 加 25s ping——国内 NAT/CF 掐
+空闲连接，心跳保活 + 死连接提前暴露立即重连。sendPing 回调在后台队列，
+nonisolated static + continuation 包装（Swift 6 隔离坑，见记忆
+swift6-mainactor-callback-crash）。注意：WS 断开大头其实是 App 设计
+（RecordingDetailView.onDisappear 主动 disconnect——切页面/拍照全断），心跳只
+治「停留页面内空闲」那部分。
 
 ## 语音编辑提速三件套（2026-07-25，纯服务端，worker 3aee7388 已部署，iOS 零改动）
 
