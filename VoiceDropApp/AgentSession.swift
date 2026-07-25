@@ -115,6 +115,7 @@ final class ArticleAgentSession: VoiceAgentSession {
     private var session: URLSession?
     private var rec: Recording?
     private var closed = false
+    private var heartbeat: Task<Void, Never>?
 
     private let base = API.agentWS + "/edit"
     private var token: String { AuthStore.shared.bearer }
@@ -142,9 +143,37 @@ final class ArticleAgentSession: VoiceAgentSession {
         task = t
         t.resume()
         receive()
+        startHeartbeat(t)
         // Re-submit everything still outstanding. The server dedups by id, so a
         // resend of an already-done edit just replays its result (no double-apply).
         resubmitAll()
+    }
+
+    /// 25s WebSocket 心跳（2026-07-25）：国内运营商 NAT/中间设备对空闲加密长连接的
+    /// 回收在几十秒级，Cloudflare 边缘对空闲 WS 也有 ~100s 掐线——两条指令之间纯静默
+    /// 的连接大概率已死，下次说话才发现（再等 1.5s 重连）。心跳既保活，也把死连接
+    /// 提前暴露：ping 失败立刻走既有 reconnect 路径。旧 task 的心跳在开新 socket /
+    /// disconnect 时取消。
+    private func startHeartbeat(_ t: URLSessionWebSocketTask) {
+        heartbeat?.cancel()
+        heartbeat = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 25_000_000_000)
+                guard !Task.isCancelled, let self, !self.closed, self.task === t else { return }
+                let dead = await Self.ping(t)
+                guard !Task.isCancelled, !self.closed, self.task === t else { return }
+                if dead { self.reconnect(); return }
+            }
+        }
+    }
+
+    /// sendPing 的回调在 URLSession 的后台队列上执行——绝不能把 @MainActor 闭包递
+    /// 进去（运行时隔离断言直接崩，见 2026-07 Cathier 同款坑）。nonisolated static
+    /// 包一层，用 continuation 把结果拉回调用方的 actor 上下文。
+    nonisolated private static func ping(_ t: URLSessionWebSocketTask) async -> Bool {
+        await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+            t.sendPing { err in cont.resume(returning: err != nil) }
+        }
     }
 
     /// Queue a spoken instruction (optionally with photos). Persist it, then send.
@@ -331,6 +360,8 @@ final class ArticleAgentSession: VoiceAgentSession {
     /// disappear (navigation away / backgrounding). The next connect resumes.
     func disconnect() {
         closed = true
+        heartbeat?.cancel()
+        heartbeat = nil
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
         session?.invalidateAndCancel()
