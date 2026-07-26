@@ -39,9 +39,10 @@ final class LibraryCommandSession: VoiceAgentSession {
     /// with `confirm(id)` or `cancel(id)`.
     var onConfirm: ((_ id: String, _ summary: String) -> Void)?
 
-    private var task: URLSessionWebSocketTask?
-    private var session: URLSession?
-    private var closed = false
+    /// 连接生命周期（建连/25s 心跳/重连/关闭）全在基座里；本类只管协议帧和队列。
+    /// 心跳以前只有 ArticleAgentSession 有——库级连接被 NAT 掐死后要等下次说话
+    /// 才发现；共用基座后两边一致。
+    private let socket = AgentSocket()
     private var refs: [CommandRef] = []
 
     private let base = API.agentWS + "/command"
@@ -51,10 +52,20 @@ final class LibraryCommandSession: VoiceAgentSession {
     private let scopeKey = "default"
 
     func connect() {
-        closed = false
         // Restore any commands persisted before a previous kill (text-only).
         queue = CommandQueueStore.load(scope: scopeKey).map { ArticleAgentSession.EditRequest(id: $0.id, text: $0.text) }
-        openSocket()
+        guard !token.isEmpty else { state = .error; error = "未登录"; return }
+        guard let url = URL(string: base) else { state = .error; return }
+        socket.onMessage = { [weak self] in self?.handle($0) }
+        socket.onOpen = { [weak self] in
+            guard let self else { return }
+            state = queue.isEmpty ? .connecting : .working
+            error = nil
+            // Re-submit everything still outstanding. The server dedups by id, so a
+            // resend of an already-done command just replays its result (no double-apply).
+            resubmitAll()
+        }
+        socket.connect(url: url) { AuthStore.shared.bearer }
     }
 
     /// Set the current numbered reference list (the on-screen article chips) so
@@ -62,24 +73,6 @@ final class LibraryCommandSession: VoiceAgentSession {
     /// command means.
     func setRefs(_ refs: [CommandRef]) {
         self.refs = refs
-    }
-
-    private func openSocket() {
-        guard !token.isEmpty else { state = .error; error = "未登录"; return }
-        state = queue.isEmpty ? .connecting : .working
-        error = nil
-        guard let url = URL(string: base) else { state = .error; return }
-        var req = URLRequest(url: url)
-        req.setBearer(token)
-        let s = URLSession(configuration: .default)
-        session = s
-        let t = s.webSocketTask(with: req)
-        task = t
-        t.resume()
-        receive()
-        // Re-submit everything still outstanding. The server dedups by id, so a
-        // resend of an already-done command just replays its result (no double-apply).
-        resubmitAll()
     }
 
     /// Queue a spoken command (images/articleIndex are meaningless at library
@@ -120,15 +113,9 @@ final class LibraryCommandSession: VoiceAgentSession {
     }
 
     private func sendRaw(_ payload: [String: Any]) {
-        guard let task else { return }
-        guard let data = try? JSONSerialization.data(withJSONObject: payload),
-              let str = String(data: data, encoding: .utf8) else { return }
-        task.send(.string(str)) { [weak self] err in
-            guard err != nil else { return }
-            // Send failed (socket mid-drop). Leave the item in the queue; the
-            // reconnect path resubmits it. Surface nothing — not a user error.
-            Task { @MainActor in self?.state = .working }
-        }
+        // Send failed (socket mid-drop) → item stays in the queue; the
+        // reconnect path resubmits it. Surface nothing — not a user error.
+        socket.send(payload) { [weak self] in self?.state = .working }
     }
 
     /// Drop a finished command (by id) from the local queue + disk.
@@ -144,35 +131,7 @@ final class LibraryCommandSession: VoiceAgentSession {
         CommandQueueStore.save(queue.map { PersistedCommand(id: $0.id, text: $0.text, refsJSON: refsJSON) }, scope: scopeKey)
     }
 
-    private func receive() {
-        task?.receive { [weak self] result in
-            Task { @MainActor in
-                guard let self else { return }
-                switch result {
-                case .failure:
-                    if !self.closed { self.reconnect() }
-                case .success(let message):
-                    switch message {
-                    case .string(let str): self.handle(str)
-                    case .data(let d): if let str = String(data: d, encoding: .utf8) { self.handle(str) }
-                    @unknown default: break
-                    }
-                    self.receive()
-                }
-            }
-        }
-    }
-
-    private func decodeDoc(_ any: Any?) -> ArticleDoc? {
-        // `article` is often JSON null for library commands (merge/delete report no
-        // single doc) → it arrives as NSNull, which is non-nil but NOT a valid
-        // top-level JSON object. `data(withJSONObject:)` would then throw an
-        // Objective-C NSInvalidArgumentException that `try?` CANNOT catch → abort().
-        // Gate on isValidJSONObject (false for NSNull / fragments) before serializing.
-        guard let any, JSONSerialization.isValidJSONObject(any),
-              let d = try? JSONSerialization.data(withJSONObject: any) else { return nil }
-        return try? JSONDecoder().decode(ArticleDoc.self, from: d)
-    }
+    private func decodeDoc(_ any: Any?) -> ArticleDoc? { ArticleDoc.fromWire(any) }
 
     private func handle(_ str: String) {
         guard let data = str.data(using: .utf8),
@@ -213,7 +172,9 @@ final class LibraryCommandSession: VoiceAgentSession {
     /// anything the server doesn't know about → resend (we were killed before
     /// it landed). Always apply the snapshot's current article, if any.
     private func reconcile(_ obj: [String: Any]) {
-        if let doc = decodeDoc(obj["article"]) { onUpdate?(doc, []) }
+        // stems 必须透传（以前这里吞成 []）：库级路径靠 stems 精确失效对应行的
+        // 缓存，快照对账丢了 stems = 界面拿旧缓存装作已更新。
+        if let doc = decodeDoc(obj["article"]) { onUpdate?(doc, (obj["stems"] as? [String]) ?? []) }
         let serverItems = (obj["queue"] as? [[String: Any]]) ?? []
         var serverStatus: [String: String] = [:]
         for it in serverItems { if let sid = it["id"] as? String, let st = it["status"] as? String { serverStatus[sid] = st } }
@@ -228,22 +189,10 @@ final class LibraryCommandSession: VoiceAgentSession {
         state = queue.isEmpty ? .idle : .working
     }
 
-    private func reconnect() {
-        guard !closed else { return }
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            if !self.closed { self.openSocket() }
-        }
-    }
-
     /// Close the socket but KEEP the queue (persisted). Called on a transient
     /// disappear (navigation away / backgrounding). The next connect resumes.
     func disconnect() {
-        closed = true
-        task?.cancel(with: .goingAway, reason: nil)
-        task = nil
-        session?.invalidateAndCancel()
-        session = nil
+        socket.disconnect()
         state = queue.isEmpty ? .idle : .working
         // queue + disk intentionally preserved.
     }

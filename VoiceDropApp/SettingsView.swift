@@ -61,7 +61,9 @@ final class SettingsStore {
     private(set) var wechatThumbMediaId = ""
 
     private let base = API.filesBase
-    private var token: String { AuthStore.shared.bearer }
+    /// 注入点（默认全局身份）：测试里 store.tokenProvider = { "t" } 即可脱离真 Keychain。
+    var tokenProvider: @MainActor () -> String = { AuthStore.shared.bearer }
+    private var token: String { tokenProvider() }
 
     // 文风存在 CLAUDE.json，单独走 /style（版本化）。
     private struct StylePayload: Encodable { let style: String }
@@ -92,10 +94,7 @@ final class SettingsStore {
     func loadBalance() async {
         guard !token.isEmpty else { return }
         struct B: Decodable { let suanli: Double }
-        guard let url = URL(string: "\(API.agentBase.absoluteString)/usage/balance") else { return }
-        var req = URLRequest(url: url); req.setBearer(token)
-        if let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
-           let b = try? JSONDecoder().decode(B.self, from: data) {
+        if let b: B = await API.get(API.agentBase.appending(path: "usage/balance"), bearer: token) {
             suanliBalance = b.suanli; suanliLoaded = true
         }
     }
@@ -211,10 +210,7 @@ final class SettingsStore {
         guard !token.isEmpty, inviteURL == nil, !inviteLoading else { return }
         inviteLoading = true
         defer { inviteLoading = false }
-        guard let url = URL(string: "\(API.agentBase.absoluteString)/referral/link") else { return }
-        var req = URLRequest(url: url); req.setBearer(token)
-        if let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
-           let r = try? JSONDecoder().decode(InviteResponse.self, from: data) {
+        if let r: InviteResponse = await API.get(API.agentBase.appending(path: "referral/link"), bearer: token) {
             inviteURL = URL(string: r.url)
             inviteName = r.name ?? ""
             inviteRewardInviter = Int((r.suanliInviter ?? 0).rounded())

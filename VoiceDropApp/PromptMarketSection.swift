@@ -43,12 +43,12 @@ enum MarketFilter: String, CaseIterable {
         case .image: return String(localized: "配图")
         }
     }
-    var query: String {
+    var queryItems: [URLQueryItem] {
         switch self {
-        case .hot: return "sort=hot"
-        case .new: return "sort=new"
-        case .text: return "sort=hot&scope=text"
-        case .image: return "sort=hot&scope=image"
+        case .hot: return [.init(name: "sort", value: "hot")]
+        case .new: return [.init(name: "sort", value: "new")]
+        case .text: return [.init(name: "sort", value: "hot"), .init(name: "scope", value: "text")]
+        case .image: return [.init(name: "sort", value: "hot"), .init(name: "scope", value: "image")]
         }
     }
 }
@@ -81,11 +81,10 @@ final class PromptMarketModel {
     func load() async {
         loading = items.isEmpty
         failed = false
-        var req = URLRequest(url: URL(string: "\(API.agentBase.absoluteString)/prompt-market?\(filter.query)&limit=30")!)
-        req.setBearer(AuthStore.shared.bearer)
+        let url = API.agentBase.appending(path: "prompt-market")
+            .appending(queryItems: filter.queryItems + [URLQueryItem(name: "limit", value: "30")])
         struct R: Decodable { let items: [MarketItem] }
-        if let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
-           let decoded = try? JSONDecoder().decode(R.self, from: data) {
+        if let decoded: R = await API.get(url, bearer: AuthStore.shared.bearer) {
             items = decoded.items
             if filter == .hot { DiskCache.save(decoded.items, Self.cacheName) }
         } else if items.isEmpty {
@@ -380,11 +379,9 @@ struct PromptMarketDetailView: View {
         .background(Theme.appBG)
         .task {
             // 全文补拉（平铺展示：groupPath 不渲染，导入时服务端自会落组）
-            var req = URLRequest(url: URL(string: "\(API.agentBase.absoluteString)/prompt-share/\(item.code)")!)
-            req.setBearer(AuthStore.shared.bearer)
             struct R: Decodable { let prompt: String }
-            if let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
-               let d = try? JSONDecoder().decode(R.self, from: data) {
+            let url = API.agentBase.appending(path: "prompt-share").appending(path: item.code)
+            if let d: R = await API.get(url, bearer: AuthStore.shared.bearer) {
                 fullPrompt = d.prompt
             } else {
                 fullPrompt = String(localized: "（全文加载失败）")

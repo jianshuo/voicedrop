@@ -60,6 +60,43 @@ enum API {
     static func sharePage(_ id: String) -> URL { URL(string: "https://voicedrop.cn/\(id)")! }
 }
 
+// MARK: - Authed request helpers
+
+/// 全 App ~74 处「URLRequest + setBearer + JSONDecoder + isOK」四到六行样板的收口
+///（VoiceDropShare/ShareAPI.swift 的 authed() 早就这么做了，主 App 补齐）。
+/// 增量迁移：新调用一律走这里，存量逐个搬。Compiled into BOTH targets.
+extension API {
+    /// Build a bearer-authed request. `json` non-nil → JSON body + Content-Type.
+    static func authed(_ url: URL, method: String = "GET", bearer: String,
+                       json: [String: Any]? = nil, timeout: TimeInterval? = nil) -> URLRequest {
+        var req = URLRequest(url: url)
+        req.httpMethod = method
+        req.setBearer(bearer)
+        if let json {
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try? JSONSerialization.data(withJSONObject: json)
+        }
+        if let timeout { req.timeoutInterval = timeout }
+        return req
+    }
+
+    /// GET + decode；网络失败 / 非 2xx / 解码失败一律 nil（调用方只关心有没有）。
+    static func get<T: Decodable>(_ url: URL, bearer: String, timeout: TimeInterval? = nil) async -> T? {
+        let req = authed(url, bearer: bearer, timeout: timeout)
+        guard let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK else { return nil }
+        return try? JSONDecoder().decode(T.self, from: data)
+    }
+
+    /// Fire a mutation, report 2xx success only.
+    @discardableResult
+    static func send(_ url: URL, method: String = "POST", bearer: String,
+                     json: [String: Any]? = nil) async -> Bool {
+        let req = authed(url, method: method, bearer: bearer, json: json)
+        guard let (_, resp) = try? await URLSession.shared.data(for: req) else { return false }
+        return resp.isOK
+    }
+}
+
 /// Cross-process bridge between the VoiceDrop app and its Share Extension. The
 /// two run in separate sandboxes; the App Group is the only channel they share.
 /// We mirror just the bearer token here (not the Keychain itself) so the

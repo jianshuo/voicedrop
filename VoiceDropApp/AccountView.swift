@@ -242,32 +242,10 @@ struct AccountView: View {
     private func deleteAccount() async {
         deleting = true
         defer { deleting = false }
-        var req = URLRequest(url: API.filesBase.appending(path: "account").appending(path: "delete"))
-        req.httpMethod = "POST"
-        req.setBearer(auth.bearer)
-        do {
-            let (_, resp) = try await URLSession.shared.data(for: req)
-            guard resp.isOK else {
-                deleteError = String(localized: "服务器返回 \(resp.httpStatusCode)，请稍后再试。")
-                return
-            }
-        } catch {
-            deleteError = error.localizedDescription
+        if let err = await AccountService.deleteAccount() {
+            deleteError = err
             return
         }
-        // Server side is gone — wipe everything local, then start a fresh
-        // empty identity so the app behaves like a brand-new install.
-        let fm = FileManager.default
-        if let docs = fm.urls(for: .documentDirectory, in: .userDomainMask).first,
-           let items = try? fm.contentsOfDirectory(at: docs, includingPropertiesForKeys: nil) {
-            for u in items { try? fm.removeItem(at: u) }
-        }
-        DiskCache.wipe()   // Caches 里的快照（录音列表/文章 doc/feed/照片）也是「本机数据」，一并清
-        if let bid = Bundle.main.bundleIdentifier {
-            UserDefaults.standard.removePersistentDomain(forName: bid)
-        }
-        auth.signOut()          // drop the Apple session JWT
-        auth.resetAnonymous()   // brand-new anon token (also re-published to the Share Extension)
         dismiss()
     }
 

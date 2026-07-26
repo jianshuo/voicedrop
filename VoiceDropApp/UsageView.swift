@@ -262,9 +262,9 @@ struct UsageView: View {
     }
 
     private func load() async {
-        async let b: Balance? = fetch("\(API.agentBase.absoluteString)/usage/balance")
-        async let s: SummaryResp? = fetch("\(API.agentBase.absoluteString)/usage/summary")
-        async let l: LedgerResp? = fetch("\(API.agentBase.absoluteString)/usage/ledger?limit=50")
+        async let b: Balance? = API.get(API.agentBase.appending(path: "usage/balance"), bearer: token)
+        async let s: SummaryResp? = API.get(API.agentBase.appending(path: "usage/summary"), bearer: token)
+        async let l: LedgerResp? = API.get(ledgerURL(), bearer: token)
         if let b = await b { balance = b.suanli; spent = b.spent_suanli }
         if let s = await s { sources = s.granted; spendSummary = s.spent }
         if let l = await l { entries = l.entries; nextCursor = (l.has_more ?? false) ? l.next : nil }
@@ -275,14 +275,14 @@ struct UsageView: View {
         guard !loadingMore, let cur = nextCursor else { return }
         loadingMore = true
         defer { loadingMore = false }
-        guard let l: LedgerResp = await fetch("\(API.agentBase.absoluteString)/usage/ledger?limit=50&before=\(cur)") else { return }
+        guard let l: LedgerResp = await API.get(ledgerURL(before: cur), bearer: token) else { return }
         entries += l.entries
         nextCursor = (l.has_more ?? false) ? l.next : nil
     }
-    private func fetch<T: Decodable>(_ urlStr: String) async -> T? {
-        guard let url = URL(string: urlStr) else { return nil }
-        var req = URLRequest(url: url); req.setBearer(token)
-        guard let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK else { return nil }
-        return try? JSONDecoder().decode(T.self, from: data)
+
+    private func ledgerURL(before: String? = nil) -> URL {
+        var items = [URLQueryItem(name: "limit", value: "50")]
+        if let before { items.append(URLQueryItem(name: "before", value: before)) }
+        return API.agentBase.appending(path: "usage/ledger").appending(queryItems: items)
     }
 }

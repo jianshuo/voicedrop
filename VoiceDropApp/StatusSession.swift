@@ -13,56 +13,18 @@ final class StatusSession {
     var onLinkRequest: ((String, String, String) -> Void)?  // (pairingId, code, pubkey)
     var onLinkRelease: ((String) -> Void)?                  // pairingId
 
-    private var task: URLSessionWebSocketTask?
-    private var urlSession: URLSession?
-    private var closed = false
+    /// 连接生命周期（建连/25s 心跳/重连/关闭）全在基座里。防双 socket 的家法
+    ///（原来的 `guard task == nil`，reconnect 空窗里会漏——「4 位码显示出来、
+    /// 然后 App 崩了」的成因）由基座的 active 标志 + 开新前先杀旧统一兜住。
+    private let socket = AgentSocket()
 
     private let base = API.agentWS + "/status"
 
     func connect() {
-        guard task == nil else { return }   // already connected or connecting
-        closed = false
-        open()
-    }
-
-    private func open() {
-        // reconnect() 会先把 task 设为 nil，再睡 3 秒才调 open()。这 3 秒里 task 正是 nil，
-        // 所以 connect()（scenePhase → .active）的 `guard task == nil` 会放行、开出一条 socket；
-        // 3 秒后那个延迟的 open() 再开第二条，直接覆盖 task 而不取消前一条 —— 两条活 socket、
-        // 每条消息收两遍。重复的 link_request 会让 present() 造出新 UUID 的 Pending，
-        // .sheet(item:) 的身份在展示途中被换掉 → 强制 dismiss + 重新 present。
-        // 这就是「4 位码显示出来、然后 App 崩了」最可能的成因。
-        guard task == nil else { return }
-
-        let token = AuthStore.shared.bearer
-        guard !token.isEmpty, let url = URL(string: base) else { return }
-        var req = URLRequest(url: url)
-        req.setBearer(token)
-        let s = URLSession(configuration: .default)
-        urlSession = s
-        let t = s.webSocketTask(with: req)
-        task = t
-        t.resume()
-        receive()
-    }
-
-    private func receive() {
-        task?.receive { [weak self] result in
-            Task { @MainActor in
-                guard let self, !self.closed else { return }
-                switch result {
-                case .failure:
-                    self.reconnect()
-                case .success(let message):
-                    switch message {
-                    case .string(let str): self.handle(str)
-                    case .data(let d): if let str = String(data: d, encoding: .utf8) { self.handle(str) }
-                    @unknown default: break
-                    }
-                    self.receive()
-                }
-            }
-        }
+        guard !socket.active else { return }   // already connected or connecting
+        guard !AuthStore.shared.bearer.isEmpty, let url = URL(string: base) else { return }
+        socket.onMessage = { [weak self] in self?.handle($0) }
+        socket.connect(url: url) { AuthStore.shared.bearer }
     }
 
     private func handle(_ str: String) {
@@ -93,23 +55,7 @@ final class StatusSession {
         }
     }
 
-    private func reconnect() {
-        task?.cancel(with: .goingAway, reason: nil)
-        task = nil
-        urlSession?.invalidateAndCancel()
-        urlSession = nil
-        guard !closed else { return }
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
-            if !self.closed { self.open() }
-        }
-    }
-
     func disconnect() {
-        closed = true
-        task?.cancel(with: .goingAway, reason: nil)
-        task = nil
-        urlSession?.invalidateAndCancel()
-        urlSession = nil
+        socket.disconnect()
     }
 }

@@ -357,7 +357,9 @@ final class LibraryStore {
     var reminingStems: Set<String> = []   // stem 正在"重写"（复用已有 ASR、按原逻辑重挖）
 
     private let base = API.filesBase
-    private var token: String { AuthStore.shared.bearer }
+    /// 注入点（默认全局身份）：测试里 store.tokenProvider = { "t" } 即可脱离真 Keychain。
+    var tokenProvider: @MainActor () -> String = { AuthStore.shared.bearer }
+    private var token: String { tokenProvider() }
     // Article meta caches (articleKey → title / first-photo key ("" = none) / tags).
     // DISK-BACKED: purely in-memory dicts meant every cold launch refetched the doc of
     // EVERY processed recording — ~180 concurrent GETs that blew the QUIC 100-stream

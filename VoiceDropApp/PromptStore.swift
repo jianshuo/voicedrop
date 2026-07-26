@@ -538,7 +538,9 @@ final class PromptStore {
     private(set) var isMutating = false
 
     private static let cacheName = "prompts-cache.json"
-    private var token: String { AuthStore.shared.bearer }
+    /// 注入点（默认全局身份）：测试里 store.tokenProvider = { "t" } 即可脱离真 Keychain。
+    var tokenProvider: @MainActor () -> String = { AuthStore.shared.bearer }
+    private var token: String { tokenProvider() }
 
     private init() {
         // 一次性迁移：老版本缓存在 UserDefaults（promptsCache.v1）——首启读不到新

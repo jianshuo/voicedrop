@@ -63,7 +63,9 @@ final class CommunityStore {
 
     private let base = API.filesBase
     private let recoBase = API.recoBase
-    private var token: String { AuthStore.shared.bearer }
+    /// 注入点（默认全局身份）：测试里 store.tokenProvider = { "t" } 即可脱离真 Keychain。
+    var tokenProvider: @MainActor () -> String = { AuthStore.shared.bearer }
+    private var token: String { tokenProvider() }
 
     // feed 快照（SWR：先旧后新，DiskCache 家法）：开页先显示上次的社区列表，
     // 网络回来原地覆盖；成功才写。
@@ -95,7 +97,8 @@ final class CommunityStore {
     /// Community WRITES (share / unshare) need an Apple-verified identity — the server
     /// 403s a bare anon token. Everything else (incl. reco engage/rank, uploads, lists)
     /// uses `token` = the anon default. 真源在 AuthStore.accountableBearer。
-    private var shareToken: String { AuthStore.shared.accountableBearer }
+    var shareTokenProvider: @MainActor () -> String = { AuthStore.shared.accountableBearer }
+    private var shareToken: String { shareTokenProvider() }
 
     /// shareIds the current user has liked — filled by `applyRanking()`, seeds the ❤️ state.
     var likedShareIds: Set<String> = []
@@ -123,17 +126,22 @@ final class CommunityStore {
         await loadViaListAndRank()
     }
 
-    /// /reco/feed 的行：CommunityPost 的字段 + 每帖互动数。
+    /// /reco/feed 的行：一份完整的 CommunityPost + 每帖互动数。
+    /// post 直接从同一个 JSON 对象整体解出——CommunityPost 加字段后这里自动跟上，
+    /// 不再逐字段映射（旧写法要三处手工同步，漏掉 kind → 「提示词」tab 恒空，
+    /// 2026-07-16 真机 bug；组合解码后这类漂移不可能再发生）。
     private struct FeedRow: Decodable {
-        let shareId: String; let author: String?; let title: String?
-        let preview: String?; let coverPhotoKey: String?; let hasPhoto: Bool?
-        let count: Int?; let firstSharedAt: Double?; let updatedAt: Double?
-        let replyTo: String?; let mine: Bool?
+        let post: CommunityPost
         let likes: Int?; let replies: Int?; let liked: Bool?
-        // ⚠️ 加字段三处同步：这里、下面 mapped 的 CommunityPost(...) 逐字段映射、
-        // CommunityPost 本身——feed 主路径不是直接解码 CommunityPost，漏映射 =
-        // 字段静默丢失（kind 曾漏掉 → 「提示词」tab 恒空，2026-07-16 真机 bug）。
-        let kind: String?
+
+        private enum CodingKeys: String, CodingKey { case likes, replies, liked }
+        init(from decoder: Decoder) throws {
+            post = try CommunityPost(from: decoder)
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            likes = try c.decodeIfPresent(Int.self, forKey: .likes)
+            replies = try c.decodeIfPresent(Int.self, forKey: .replies)
+            liked = try c.decodeIfPresent(Bool.self, forKey: .liked)
+        }
     }
 
     private func loadViaFeed() async -> Bool {
@@ -145,22 +153,16 @@ final class CommunityStore {
             guard resp.isOK else { return false }
             struct R: Decodable { let posts: [FeedRow]; let order: [String] }
             let r = try JSONDecoder().decode(R.self, from: data)
-            let rows = r.posts.filter { !BlockStore.isBlocked($0.author) }   // local block list (Apple 1.2)
+            let rows = r.posts.filter { !BlockStore.isBlocked($0.post.author) }   // local block list (Apple 1.2)
             guard !rows.isEmpty else { return false }   // 索引空（未回填/漂移）→ 老路径兜底
-            let mapped = rows.map { row in
-                CommunityPost(shareId: row.shareId, author: row.author, title: row.title,
-                              firstSharedAt: row.firstSharedAt, updatedAt: row.updatedAt,
-                              count: row.count, mine: row.mine, replyTo: row.replyTo,
-                              hasPhoto: row.hasPhoto, coverPhotoKey: row.coverPhotoKey,
-                              preview: row.preview, kind: row.kind)
-            }
+            let mapped = rows.map(\.post)
             timeOrdered = mapped                        // feed 本身就是时间倒序
             let byId = Dictionary(uniqueKeysWithValues: mapped.map { ($0.shareId, $0) })
             let reordered = r.order.compactMap { byId[$0] }
             posts = reordered.count == mapped.count ? reordered : mapped
-            likeCounts = rows.reduce(into: [:]) { $0[$1.shareId] = $1.likes ?? 0 }
-            replyCounts = rows.reduce(into: [:]) { if let n = $1.replies, n > 0 { $0[$1.shareId] = n } }
-            likedShareIds = Set(rows.filter { $0.liked == true }.map(\.shareId))
+            likeCounts = rows.reduce(into: [:]) { $0[$1.post.shareId] = $1.likes ?? 0 }
+            replyCounts = rows.reduce(into: [:]) { if let n = $1.replies, n > 0 { $0[$1.post.shareId] = n } }
+            likedShareIds = Set(rows.filter { $0.liked == true }.map(\.post.shareId))
             persistFeedCache()
             return true
         } catch { return false }

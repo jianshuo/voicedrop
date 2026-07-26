@@ -111,11 +111,9 @@ final class ArticleAgentSession: VoiceAgentSession {
     struct EditDelta: Equatable { let i: Int; let op: String; let line: Int?; let text: String }
     var onEditPreview: (([EditDelta]) -> Void)?
 
-    private var task: URLSessionWebSocketTask?
-    private var session: URLSession?
+    /// 连接生命周期（建连/心跳/重连/关闭）全在基座里；本类只管协议帧和队列。
+    private let socket = AgentSocket()
     private var rec: Recording?
-    private var closed = false
-    private var heartbeat: Task<Void, Never>?
 
     private let base = API.agentWS + "/edit"
     private var token: String { AuthStore.shared.bearer }
@@ -123,57 +121,21 @@ final class ArticleAgentSession: VoiceAgentSession {
 
     func connect(_ rec: Recording) {
         self.rec = rec
-        closed = false
         // Restore any edits persisted before a previous kill (text-only).
         queue = EditQueueStore.load(stem: rec.stem).map { EditRequest(id: $0.id, text: $0.text, articleIndex: $0.articleIndex ?? 0, anchor: $0.anchor, itemId: $0.itemId) }
-        openSocket()
-    }
-
-    private func openSocket() {
-        guard let rec, !token.isEmpty else { state = .error; error = "未登录"; return }
-        state = queue.isEmpty ? .connecting : .working
-        error = nil
-        let stem = rec.stem.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? rec.stem
-        guard let url = URL(string: "\(base)?stem=\(stem)") else { state = .error; return }
-        var req = URLRequest(url: url)
-        req.setBearer(token)
-        let s = URLSession(configuration: .default)
-        session = s
-        let t = s.webSocketTask(with: req)
-        task = t
-        t.resume()
-        receive()
-        startHeartbeat(t)
-        // Re-submit everything still outstanding. The server dedups by id, so a
-        // resend of an already-done edit just replays its result (no double-apply).
-        resubmitAll()
-    }
-
-    /// 25s WebSocket 心跳（2026-07-25）：国内运营商 NAT/中间设备对空闲加密长连接的
-    /// 回收在几十秒级，Cloudflare 边缘对空闲 WS 也有 ~100s 掐线——两条指令之间纯静默
-    /// 的连接大概率已死，下次说话才发现（再等 1.5s 重连）。心跳既保活，也把死连接
-    /// 提前暴露：ping 失败立刻走既有 reconnect 路径。旧 task 的心跳在开新 socket /
-    /// disconnect 时取消。
-    private func startHeartbeat(_ t: URLSessionWebSocketTask) {
-        heartbeat?.cancel()
-        heartbeat = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 25_000_000_000)
-                guard !Task.isCancelled, let self, !self.closed, self.task === t else { return }
-                let dead = await Self.ping(t)
-                guard !Task.isCancelled, !self.closed, self.task === t else { return }
-                if dead { self.reconnect(); return }
-            }
+        guard !token.isEmpty else { state = .error; error = "未登录"; return }
+        let stemEnc = rec.stem.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? rec.stem
+        guard let url = URL(string: "\(base)?stem=\(stemEnc)") else { state = .error; return }
+        socket.onMessage = { [weak self] in self?.handle($0) }
+        socket.onOpen = { [weak self] in
+            guard let self else { return }
+            state = queue.isEmpty ? .connecting : .working
+            error = nil
+            // Re-submit everything still outstanding. The server dedups by id, so a
+            // resend of an already-done edit just replays its result (no double-apply).
+            resubmitAll()
         }
-    }
-
-    /// sendPing 的回调在 URLSession 的后台队列上执行——绝不能把 @MainActor 闭包递
-    /// 进去（运行时隔离断言直接崩，见 2026-07 Cathier 同款坑）。nonisolated static
-    /// 包一层，用 continuation 把结果拉回调用方的 actor 上下文。
-    nonisolated private static func ping(_ t: URLSessionWebSocketTask) async -> Bool {
-        await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
-            t.sendPing { err in cont.resume(returning: err != nil) }
-        }
+        socket.connect(url: url) { AuthStore.shared.bearer }
     }
 
     /// Queue a spoken instruction (optionally with photos). Persist it, then send.
@@ -220,7 +182,6 @@ final class ArticleAgentSession: VoiceAgentSession {
     }
 
     private func send(_ item: EditRequest) {
-        guard let task else { return }
         var payload: [String: Any] = ["type": "instruct", "id": item.id, "text": item.text, "articleIndex": item.articleIndex]
         if !item.images.isEmpty {
             payload["images"] = item.images.map { img -> [String: String] in
@@ -231,14 +192,9 @@ final class ArticleAgentSession: VoiceAgentSession {
         }
         if let anchor = item.anchor { payload["anchor"] = anchor.wireDict }
         if let itemId = item.itemId { payload["itemId"] = itemId }
-        guard let data = try? JSONSerialization.data(withJSONObject: payload),
-              let str = String(data: data, encoding: .utf8) else { return }
-        task.send(.string(str)) { [weak self] err in
-            guard err != nil else { return }
-            // Send failed (socket mid-drop). Leave the item in the queue; the
-            // reconnect path resubmits it. Surface nothing — not a user error.
-            Task { @MainActor in self?.state = .working }
-        }
+        // Send failed (socket mid-drop) → item stays in the queue; the
+        // reconnect path resubmits it. Surface nothing — not a user error.
+        socket.send(payload) { [weak self] in self?.state = .working }
     }
 
     /// Drop a finished edit (by id) from the local queue + disk.
@@ -253,34 +209,7 @@ final class ArticleAgentSession: VoiceAgentSession {
         EditQueueStore.save(queue.map { PersistedEdit(id: $0.id, text: $0.text, articleIndex: $0.articleIndex, anchor: $0.anchor, itemId: $0.itemId) }, stem: stem)
     }
 
-    private func receive() {
-        task?.receive { [weak self] result in
-            Task { @MainActor in
-                guard let self else { return }
-                switch result {
-                case .failure:
-                    if !self.closed { self.reconnect() }
-                case .success(let message):
-                    switch message {
-                    case .string(let str): self.handle(str)
-                    case .data(let d): if let str = String(data: d, encoding: .utf8) { self.handle(str) }
-                    @unknown default: break
-                    }
-                    self.receive()
-                }
-            }
-        }
-    }
-
-    private func decodeDoc(_ any: Any?) -> ArticleDoc? {
-        // A JSON-null `article` arrives as NSNull (non-nil but not a valid top-level
-        // JSON object); `data(withJSONObject:)` would throw an ObjC exception `try?`
-        // can't catch → abort(). Gate on isValidJSONObject first. (See the same fix
-        // in LibraryCommandSession.decodeDoc — the library path hits null far more.)
-        guard let any, JSONSerialization.isValidJSONObject(any),
-              let d = try? JSONSerialization.data(withJSONObject: any) else { return nil }
-        return try? JSONDecoder().decode(ArticleDoc.self, from: d)
-    }
+    private func decodeDoc(_ any: Any?) -> ArticleDoc? { ArticleDoc.fromWire(any) }
 
     private func handle(_ str: String) {
         guard let data = str.data(using: .utf8),
@@ -348,24 +277,10 @@ final class ArticleAgentSession: VoiceAgentSession {
         state = queue.isEmpty ? .idle : .working
     }
 
-    private func reconnect() {
-        guard !closed else { return }
-        Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            if !self.closed { self.openSocket() }
-        }
-    }
-
     /// Close the socket but KEEP the queue (persisted). Called on a transient
     /// disappear (navigation away / backgrounding). The next connect resumes.
     func disconnect() {
-        closed = true
-        heartbeat?.cancel()
-        heartbeat = nil
-        task?.cancel(with: .goingAway, reason: nil)
-        task = nil
-        session?.invalidateAndCancel()
-        session = nil
+        socket.disconnect()
         state = queue.isEmpty ? .idle : .working
         // queue + disk intentionally preserved.
     }
