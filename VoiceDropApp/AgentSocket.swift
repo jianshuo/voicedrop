@@ -28,6 +28,9 @@ final class AgentSocket {
     private var bearerProvider: @MainActor () -> String = { "" }
 
     func connect(url: URL, bearer: @escaping @MainActor () -> String) {
+        // 幂等：已在同一目标上活跃就不重开（LibraryView 的 .task 会随视图重建
+        // 反复调 connect()）。换 url（例如换文章的 stem）才算真的要重连。
+        if active, self.url == url { return }
         self.url = url
         bearerProvider = bearer
         closed = false
@@ -65,9 +68,13 @@ final class AgentSocket {
     }
 
     private func receive() {
-        task?.receive { [weak self] result in
+        guard let t = task else { return }
+        t.receive { [weak self] result in
             Task { @MainActor in
-                guard let self else { return }
+                // 代际守卫：openSocket 开新前会 cancel 旧 task，旧 task 挂起的 receive
+                // 会以 .failure 迟到落地——不挡掉就会 reconnect 再杀掉健康的新连接，
+                // 形成永久 1.5s 重连循环。只有「当前这条」socket 的回调才算数。
+                guard let self, self.task === t else { return }
                 switch result {
                 case .failure:
                     if !self.closed { self.reconnect() }
