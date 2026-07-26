@@ -61,6 +61,16 @@ struct ArticleDoc: Decodable {
 
     /// True once any article has a WeChat draft (the menu shows 更新 instead of 发布).
     var hasWechatDraft: Bool { (articles ?? []).contains { $0.wechatMediaId != nil } }
+
+    /// WS 帧里的 `article` 字段 → ArticleDoc。JSON-null 到达时是 NSNull（非 nil
+    /// 但不是合法顶层 JSON 对象）；直接 `data(withJSONObject:)` 会抛 ObjC 异常，
+    /// `try?` 接不住 → abort()。先用 isValidJSONObject 挡掉（库级命令
+    /// merge/delete 场景 article 常为 null）。
+    static func fromWire(_ any: Any?) -> ArticleDoc? {
+        guard let any, JSONSerialization.isValidJSONObject(any),
+              let d = try? JSONSerialization.data(withJSONObject: any) else { return nil }
+        return try? JSONDecoder().decode(ArticleDoc.self, from: d)
+    }
 }
 
 /// A piece of an article body: a run of markdown text, or an inline photo,
@@ -358,7 +368,7 @@ final class LibraryStore {
 
     private let base = API.filesBase
     /// 注入点（默认全局身份）：测试里 store.tokenProvider = { "t" } 即可脱离真 Keychain。
-    var tokenProvider: @MainActor () -> String = { AuthStore.shared.bearer }
+    @ObservationIgnored var tokenProvider: @MainActor () -> String = { AuthStore.shared.bearer }
     private var token: String { tokenProvider() }
     // Article meta caches (articleKey → title / first-photo key ("" = none) / tags).
     // DISK-BACKED: purely in-memory dicts meant every cold launch refetched the doc of

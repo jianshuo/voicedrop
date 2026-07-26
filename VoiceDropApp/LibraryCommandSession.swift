@@ -65,6 +65,7 @@ final class LibraryCommandSession: VoiceAgentSession {
             // resend of an already-done command just replays its result (no double-apply).
             resubmitAll()
         }
+        socket.onAuthLost = { [weak self] in self?.state = .error; self?.error = "未登录" }
         socket.connect(url: url) { AuthStore.shared.bearer }
     }
 
@@ -172,9 +173,10 @@ final class LibraryCommandSession: VoiceAgentSession {
     /// anything the server doesn't know about → resend (we were killed before
     /// it landed). Always apply the snapshot's current article, if any.
     private func reconcile(_ obj: [String: Any]) {
-        // stems 必须透传（以前这里吞成 []）：库级路径靠 stems 精确失效对应行的
-        // 缓存，快照对账丢了 stems = 界面拿旧缓存装作已更新。
-        if let doc = decodeDoc(obj["article"]) { onUpdate?(doc, (obj["stems"] as? [String]) ?? []) }
+        // stems 必须透传且 onUpdate 无条件调用（对齐上面 "updated" 分支）：库级
+        // 命令 merge/delete 场景 article 常为 null——若在 doc 非空时才回调，
+        // 快照对账就既丢 stems 又跳过 refresh，界面拿旧缓存装作已更新。
+        onUpdate?(decodeDoc(obj["article"]), (obj["stems"] as? [String]) ?? [])
         let serverItems = (obj["queue"] as? [[String: Any]]) ?? []
         var serverStatus: [String: String] = [:]
         for it in serverItems { if let sid = it["id"] as? String, let st = it["status"] as? String { serverStatus[sid] = st } }

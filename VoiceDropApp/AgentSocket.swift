@@ -11,17 +11,26 @@ final class AgentSocket {
     var onMessage: ((String) -> Void)?
     /// socket 每次就绪（首连与自动重连都触发）——调用方在这里重发未确认队列。
     var onOpen: (() -> Void)?
+    /// 建连/重连时取到空 bearer——身份没了，重试无意义，socket 停在关闭态。
+    /// 调用方用它把 UI 置为「未登录」（旧版每次 openSocket 都查一遍 token 的等价物）。
+    var onAuthLost: (() -> Void)?
 
-    /// true 从 connect 起到 disconnect 止（重连空窗期间也算）——给 scenePhase
-    /// 驱动的幂等 connect() 用：已连就不再开第二条。旧 StatusSession 靠
-    /// `guard task == nil` 防双 socket，但 reconnect 的 3 秒延迟里 task 正是 nil，
-    /// 还是会开出两条（每条消息收两遍、配对码 sheet 被顶掉）；active 覆盖整个
-    /// 会话生命周期，没有这个空窗。
-    private(set) var active = false
+    /// 生命周期是一个比特：closed。初始为 true（从未连过），connect → false，
+    /// disconnect / onAuthLost → true。active 只是它的取反视图——不要再引入
+    /// 第二个标志位，正是 closed/active 两个近似互补的字段让「orphan reconnect
+    /// 复活」这类 bug 有了藏身处。
+    private var closed = true
+    var active: Bool { !closed }
+
+    /// 代际计数：connect()/disconnect() 各自 +1。所有延迟动作（reconnect 的
+    /// 1.5s 睡眠）持有发起时的代数，醒来后代数不对就直接作废——否则 disconnect
+    /// 后紧跟 connect 会把 closed 翻回 false，一个断连前排下的 reconnect 醒来
+    /// 就会拆掉刚建好的健康连接。
+    private var generation = 0
 
     private var task: URLSessionWebSocketTask?
+    /// 跨重连复用同一个 URLSession（连接池/队列只建一次）；disconnect 才销毁。
     private var session: URLSession?
-    private var closed = false
     private var heartbeat: Task<Void, Never>?
     private var url: URL?
     /// 每次建连现取 token（不缓存）——账号切换 adoptToken 后重连要用新身份。
@@ -34,18 +43,26 @@ final class AgentSocket {
         self.url = url
         bearerProvider = bearer
         closed = false
-        active = true
+        generation += 1
         openSocket()
     }
 
     private func openSocket() {
         guard let url, !closed else { return }
-        // 先杀旧连接再开新——保证任何路径下同时最多一条活 socket。
+        let bearer = bearerProvider()
+        guard !bearer.isEmpty else {
+            // 身份没了（正常流程不会走到；防御销号/异常清空）：停在关闭态并上报，
+            // 而不是拿空 token 每 1.5s 撞一次服务端。
+            closed = true
+            generation += 1
+            onAuthLost?()
+            return
+        }
+        // 先杀旧 task 再开新——保证任何路径下同时最多一条活 socket。
         task?.cancel(with: .goingAway, reason: nil)
-        session?.invalidateAndCancel()
         var req = URLRequest(url: url)
-        req.setBearer(bearerProvider())
-        let s = URLSession(configuration: .default)
+        req.setBearer(bearer)
+        let s = session ?? URLSession(configuration: .default)
         session = s
         let t = s.webSocketTask(with: req)
         task = t
@@ -57,10 +74,14 @@ final class AgentSocket {
 
     /// JSON payload → string 帧。发送失败不当用户错误——调用方把 item 留在
     /// 队列里，重连路径自会重发；onFailure 只用来让状态机保持 working。
+    /// 没有活连接 / 序列化失败也走 onFailure（静默吞帧过一次审查，别再来）。
     func send(_ payload: [String: Any], onFailure: (@MainActor () -> Void)? = nil) {
         guard let task,
               let data = try? JSONSerialization.data(withJSONObject: payload),
-              let str = String(data: data, encoding: .utf8) else { return }
+              let str = String(data: data, encoding: .utf8) else {
+            onFailure?()
+            return
+        }
         task.send(.string(str)) { err in
             guard err != nil else { return }
             Task { @MainActor in onFailure?() }
@@ -120,33 +141,23 @@ final class AgentSocket {
 
     private func reconnect() {
         guard !closed else { return }
+        let gen = generation
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 1_500_000_000)
-            if !self.closed { self.openSocket() }
+            // 代数变了 = 睡眠期间发生过 disconnect/connect，这次重连作废。
+            if !self.closed, self.generation == gen { self.openSocket() }
         }
     }
 
     /// 关闭连接；url/bearerProvider 保留，下次 connect 重来。
     func disconnect() {
         closed = true
-        active = false
+        generation += 1
         heartbeat?.cancel()
         heartbeat = nil
         task?.cancel(with: .goingAway, reason: nil)
         task = nil
         session?.invalidateAndCancel()
         session = nil
-    }
-}
-
-extension ArticleDoc {
-    /// WS 帧里的 `article` 字段 → ArticleDoc。JSON-null 到达时是 NSNull（非 nil
-    /// 但不是合法顶层 JSON 对象）；直接 `data(withJSONObject:)` 会抛 ObjC 异常，
-    /// `try?` 接不住 → abort()。先用 isValidJSONObject 挡掉（库级命令
-    /// merge/delete 场景 article 常为 null）。
-    static func fromWire(_ any: Any?) -> ArticleDoc? {
-        guard let any, JSONSerialization.isValidJSONObject(any),
-              let d = try? JSONSerialization.data(withJSONObject: any) else { return nil }
-        return try? JSONDecoder().decode(ArticleDoc.self, from: d)
     }
 }

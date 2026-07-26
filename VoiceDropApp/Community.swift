@@ -64,7 +64,7 @@ final class CommunityStore {
     private let base = API.filesBase
     private let recoBase = API.recoBase
     /// 注入点（默认全局身份）：测试里 store.tokenProvider = { "t" } 即可脱离真 Keychain。
-    var tokenProvider: @MainActor () -> String = { AuthStore.shared.bearer }
+    @ObservationIgnored var tokenProvider: @MainActor () -> String = { AuthStore.shared.bearer }
     private var token: String { tokenProvider() }
 
     // feed 快照（SWR：先旧后新，DiskCache 家法）：开页先显示上次的社区列表，
@@ -97,7 +97,7 @@ final class CommunityStore {
     /// Community WRITES (share / unshare) need an Apple-verified identity — the server
     /// 403s a bare anon token. Everything else (incl. reco engage/rank, uploads, lists)
     /// uses `token` = the anon default. 真源在 AuthStore.accountableBearer。
-    var shareTokenProvider: @MainActor () -> String = { AuthStore.shared.accountableBearer }
+    @ObservationIgnored var shareTokenProvider: @MainActor () -> String = { AuthStore.shared.accountableBearer }
     private var shareToken: String { shareTokenProvider() }
 
     /// shareIds the current user has liked — filled by `applyRanking()`, seeds the ❤️ state.
@@ -157,7 +157,9 @@ final class CommunityStore {
             guard !rows.isEmpty else { return false }   // 索引空（未回填/漂移）→ 老路径兜底
             let mapped = rows.map(\.post)
             timeOrdered = mapped                        // feed 本身就是时间倒序
-            let byId = Dictionary(uniqueKeysWithValues: mapped.map { ($0.shareId, $0) })
+            // uniquingKeysWith：服务端索引漂移出重复 shareId 时保首个，不能 trap
+            //（uniqueKeysWithValues 遇重复 key 直接崩，社区 tab 就打不开了）。
+            let byId = Dictionary(mapped.map { ($0.shareId, $0) }, uniquingKeysWith: { a, _ in a })
             let reordered = r.order.compactMap { byId[$0] }
             posts = reordered.count == mapped.count ? reordered : mapped
             likeCounts = rows.reduce(into: [:]) { $0[$1.post.shareId] = $1.likes ?? 0 }
@@ -210,7 +212,7 @@ final class CommunityStore {
             let r = try JSONDecoder().decode(R.self, from: data)
             likedShareIds = Set(r.liked)
             likeCounts = r.likes ?? [:]
-            let byId = Dictionary(uniqueKeysWithValues: posts.map { ($0.shareId, $0) })
+            let byId = Dictionary(posts.map { ($0.shareId, $0) }, uniquingKeysWith: { a, _ in a })
             let reordered = r.order.compactMap { byId[$0] }
             if reordered.count == posts.count { posts = reordered }  // replace only on full coverage
         } catch { /* fall back: keep time-sort */ }

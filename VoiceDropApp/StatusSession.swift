@@ -21,7 +21,8 @@ final class StatusSession {
     private let base = API.agentWS + "/status"
 
     func connect() {
-        guard !socket.active else { return }   // already connected or connecting
+        // 幂等由基座负责（同 url 活跃即 no-op）——不要在这层再加 guard，
+        // 三个 session 的防双开契约必须只有一份。
         guard !AuthStore.shared.bearer.isEmpty, let url = URL(string: base) else { return }
         socket.onMessage = { [weak self] in self?.handle($0) }
         socket.connect(url: url) { AuthStore.shared.bearer }

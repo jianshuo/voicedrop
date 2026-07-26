@@ -62,7 +62,7 @@ final class SettingsStore {
 
     private let base = API.filesBase
     /// 注入点（默认全局身份）：测试里 store.tokenProvider = { "t" } 即可脱离真 Keychain。
-    var tokenProvider: @MainActor () -> String = { AuthStore.shared.bearer }
+    @ObservationIgnored var tokenProvider: @MainActor () -> String = { AuthStore.shared.bearer }
     private var token: String { tokenProvider() }
 
     // 文风存在 CLAUDE.json，单独走 /style（版本化）。

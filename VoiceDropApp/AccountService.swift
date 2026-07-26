@@ -24,6 +24,10 @@ enum AccountService {
         wipeLocalState()
         auth.signOut()          // drop the Apple session JWT
         auth.resetAnonymous()   // brand-new anon token (also re-published to the Share Extension)
+        // 身份换了必须广播（与贴令牌登录/设备配对同一信号）：LibraryView 收到后
+        // 断开旧身份的 WS、重连、重拉列表。不发的话旧 socket 还握着已删账号的
+        // bearer 活着，内存里的列表/队列也会「复活」进新身份。
+        NotificationCenter.default.post(name: .vdDidAdoptAccount, object: nil)
         return nil
     }
 

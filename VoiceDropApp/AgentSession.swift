@@ -135,6 +135,7 @@ final class ArticleAgentSession: VoiceAgentSession {
             // resend of an already-done edit just replays its result (no double-apply).
             resubmitAll()
         }
+        socket.onAuthLost = { [weak self] in self?.state = .error; self?.error = "未登录" }
         socket.connect(url: url) { AuthStore.shared.bearer }
     }
 

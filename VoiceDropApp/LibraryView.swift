@@ -249,12 +249,16 @@ struct LibraryView: View {
             PromptImportSheet(prefill: item.code)
         }
         .onChange(of: scenePhase) { _, p in
-            if p == .active { statusSession.connect(); Task { await refresh() } }
-            else if p == .background { statusSession.disconnect() }
+            // command 与 status 同进退：库级命令 socket 现在也有 25s 心跳，
+            // 后台不断开的话整个进程生命周期都在 ping /agent/command。
+            if p == .active { statusSession.connect(); command.connect(); Task { await refresh() } }
+            else if p == .background { statusSession.disconnect(); command.disconnect() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .vdDidAdoptAccount)) { _ in
             statusSession.disconnect()
             statusSession.connect()
+            command.disconnect()
+            command.connect()
             Task { await refresh() }
         }
         .onReceive(router.$pending.compactMap { $0 }) { link in
