@@ -1,8 +1,8 @@
 # VoiceDrop
 
-**打开即录音，停止即自动上传——一个口述捕捉器。** 录下来的音频进入 `jianshuo.dev/files`（R2 收件箱）。
+**一键录音，停止即自动上传，服务端挖成文章——一个口述捕捉器。** 录下来的音频进入 `jianshuo.dev/files`（R2 收件箱），Worker 转写 + 挖文章后推回 App。
 
-这个 repo 只装 **iOS App**。
+这个 repo 装 **iOS App**（`VoiceDropApp/` + 分享扩展 `VoiceDropShare/`），另有微信发布 relay（`mining/relay_server.py`，跑在 Tokyo VPS）。服务端 Worker 在 `~/code/jianshuo.dev/agent`。
 
 ---
 
@@ -10,10 +10,11 @@
 
 ### 行为
 
-- 打开 App → 自动开始录音（黑底、计时器、一个大停止钮，没别的）。
-- 点停止 → 录音（m4a/AAC，单声道 64kbps）立即 PUT 上传，回到准备录音态。
-- 断网/失败 → 录音留在本地待传队列（右上角「↑ N」），下次回前台自动重传。**绝不丢录音。**
+- 打开 App → 录音库列表（主屏）；点红键 → 全屏录音（出现即开录，计时器 + 停止钮）。
+- 点停止 → 录音（m4a/AAC，单声道 64kbps）改成富文件名后立即 PUT 上传，回到列表（列表行显示「正在上传/转写/挖文章」直到成文）。
+- 断网/失败 → 录音留在本地待传队列，下次回前台/网络恢复自动重传。**绝不丢录音。**
 - 来电等中断 → 当作一次停止收尾，不丢已录部分。
+- 成文后：详情页可语音修改（按住说话）、追问、发微信公众号、分享社区/小红书。
 
 ### 文件名（自描述）
 
@@ -56,19 +57,28 @@ open VoiceDrop.xcodeproj                 # 数据线连真机直接 Run（最简
 - TestFlight（照搬 `~/code/drop` 的签名，需 App Store Connect API key）：`bundle exec fastlane beta`
 - 渐变图标可重生成：`python3 scripts/make_icon.py VoiceDropApp/Assets.xcassets/AppIcon.appiconset/icon-1024.png`
 
-### 代码结构
+### 代码结构（主干）
 
 | 文件 | 作用 |
 |---|---|
-| `VoiceDropApp/VoiceDropApp.swift` | `@main` 入口 |
-| `VoiceDropApp/ContentView.swift` | 单屏状态机（requesting/recording/uploading/done/failed），停止时编富名+改名+上传 |
-| `VoiceDropApp/AudioRecorder.swift` | AVAudioRecorder 封装：录临时名 m4a、计时、中断处理；停止返回 `Recording`(url/start/duration) |
-| `VoiceDropApp/Uploader.swift` | PUT 上传到 files API；Documents 目录即待传队列；前台重传 |
-| `VoiceDropApp/RecordingName.swift` | 纯 Foundation 的富文件名构造（时间戳/时长/星期/时段），可单测 |
-| `VoiceDropApp/LocationTagger.swift` | CoreLocation 粗定位 + CLGeocoder 英文反向地理编码（3s 超时） |
+| `VoiceDropApp/VoiceDropApp.swift` | `@main` 入口 → `RootView` → `LibraryView`（列表即主屏） |
+| `VoiceDropApp/RootView.swift` + `AppRouter.swift` | 根视图 + 深链/Universal Link 路由（地址表在 AppRouter 注释里） |
+| `VoiceDropApp/LibraryView.swift` | 主屏：录音列表、红键入口、深链应用、库级语音命令入口 |
+| `VoiceDropApp/RecordSession.swift` | 全屏录音页（出现即开录）；停止后交 `RecordingPromoter` 改富名 |
+| `VoiceDropApp/AudioRecorder.swift` / `EngineRecorder.swift` / `RecordingBackend.swift` | 双录音引擎（经典 AVAudioRecorder / AVAudioEngine+实时采访），统一 `RecordingBackend` 协议 |
+| `VoiceDropApp/RecordingName.swift` | 纯 Foundation 的富文件名构造（时间戳/时长/星期/时段），可单测；双 target 共享 |
+| `VoiceDropApp/Uploader.swift` | PUT 上传到 files API；Documents 目录即待传队列；前台/网络恢复重传 |
+| `VoiceDropApp/Library.swift` | `Recording`/`ArticleDoc`/`MinedArticle` 模型 + `LibraryStore`（列表/文章 SWR 缓存，最大的非 View 文件） |
+| `VoiceDropApp/RecordingDetailView.swift` | 文章详情/编辑页（语音修改、追问、发布、分享；最大的 View） |
+| `VoiceDropApp/AgentSocket.swift` | 可重连 WebSocket 基座（25s 心跳/1.5s 重连/防双开），三个 session 共用 |
+| `VoiceDropApp/AgentSession.swift` | `ArticleAgentSession`：文章级语音编辑指令队列 + 服务端快照对账 |
+| `VoiceDropApp/LibraryCommandSession.swift` / `StatusSession.swift` | 库级语音命令 / 挖矿状态与配对推送（同一基座） |
+| `VoiceDropApp/Networking.swift` | 所有 host/URL 的单一真源 + authed 请求收口；双 target 共享 |
+| `VoiceDropShare/` | 分享扩展（音频/照片/文风语料入口，`ShareAPI.swift` 是它的网络层） |
+| `VoiceDropTests/` | 纯逻辑单测（PromptLogic / ArticleBody / RecordingName / AppRouter / PromptDragEngine） |
+| `mining/relay_server.py` | 微信发布 relay（Tokyo VPS 常驻） |
 | `project.yml` | XcodeGen 工程定义（bundle `com.wangjianshuo.VoiceDrop`，team `97XBW2A43H`，iOS 26 / Swift 6） |
 | `Secrets.xcconfig` | `FILES_TOKEN`（gitignore，本地）；`Secrets.example.xcconfig` 是占位模板 |
-| `scripts/make_icon.py` | 渐变 App 图标生成器 |
 | `docs/superpowers/specs/` | 设计文档（单一事实源） |
 
 ---
