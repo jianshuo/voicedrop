@@ -2,6 +2,18 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## /code-review max 后续修复（2026-07-26，紧随下一节的五项重构）
+
+max 档审查（10 finder + 对抗验证）对上一轮重构复查，确认 12 条、全部落地（ff1fffc + d3177dd）：
+
+- **重连风暴（最重）**：AgentSocket receive 回调缺代际守卫——「开新前杀旧」让被取消 task 的回调以 .failure 迟到落地，reconnect 再杀健康新连接成永久 1.5s 循环。修：`guard task === t` + connect 同 url 幂等（ff1fffc）。
+- **orphan reconnect**：断连前排下的 1.5s 重连在 disconnect+connect 之后醒来会拆新连接。修：generation 计数，connect/disconnect 各 +1，醒来代数不符作废。
+- **reconcile 半修**：库级快照对账 onUpdate 曾以 doc 非空为前提——article 常为 null 的 merge/delete 场景丢 stems 又跳 refresh。改无条件调用。
+- **库级 socket 无人断开**：现在有 25s 心跳后会跑满进程生命周期。LibraryView 让 command 与 status 同进退（scenePhase/adopt）。
+- **销号不广播**：AccountService 成功后 post .vdDidAdoptAccount，旧身份 WS/内存队列不再复活进新身份。
+- 其余：send() 无连接时也走 onFailure；URLSession 跨重连复用；空 bearer 停机 + onAuthLost「未登录」终态；StatusSession 删调用方侧防双开 guard（契约只留基座一份）；Community 两处 uniqueKeysWithValues 改 uniquingKeysWith（重复 shareId 不再 trap）；ArticleDoc.fromWire 挪回模型旁；tokenProvider 标 @ObservationIgnored。
+- 未采纳（有记录）：onOpen 清 error（与旧行为等价）、QueuedAgentSession 二次抽象（更大重构）、confirm/cancel 帧持久化（存量协议问题）。审查还替服务端澄清两点：ledger 游标格式无双重编码；/status /command 都走 DO hibernation API，心跳安全。
+
 ## 代码审查五项修复（2026-07-26，纯 iOS + 文档，服务端零改动）
 
 三个子代理并行审查（重复代码 / 流程清晰度 / 分层）后的 Top-5 落地。模拟器构建通过 + 125 条单测全绿。
