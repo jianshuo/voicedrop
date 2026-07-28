@@ -997,13 +997,18 @@ struct CommunityPostView: View {
     private func stopResponse() async {
         guard let take = recorder.stop() else { withAnimation { recorderPhase = .idle }; return }
         withAnimation { recorderPhase = .idle }
+        guard take.duration >= RecordingPromoter.minDuration else {
+            _ = await RecordingPromoter.promote(take, place: nil)   // deletes the too-short take
+            showToast(String(localized: "时间太短，不足以产生文章"))
+            return
+        }
         await promote(take)
         onRecordFinished?()
         dismiss()
     }
 
     private func promote(_ take: AudioRecorder.Recording) async {
-        let finalURL = await RecordingPromoter.promote(take, place: await location.placeTag())
+        guard let finalURL = await RecordingPromoter.promote(take, place: await location.placeTag()) else { return }
         // LibraryView.onChange picks this up when the article is mined and auto-shares with replyTo.
         UserDefaults.standard.set(post.shareId, forKey: "vd.pendingReply.\(finalURL.lastPathComponent)")
     }

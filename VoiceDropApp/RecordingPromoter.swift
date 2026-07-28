@@ -5,10 +5,19 @@ import Foundation
 /// archive to iCloud when enabled. Was copy-pasted in RecordSession.promote and
 /// Community.promote (the reply path), which drifted in their fallback handling.
 enum RecordingPromoter {
+    /// 不足这个时长的录音产不出文章——不进上传队列，直接丢弃。
+    static let minDuration: TimeInterval = 4
+
     /// Move `take` to its final on-disk URL and (best-effort) archive it. Returns the
     /// URL the file actually ended up at — callers attach any extra metadata to that.
+    /// A take shorter than `minDuration` is deleted here and returns nil, so no
+    /// caller path (stop / interruption / onDisappear / community reply) can upload it.
     @MainActor
-    static func promote(_ take: AudioRecorder.Recording, place: String?) async -> URL {
+    static func promote(_ take: AudioRecorder.Recording, place: String?) async -> URL? {
+        guard take.duration >= minDuration else {
+            try? FileManager.default.removeItem(at: take.url)
+            return nil
+        }
         let finalName = RecordingName.make(start: take.start, duration: take.duration, place: place)
         var url = AudioRecorder.documentsDir.appending(path: finalName)
         do {

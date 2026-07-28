@@ -20,7 +20,7 @@ struct RecordSession: View {
     /// Dismiss back to the list (after stop, or cancel).
     var onFinish: () -> Void
 
-    enum Phase: Equatable { case starting, denied, recording, failed(String) }
+    enum Phase: Equatable { case starting, denied, recording, tooShort, failed(String) }
 
     /// Escape hatch (Prefs.classicRecorder): true = old AVAudioRecorder path.
     /// @State (not a plain let) PINS the choice for the whole session: the View struct
@@ -61,6 +61,8 @@ struct RecordSession: View {
                 messageScreen(title: String(localized: "需要麦克风权限"), subtitle: String(localized: "VoiceDrop 要用麦克风录音。"), primary: String(localized: "去设置")) { openSettings() }
             case .recording:
                 recordingScreen
+            case .tooShort:
+                messageScreen(title: String(localized: "录音太短"), subtitle: String(localized: "时间太短，不足以产生文章，这条录音不会上传。"), primary: String(localized: "好")) { onFinish() }
             case .failed(let msg):
                 messageScreen(title: String(localized: "录音出错"), subtitle: msg, primary: String(localized: "好")) { onFinish() }
             }
@@ -259,6 +261,12 @@ struct RecordSession: View {
             } else { onFinish() }
             return
         }
+        guard take.duration >= RecordingPromoter.minDuration else {
+            _ = await RecordingPromoter.promote(take, place: nil)   // deletes the too-short take
+            Analytics.capture("录音太短", ["时长秒": Int(take.duration)])
+            phase = .tooShort
+            return
+        }
         Analytics.capture("录音完成", [
             "时长秒": Int(take.duration),
             "用过采访": classic ? false : interviewer.interviewWasUsed,
@@ -272,7 +280,7 @@ struct RecordSession: View {
     /// mirror). No upload here — the list drains the queue. Place geocoding is
     /// best-effort and usually instant (location already resolved during the take).
     private func promote(_ take: AudioRecorder.Recording) async {
-        let url = await RecordingPromoter.promote(take, place: await location.placeTag())
+        guard let url = await RecordingPromoter.promote(take, place: await location.placeTag()) else { return }
         if let tag = defaultTag { Uploader.writeTagsSidecar(for: url, tags: [tag]) }
     }
 
