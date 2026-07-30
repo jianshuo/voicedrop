@@ -1,6 +1,6 @@
 # VoiceDrop — project state (read this first)
 
-Last updated: 2026-07-26（本文件只保留稳定的架构、契约与现状；逐日改动流水拆去 CHANGELOG.md）
+Last updated: 2026-07-29（本文件只保留稳定的架构、契约与现状；逐日改动流水拆去 CHANGELOG.md）
 
 > 近期发生了什么（如 2026-07-25 语音编辑提速四轮）请看 [CHANGELOG.md](CHANGELOG.md)，倒序、最新在最上面。给未来 agent：架构级变更更新本文件，逐日流水追加到 CHANGELOG.md 顶部。
 
@@ -62,7 +62,7 @@ scopes every request to `users/<sub>/`.
 - `users/<sub>/photos/<sessionTs>/<offset>-<rand>.jpg` — **场景照片**（录音时一边说一边拍，隐藏功能）. `sessionTs` = the recording's `yyyy-MM-dd-HHmmss` (correlates photo↔recording). **`<offset>` = 整数秒, the photo's offset from the recording start** — this IS "第几秒加进来"; absolute capture time is recoverable as `sessionTs + offset`, so the old absolute capture stamp was redundant. `<rand>` = a 3-char base36 tail. **Why offset+rand, not a capture timestamp (changed 2026-06-26):** the prior `<captureTs>` (`yyyy-MM-dd-HHmmss`) had **two bugs** — (1) seconds-only resolution **collided** when several photos landed in the same second (a 9-photo album import fires its `loadObject` callbacks near-simultaneously → same key → silent overwrite, lost photos); (2) it was 17 chars when 2–4 would do. The `<rand>` tail makes the key unique even within one offset-second (3 base36 = 46,656 combos → ~0.08% collision for 9 same-second photos). Helper is the single source of truth: `RecordingName.photoKey(sessionTs:offset:)` (iOS); both upload paths use it — editor insert (`RecordingDetailView.insertPhotos`, offset via `RecordingName.date(fromTimestamp:)`) and during-recording capture (`RecordSession.uploadPhoto`, offset = `date − sessionStart`). **Note** offset is only真·"录音内第几秒" for the during-recording path; for editor-inserted / album-imported photos it's "how long after recording it was added" (large but unique & harmless). **iOS-only change** — worker/web treat the marker token as an opaque key, so the renamed `<offset>-<rand>` segment is transparent to them. Square ≤1200px JPEG. Uploaded by the app via the normal `PUT upload/<key>` (lands in user scope). **Inline display:** the miner (`miner.js`) and the voice-edit agent (`index.js`) feed photos to Claude as vision input and insert **`[[photo:<relkey>]]`** markers — **the token IS the photo's relative R2 key** (e.g. `[[photo:photos/<sessionTs>/<offset>-<rand>.jpg]]`) — into the body at the spot the scene is described; the app/web resolve each marker's key directly and render the photo inline. **Why keys, not indices (changed 2026-06-26):** the old `[[photo:N]]` used a 1-based index into the `photos` array, which coupled every marker to that array's order — inserting/reordering a photo during voice-edit misnumbered the rest and showed "different marker, same image". A self-contained key has zero coupling: insert/delete a marker without touching any other. **The `photos` array is no longer written (2026-06-26):** the miner (`miner.js`) and the voice-edit agent (`index.js`) stopped writing it — consumers extract referenced keys straight from the body instead (web via `photoRefsInBodies`→`buildPhotoURLs`; iOS export via `ArticleBody.segments`; iOS detail view's `PhotoTile` already downloaded by marker key). **Legacy `[[photo:N]]` is still parsed for old articles** — resolver is `ArticleBody.resolvePhotoKey` (iOS, numeric→`photos[N-1]` else token-is-key) and `photoRefsInBodies`'s `/^\d+$/` branch, both mapping the index through the old article's surviving `photos` array. New writes from all paths use keys only; an old article's `photos` array is read-only legacy. Markers are **stripped** wherever photos can't be shown — WeChat HTML (`md_to_wechat_html`), exports, and share excerpts (all marker regexes widened to `[[photo:[^\]]+]]`). **Photos now load from ONE universal endpoint** (changed 2026-06-26): `GET /files/api/photo/<full R2 key>` — public, no auth, no per-post gating, serves any `users/*/photos/*.(jpg|png)` straight from its original location. Used everywhere: the public `/voicedrop/<token>` page emits `<img src="/files/api/photo/…">` (`buildPhotoURLs`, no more base64), and the community (`CommunityPostView` renders `ArticleBody.segments` with inline `CommunityPhotoTile`s, no longer `stripMarkers`). The editing agent is told to preserve markers (and their keys) verbatim.
 - `users/<sub>/CLAUDE.json` — the user's **写作文风 (style only)**, schema-3 **versioned** envelope identical to articles (`{schema:3,head,versions:[{v,savedAt,source,style}],createdAt,updatedAt}`). Single source of truth = `functions/lib/style-store.js` (mirror of `article-store.js`), imported by the Pages Function, the agent worker (`tools.js`) and the miner (`miner.js`). Read/written via the dedicated **`/files/api/style`** route (GET read · PUT versioned write `{style[,source]}` · GET `style/history` · PATCH `style/head`). The 文风 is appended to the mining prompt. **The name is NOT here** — it stays in the legacy `CLAUDE.md` for now (見下), to be relocated later. **Backward compat (2026-06-29):** writers only ever write `CLAUDE.json`; every reader (`readStyleText`/`/style` GET) prefers `CLAUDE.json` and **falls back to parsing the old `CLAUDE.md`'s「# 我的文风」section** when no `CLAUDE.json` exists yet — so an old `CLAUDE.md` is retired the first time the user saves. iOS `SettingsView.swift` reads `GET /style` + saves `PUT /style` (empty style is skipped, since the route rejects blank writes). `read_style`/`write_style` agent tools speak the 文风 text and route writes through `/style`.
 - `users/<sub>/CLAUDE.md` — **legacy; now holds the NAME only** (`# 我的名字\n<name>`). iOS still reads/writes it for the name; the author-extraction paths (community share endpoint + miner `community/<id>.json`) still pull the author from its `# 我的名字` regex — **unchanged**. Its「# 我的文风」section is read only as a fallback for users not yet migrated to `CLAUDE.json`. The name's permanent home is TBD.
-- `users/<sub>/WECHAT.json` — `{appid, secret, enabled, thumb_media_id?, coverMediaIds:{<coverName>:<wechatMediaId>}}` (Settings tab). Drives WeChat draft publishing; `coverMediaIds` caches the per-cover WeChat material ids.
+- `users/<sub>/WECHAT.json` — legacy direct credentials `{appid,secret,...}` and/or third-party authorization `{provider:"wechat_third_party",authorizer_appid,access_token,refresh_token,access_token_expires_at,...}`, plus `enabled` and `coverMediaIds:{<coverName>:<wechatMediaId>}`. Drives WeChat draft publishing; a stored `access_token` takes priority over legacy credentials and is refreshed by the Function before expiry. `coverMediaIds` caches the per-cover WeChat material ids.
 - `assets/wechat-covers/<style>.png` — **shared** cover image set (10: `style01`–`style10`), global (not per-user). One is picked per article by hash. Public via `/files/api/asset/wechat-covers`.
 - `shares/<id>` — value is a full article key; backs the short public share link. `id = HMAC(key)[:10]`.
 - `community/<shareId>.json` — a public **schema-2 live pointer** to a shared article: `{schema:2,shareId,owner,articleKey,author,firstSharedAt,replyTo?}` (no content copy — title/body read live from `articleKey`). `shareId = HMAC('community:'+articleKey)[:12]`. Global (cross-user). Editing the source article IS reflected immediately; deleting the source recording **reaps** this pointer (see Community self-heal below). Legacy schema-1 posts with inline `{title,articles}` may still exist and are read as-is.
@@ -154,7 +154,9 @@ App ⋯ → **发布公众号草稿** publishes a mined article as a WeChat draf
 REAL result (`created`/`updated` or the actual `errcode`), not the old fire-and-forget.
 
 Flow: app `POST /files/api/wechat/<articleKey>` → Function reads the article JSON +
-`users/<sub>/WECHAT.json` creds → POSTs `{appid,secret,cover_media_ids,article}` to the relay
+`users/<sub>/WECHAT.json` creds → prefers a stored third-party `access_token` (refreshing it first
+when expired) and POSTs `{access_token,authorizer_appid,cover_media_ids,article}`; otherwise POSTs
+legacy `{appid,secret,cover_media_ids,article}` to the relay
 and **awaits** → writes the returned `wechatMediaId`(s) back to the article JSON and the cover
 cache to `WECHAT.json` → returns `{ok,created,updated}` / 502 `{errcode,errmsg}` / 409 not configured.
 Idempotent: an existing draft is updated in place (no dupe).
@@ -167,10 +169,20 @@ runs ON that VPS and calls `api.weixin.qq.com` directly.
   bound to `127.0.0.1:8848`. **Self-contained, stdlib-only** — `relay_server.py` holds the entire
   WeChat + cover toolchain (`wechat_access_token` / `md_to_wechat_html` / the `assets/wechat-covers`
   picker / `create|update|sync_wechat_drafts`); no R2 / `FILES_TOKEN`, no ASR, no Claude. **Dumb**:
-  gets appid/secret + article per request, returns results; the Function persists. Code =
+  gets a ready `access_token/authorizer_appid` or legacy `appid/secret` + article per request,
+  preferring `access_token` when both exist, and returns results; the Function persists. Code =
   `mining/relay_server.py` (single file). Deploy = `mining/deploy_relay.sh`
   (`VPS_SSH=root@66.42.45.128 ./mining/deploy_relay.sh` → rsync + drop stale `mine.py` + daemon-reload +
   restart + health). First-time provision = `mining/vps/provision.sh` (+ `wechat-relay.service`, `README.md`).
+- **第三方平台出站也统一经 relay（2026-07-29）：** Pages 上的扫码页、授权回调和成功页 URL/UI
+  保持不变，但它们背后的五类微信请求不再由 Cloudflare 直连：
+  `component-token`、`pre-auth-code`、`query-auth`、`authorizer-info`、`authorizer-token`
+  都 POST 到 relay 的同名受限路径，再由固定 IP 调微信。relay 不接受任意 URL；每条路径只允许
+  对应的最小字段。`component_appsecret` 只用于换组件 token；其他调用传
+  `component_access_token`，刷新授权方 token 时再传 `authorizer_refresh_token`。relay 不落盘；
+  Pages 仍判断过期、刷新并把组件状态写 `config/wechat-component.json`、把公众号授权写
+  `users/<sub>/WECHAT.json`。微信主动推送的 component callback 仍直接进 Pages（入站不需要出口
+  白名单）。测试：`mining/test_relay_publish.py`、`agent/test/wechat-third-party.test.js`。
 - **Exposed via a Cloudflare Tunnel** (zero open inbound port): `cloudflared` systemd unit, tunnel
   `wechat-pub` → proxied CNAME `wechat-pub.jianshuo.dev` → `127.0.0.1:8848`. Inbound auth = header
   `X-Relay-Secret` (= Pages `WECHAT_RELAY_SECRET` = VPS `/opt/wechat-relay/relay.env`). WeChat egress
@@ -704,4 +716,3 @@ VoiceDrop 是 iOS 系统分享目标。从别的 app 点「分享」→ 自定�
 - PostHog session replay 已开：SDK 侧 `Analytics.swift`（screenshotMode，SwiftUI 必须；maskAllTextInputs/maskAllImages 全开）+ 服务端 `session_recording_opt_in` 已由 MCP 打开（保留期 30 天）。
 - 隐私红线延伸：内容型视图手动打码——RecordingDetailView.articlePane / CommunityFeedView / PromptManagerView 挂 `.postHogMask()`（正文/社区内容/提示词在录像里是色块，点按位置仍可见）。新增内容视图记得同样处理。
 - 背景：rageclick 101 次/16 人但事件流只能间接定位（语音编辑无反馈为主因），开 replay 是为了直接看录像。
-
