@@ -11,18 +11,28 @@ mining/mine.py (the old Python miner), which the relay `import`ed. mine.py is go
 WeChat half is now inlined below. No R2 token, no ASR, no Claude — just WeChat.
 
 Dumb relay by design: it holds NO R2 / FILES_TOKEN, never touches R2. It receives
-appid/secret per request (kept in memory, never logged), talks to WeChat, and
-returns the mutated article (with wechatMediaId filled) + the final thumb id; the
-Function persists those back to R2. The only outbound non-WeChat call is fetching
-the public cover images from jianshuo.dev/files (no auth).
+either a ready authorizer access_token (preferred) or legacy appid/secret per request
+(kept in memory, never logged), talks to WeChat, and returns the mutated article
+(with wechatMediaId filled) + the final thumb id; the Function persists those back
+to R2. The only outbound non-WeChat call is fetching the public cover images from
+jianshuo.dev/files (no auth).
 
 Reachable ONLY through a Cloudflare Tunnel (cloudflared → 127.0.0.1:PORT); every
 request must carry X-Relay-Secret == $WECHAT_RELAY_SECRET (constant-time check).
 
-  POST /publish  {appid, secret, cover_media_ids?, article:{id?, articles:[{title,body,wechatMediaId?}]}}
+  POST /publish  {access_token, authorizer_appid, cover_media_ids?, article:{id?, articles:[{title,body,wechatMediaId?}]}}
+             OR  {appid, secret, cover_media_ids?, article:{id?, articles:[{title,body,wechatMediaId?}]}}
        -> 200 {ok:true,  article, cover_media_ids, created, updated}
        -> 200 {ok:false, errcode, errmsg}        (a real WeChat error — relayed verbatim)
        -> 401 wrong/absent secret · 400 bad body · 500 unexpected
+  POST /component-token   {component_appid, component_appsecret, component_verify_ticket}
+  POST /pre-auth-code     {component_access_token, component_appid}
+  POST /query-auth        {component_access_token, component_appid, authorization_code}
+  POST /authorizer-info   {component_access_token, component_appid, authorizer_appid}
+  POST /authorizer-token  {component_access_token, component_appid, authorizer_appid,
+                           authorizer_refresh_token}
+       -> 200 the WeChat JSON response. These are strict, allowlisted operations:
+              callers cannot supply an arbitrary URL or API path.
   GET  /health   -> 200 ok
 
 Env: WECHAT_RELAY_SECRET (required), PORT (default 8848).
@@ -547,15 +557,100 @@ def _validate(payload):
     return {"ok": True}
 
 
+def _required_string(payload, key):
+    value = payload.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"missing {key}")
+    return value.strip()
+
+
+_COMPONENT_API_SPECS = {
+    "/component-token": {
+        "endpoint": "api_component_token",
+        "body": ("component_appid", "component_appsecret", "component_verify_ticket"),
+    },
+    "/pre-auth-code": {
+        "endpoint": "api_create_preauthcode",
+        "body": ("component_appid",),
+    },
+    "/query-auth": {
+        "endpoint": "api_query_auth",
+        "body": ("component_appid", "authorization_code"),
+    },
+    "/authorizer-info": {
+        "endpoint": "api_get_authorizer_info",
+        "body": ("component_appid", "authorizer_appid"),
+    },
+    "/authorizer-token": {
+        "endpoint": "api_authorizer_token",
+        "body": ("component_appid", "authorizer_appid", "authorizer_refresh_token"),
+    },
+}
+
+
+def _component_api(path, payload):
+    """Call one allowlisted WeChat third-party-platform API from the fixed IP.
+
+    Cloudflare owns all token lifecycle and R2 persistence. Credentials arrive
+    over the authenticated HTTPS relay request, are held only in memory, and are
+    forwarded to the exact WeChat endpoint declared above. There is deliberately
+    no caller-controlled URL, host, query string, or endpoint.
+    """
+    if not isinstance(payload, dict):
+        raise ValueError("payload must be an object")
+    spec = _COMPONENT_API_SPECS.get(path)
+    if not spec:
+        raise ValueError("unsupported component operation")
+
+    body = {key: _required_string(payload, key) for key in spec["body"]}
+    url = f"https://api.weixin.qq.com/cgi-bin/component/{spec['endpoint']}"
+    if path != "/component-token":
+        token = _required_string(payload, "component_access_token")
+        url += "?component_access_token=" + quote(token, safe="")
+
+    raw = _wechat_req(
+        "POST",
+        url,
+        data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    result = json.loads(raw)
+    if not isinstance(result, dict):
+        raise RuntimeError("WeChat component API returned non-object JSON")
+    return result
+
+
+def _resolve_publish_token(payload):
+    """Return (access_token, account_appid), preferring a supplied access_token.
+
+    The Function owns third-party token refresh and sends a ready authorizer token.
+    Legacy appid/secret remains supported for old clients/configurations. If both
+    modes are present, access_token wins and appid/secret are intentionally ignored.
+    """
+    access_token = payload.get("access_token")
+    if isinstance(access_token, str) and access_token.strip():
+        return access_token.strip(), _required_string(payload, "authorizer_appid")
+
+    # An authorizer identity without its token is a broken third-party request.
+    # Do not silently fall back to legacy credentials and hide a refresh failure.
+    authorizer_appid = payload.get("authorizer_appid")
+    if isinstance(authorizer_appid, str) and authorizer_appid.strip():
+        raise ValueError("missing access_token")
+
+    appid = _required_string(payload, "appid")
+    secret = _required_string(payload, "secret")
+    return wechat_access_token(appid, secret), appid
+
+
 def _publish(payload):
     """Run the synchronous WeChat publish and return the JSON-able result dict."""
-    appid = payload.get("appid")
-    secret = payload.get("secret")
-    article = payload.get("article") or {}
-    if not appid or not secret or not isinstance(article.get("articles"), list):
-        raise ValueError("missing appid/secret/article.articles")
+    if not isinstance(payload, dict):
+        raise ValueError("payload must be an object")
+    article = payload.get("article")
+    if not isinstance(article, dict) or not isinstance(article.get("articles"), list):
+        raise ValueError("missing article.articles")
 
-    token = wechat_access_token(appid, secret)
+    token, account_appid = _resolve_publish_token(payload)
     # Per-article cover from assets/wechat-covers/, chosen by hash(doc id). The
     # cover->media_id cache lives in WECHAT.json; the Function passes it in and
     # persists whatever we return. No R2 access here — covers are fetched from the
@@ -571,7 +666,7 @@ def _publish(payload):
     # passes `owner` (= 'users/<sub>/') so we can fetch each photo from the public
     # endpoint and upload it into the draft. Missing owner (old Function) → no embeds,
     # markers stripped, exactly as before.
-    photo_url = make_photo_resolver(token, owner, appid)
+    photo_url = make_photo_resolver(token, owner, account_appid)
     # 摘要 (digest): a plain-text excerpt of each body, so the WeChat share card has a
     # real summary instead of WeChat's raw first-54-chars fallback.
     created, updated = sync_wechat_drafts(
@@ -603,7 +698,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": "not found"})
 
     def do_POST(self):
-        if self.path not in ("/publish", "/validate"):
+        allowed_paths = {"/publish", "/validate", *_COMPONENT_API_SPECS}
+        if self.path not in allowed_paths:
             return self._send(404, {"error": "not found"})
         # Auth: constant-time compare of the shared secret.
         got = self.headers.get("X-Relay-Secret", "")
@@ -623,9 +719,11 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if self.path == "/validate":
                 return self._send(200, _validate(payload))
+            if self.path in _COMPONENT_API_SPECS:
+                return self._send(200, _component_api(self.path, payload))
             return self._send(200, _publish(payload))
         except ValueError as e:
-            log(f"   ✗ publish rejected: {e}")
+            log(f"   ✗ request rejected: {e}")
             return self._send(400, {"error": str(e)})
         except RuntimeError as e:
             # A real WeChat-side failure — relay the actual errcode/errmsg (HTTP 200,
