@@ -2,6 +2,13 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## push main 恢复自动发 TestFlight（2026-08-02，CI）
+
+用户要求撤销 2026-07-09 的 `[tf]` opt-in 闸：`build.yml` 里 push main 一律跑
+`fastlane beta` 上传 TestFlight（PR 仍只验编译；workflow_dispatch 的
+certs/appstore 路径不变）。苹果 ~20 包/24h 上传限额仍在——高强度迭代日撞 409
+就是限额到了，等窗口刷新，**别改回 opt-in**（用户已明确要每 push 必发）。
+
 ## 录音期间照片一张都不能丢（2026-08-02，iOS + agent worker）
 
 用户反馈：录音时拍的照片有时没进正文。排查出三个丢失点，全部闭环：
@@ -795,8 +802,9 @@ plan = `docs/superpowers/plans/2026-07-13-prompt-manager-phase1-server.md`。
 
 ### Phase 2（iOS）——已上线（2026-07-14）：PR #24 已合并部署（worker `97c94d38`），iOS 合 main 后经 workflow_dispatch 发 **TestFlight build 99**
 
-> ⚠️ 发版规矩（2026-07-09 起）：**push main 不会自动发 TestFlight**——commit message 带 `[tf]`
-> 或 `gh workflow run build.yml -f destination=testflight` 才上传（苹果 ~20 包/24h 限额）。CI 绿 ≠ 出包。
+> ⚠️ ~~发版规矩（2026-07-09 起）：**push main 不会自动发 TestFlight**——commit message 带 `[tf]`
+> 或 `gh workflow run build.yml -f destination=testflight` 才上传（苹果 ~20 包/24h 限额）。CI 绿 ≠ 出包。~~
+> **2026-08-02 已撤销**：push main 恢复自动发 TestFlight（见顶部当日条目）。
 
 ### 第 6 轮拖拽（6a–6d）——分支 `prompt-drag-6a6d`，2026-07-14
 
