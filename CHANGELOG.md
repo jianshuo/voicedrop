@@ -52,6 +52,15 @@ Kaola 实机两份 crash log（build 279）定位出两个 bug：
 TestFlight 非 bitcode 构建 ASC 无 dSYM（dSYMUrl=null），系统帧用本地
 iOS DeviceSupport Symbols + atos 符号化。
 
+## 录音上传埋点补耗时/大小/网络类型（2026-08-02，纯 iOS）
+
+「上传特别慢」排查（用 R2 时间戳反推 947 条录音）发现 App 缺上传耗时数据：8-01 苏州外出
+蜂窝弱网中位 214s 且与文件大小无关（照片队列串行放大），而线路本身实测无碍（voicedrop.cn
+1.7MB/s 稳定 > 直连 CF）。此后不用再反推：「录音上传完成」新增 `耗时秒`（音频 PUT 本身）、
+`排队秒`（tags 边车+照片 drain 的等待，慢的真凶通常在这）、`文件KB`、`网络类型`
+（WiFi/蜂窝/有线/其他/离线，复用 Uploader 现成 NWPathMonitor 随路径更新）；
+「录音上传失败」也带 `网络类型`，重试耗尽额外带 `耗时秒`/`文件KB`。
+
 ## 1.8 提交 App Store 审核（2026-08-02）
 
 复用 TestFlight build 279（7-28 上传，内容 = release/1.7 之后 main 的 25 个 commit：

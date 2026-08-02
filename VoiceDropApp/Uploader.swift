@@ -47,6 +47,8 @@ final class Uploader {
     // Reachability — retry the queue when the network comes back after an outage.
     private let pathMonitor = NWPathMonitor()
     private var isOnline = true
+    // 埋点用的当前网络类型（WiFi/蜂窝/…），由 pathMonitor 随路径变化更新。
+    private var networkType = "未知"
 
     // Keeps a just-started upload alive briefly after the app leaves the
     // foreground, so short voice memos still finish instead of being cancelled.
@@ -65,10 +67,16 @@ final class Uploader {
     private func startNetworkMonitor() {
         pathMonitor.pathUpdateHandler = { path in
             let online = path.status == .satisfied
+            let type: String
+            if path.usesInterfaceType(.wifi) { type = "WiFi" }
+            else if path.usesInterfaceType(.cellular) { type = "蜂窝" }
+            else if path.usesInterfaceType(.wiredEthernet) { type = "有线" }
+            else { type = online ? "其他" : "离线" }
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 let cameBackOnline = online && !self.isOnline
                 self.isOnline = online
+                self.networkType = type
                 if cameBackOnline, PhotoUploadQueue.shared.hasPending { await PhotoUploadQueue.shared.drain() }
                 if cameBackOnline, self.pendingCount > 0 { await self.drainPending() }
             }
@@ -201,6 +209,7 @@ final class Uploader {
             return false
         }
         // Tag sidecar rides in front of the audio (mining triggers on the audio).
+        let queuedAt = Date()
         await uploadTagsSidecar(for: url)
         // 照片也必须先于音频到位：音频的到达触发挖矿，挖矿 list 到的照片才进正文。
         // drain 内部串行化且等真正跑完才返回（不是"已有 drain 在跑就放行"）。
@@ -216,6 +225,10 @@ final class Uploader {
 
         beginBG()
         defer { endBG() }
+
+        let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int64 ?? 0
+        let fileKB = Int(bytes / 1024)
+        let transferAt = Date()   // 排队（边车+照片）结束、音频 PUT 开始
 
         let maxAttempts = 3
         for attempt in 1...maxAttempts {
@@ -242,19 +255,25 @@ final class Uploader {
                     }
                     lastError = nil
                     refreshPending()
-                    Analytics.capture("录音上传完成", ["尝试次数": attempt])
+                    Analytics.capture("录音上传完成", [
+                        "尝试次数": attempt,
+                        "耗时秒": Int(Date().timeIntervalSince(transferAt).rounded()),
+                        "排队秒": Int(transferAt.timeIntervalSince(queuedAt).rounded()),
+                        "文件KB": fileKB,
+                        "网络类型": networkType,
+                    ])
                     return true
                 }
                 // Auth / other 4xx is the server rejecting THIS request — a retry
                 // won't change the outcome, so stop immediately.
                 if code == 401 || code == 403 {
                     lastError = String(localized: "token 失效（HTTP \(code)）")
-                    Analytics.capture("录音上传失败", ["原因": "token失效"])
+                    Analytics.capture("录音上传失败", ["原因": "token失效", "网络类型": networkType])
                     return false
                 }
                 if (400..<500).contains(code) {
                     lastError = String(localized: "上传失败 HTTP \(code)")
-                    Analytics.capture("录音上传失败", ["原因": "HTTP\(code)"])
+                    Analytics.capture("录音上传失败", ["原因": "HTTP\(code)", "网络类型": networkType])
                     return false
                 }
                 // 5xx, or 0 (no HTTP response) — transient; fall through to retry.
@@ -268,7 +287,12 @@ final class Uploader {
                 try? await Task.sleep(nanoseconds: UInt64(attempt) * 1_500_000_000)
             }
         }
-        Analytics.capture("录音上传失败", ["原因": "重试耗尽"])
+        Analytics.capture("录音上传失败", [
+            "原因": "重试耗尽",
+            "耗时秒": Int(Date().timeIntervalSince(transferAt).rounded()),
+            "文件KB": fileKB,
+            "网络类型": networkType,
+        ])
         return false
     }
 
