@@ -2,6 +2,25 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 快速删除崩溃 + 心跳双回调防护（2026-08-02，纯 iOS）
+
+Kaola 实机两份 crash log（build 279）定位出两个 bug：
+
+- **首页快速删除 → Index out of range（主案）**：`LibraryStore.load` 的两个 late-enrichment
+  循环（blockReason / .tags sidecar）写成 `for i in recordings.indices` 且循环体内有
+  `await`——挂起期间 swipe 删除把 `recordings` 删短，恢复后旧下标越界即 SIGTRAP。
+  修：先快照 stem 列表，每次 await 回来按 stem `firstIndex` 重找（与 `fetchMissingTitles`
+  「Matched back by id」同规范）。全仓已扫，无其他「跨 await 持有下标」点。
+- **AgentSocket.ping continuation 双 resume（00:41 crash）**：`sendPing` 回调在连接
+  同时出错时可能被调两次（URLSession 已知坑），CheckedContinuation 二次 resume 即崩。
+  修：`OSAllocatedUnfairLock` 一次性门闩。
+- 另一份 7-31 crash 是 0x8BADF00D 启动 watchdog（设备当时系统 CPU 打满），非代码问题。
+
+125 条单测改动前后全绿。排查手法沉淀：设备不插线也能
+`devicectl device info files / copy from --domain-type systemCrashLogs` 直接拉 .ips；
+TestFlight 非 bitcode 构建 ASC 无 dSYM（dSYMUrl=null），系统帧用本地
+iOS DeviceSupport Symbols + atos 符号化。
+
 ## 1.8 提交 App Store 审核（2026-08-02）
 
 复用 TestFlight build 279（7-28 上传，内容 = release/1.7 之后 main 的 25 个 commit：

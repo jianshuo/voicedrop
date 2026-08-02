@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// 可重连 WebSocket 基座：建连（bearer + receive 循环）、25s 心跳、断线 1.5s
 /// 退避重连、goingAway 关闭，全部收口在这里。之前 ArticleAgentSession /
@@ -135,7 +136,17 @@ final class AgentSocket {
     /// static 包一层，用 continuation 把结果拉回调用方的 actor 上下文。
     nonisolated private static func ping(_ t: URLSessionWebSocketTask) async -> Bool {
         await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
-            t.sendPing { err in cont.resume(returning: err != nil) }
+            // sendPing 在连接同时出错时可能回调两次（URLSession 老 bug）；
+            // continuation 二次 resume 即崩（Kaola 2026-08-02 00:41 实例），锁一道。
+            let resumed = OSAllocatedUnfairLock(initialState: false)
+            t.sendPing { err in
+                let first = resumed.withLock { done -> Bool in
+                    if done { return false }
+                    done = true
+                    return true
+                }
+                if first { cont.resume(returning: err != nil) }
+            }
         }
     }
 
