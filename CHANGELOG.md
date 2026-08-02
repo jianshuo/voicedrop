@@ -2,6 +2,15 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 挖矿只产出一篇文章（2026-08-02，纯服务端 prompt）
+
+MINE_SYSTEM（`jianshuo.dev/agent/src/prompts/mine.js`）从「一篇或多篇、可拆 2–3 篇」改为
+永远只产出 1 篇：转写跳了几个话题也要用内在线索组织进同一篇；篇幅完全跟随内容，
+内容多就写长，不有意删减素材。JSON 契约不变（仍是 `articles` 数组，只放一篇元素），
+iOS / miner 代码零改动。测试断言同步更新（prompt-extraction.test.js），已部署
+voicedrop-agent（版本 a4aaf443）。注：prompt-market.test.js 有 1 条既有失败（hot 排序
+时间衰减），与本次无关。
+
 ## 录音不足 4 秒不上传（2026-07-28，纯 iOS）
 
 太短的录音产不出文章，不再送进上传队列。收口点在 `RecordingPromoter.promote`（新增
