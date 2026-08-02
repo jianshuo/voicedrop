@@ -25,6 +25,7 @@
       }
     },
     "，成文时各生成一篇，在阅读页顶部切换对比。最多选 3 个。" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -124,9 +125,6 @@
           }
         }
       }
-    },
-    "%lld / 3" : {
-
     },
     "%lld 字" : {
       "localizations" : {
@@ -1036,6 +1034,7 @@
 
     },
     "勾选 2–3 个版本" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1046,6 +1045,7 @@
       }
     },
     "勾选多个版本，成文时各生成一篇并排挑" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1438,6 +1438,7 @@
 
     },
     "多风格对比" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1457,9 +1458,6 @@
         }
       }
     },
-    "始终生效的底子——每次成文默认带上。" : {
-
-    },
     "完成" : {
       "localizations" : {
         "en" : {
@@ -1471,6 +1469,7 @@
       }
     },
     "完成后将分别用 " : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1491,6 +1490,7 @@
       }
     },
     "对比" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1828,6 +1828,7 @@
       }
     },
     "已选 " : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -1920,6 +1921,9 @@
           }
         }
       }
+    },
+    "录音太短" : {
+
     },
     "录音失败：%@" : {
       "localizations" : {
@@ -2044,9 +2048,6 @@
         }
       }
     },
-    "成文时都带上" : {
-
-    },
     "我在用 VoiceDrop，动动嘴就能写出好文章%@：%@" : {
       "localizations" : {
         "zh-Hans" : {
@@ -2056,9 +2057,6 @@
           }
         }
       }
-    },
-    "我的写作风格" : {
-
     },
     "我的录音" : {
       "localizations" : {
@@ -2478,6 +2476,12 @@
         }
       }
     },
+    "时间太短，不足以产生文章" : {
+
+    },
+    "时间太短，不足以产生文章，这条录音不会上传。" : {
+
+    },
     "明细" : {
       "localizations" : {
         "en" : {
@@ -2628,6 +2632,7 @@
       }
     },
     "未选版本" : {
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "stringUnit" : {
@@ -3893,9 +3898,6 @@
         }
       }
     },
-    "选中文字或图片长按时出现的动作，点了就跑。" : {
-
-    },
     "选风格" : {
       "localizations" : {
         "en" : {
@@ -4013,9 +4015,6 @@
           }
         }
       }
-    },
-    "长按菜单" : {
-
     },
     "长按菜单里不再出现这一项，可随时恢复" : {
       "extractionState" : "stale",

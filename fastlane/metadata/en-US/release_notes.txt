@@ -1,5 +1,7 @@
 What's new:
-• Easier WeChat account linking: AppID/AppSecret and IP allowlist are verified on save, with clear errors and a rewritten step-by-step guide
-• AI images carry their provenance: pictures generated from long-press menu edits now embed creation info and the prompt share code, so anyone with the image can find the same prompt
-• Prompt manager fixes: importing a prompt is now idempotent, empty delete dialogs are gone, and swipe-to-delete feels right
-• Performance and stability improvements
+• Faster everywhere: recordings, community, and article pages open instantly from local cache, then refresh in place
+• Faster access in China via the voicedrop.cn edge network
+• More reliable voice editing: connections stay alive and results sync immediately, even on weak networks
+• Recordings under 4 seconds now get an instant "too short" hint instead of a long wait
+• A subtle hint on article images — tap it to edit the picture
+• Bug fixes and performance improvements
