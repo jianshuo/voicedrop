@@ -2,6 +2,30 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 录音期间照片一张都不能丢（2026-08-02，iOS + agent worker）
+
+用户反馈：录音时拍的照片有时没进正文。排查出三个丢失点，全部闭环：
+
+- **服务端保底（主因，`agent/src/miner.js`，已部署）**：初次挖矿此前全靠模型自觉插
+  `[[photo:key]]`（restyle 有 `ensurePhotoMarkers` 兜底、初挖没有）——模型漏插即静默丢图。
+  现在有语音挖矿与看图模式两条写盘路径都在写盘前 **fresh 重列** `photos/<sessionTs>/`
+  （cursor 翻页；不用跑批开始的 allKeys 快照，顺带兜住「照片在 ASR 期间才上传完」的竞态），
+  凡正文没引用的 key 按序补 `[[photo:key]]` 到最后一篇末尾，minelog 记「补回漏掉的照片标记」。
+  新增 `ensurePhotoKeys(relKeys, articles)`（`ensurePhotoMarkers` 改为其薄壳）。
+  测试 `agent/test/photo-guarantee.test.js`（含晚到照片竞态用例）。
+- **iOS 照片上传落盘队列（`PhotoUploadQueue.swift` 新文件）**：此前录音期间拍照上传是
+  单次 fire-and-forget（`PhotoService.upload` 一次失败即永久丢，拍完锁屏任务被杀也丢）。
+  现在拍完先落盘 `Documents/pending-photos/<relKey>`，上传成功才删；3 次退避重试 + 后台
+  保活 + 失败留盘，启动 / 联网恢复 / 下次音频上传前都会 drain。relKey 从路径末三段还原
+  （不做前缀比较，`/var` 与 `/private/var` 符号链接会失配）。
+- **照片先于音频上传（`Uploader.upload` 开头 `await PhotoUploadQueue.shared.drain()`）**：
+  音频的到达才触发挖矿，照片先到位挖矿必然看得见。drain 全量串行化且等真正跑完才返回
+  （不是"已有 drain 在跑就放行"，那会让音频抢跑）；`current` 清空放任务体内与最后一次
+  `runAgain` 检查在 MainActor 上原子，无「标了重跑却没人跑」窗口。
+- 编辑器插图路径（`RecordingDetailView.insertPhotos`）失败有 toast、用户在场可重试，不改。
+- 已知残余：照片若在**成文之后**才上传成功（极端离线场景），不会追加进已写盘的文章
+  （双保险把这个窗口压到几乎为零；真发生时照片还在 R2，重写一次即回）。
+
 ## 快速删除崩溃 + 心跳双回调防护（2026-08-02，纯 iOS）
 
 Kaola 实机两份 crash log（build 279）定位出两个 bug：

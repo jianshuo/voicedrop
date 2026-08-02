@@ -55,6 +55,8 @@ final class Uploader {
     init() {
         refreshPending()
         startNetworkMonitor()
+        // 上次会话没传完的照片（离线/被杀）在启动时接着传。
+        Task { await PhotoUploadQueue.shared.drain() }
     }
 
     // MARK: - Reachability
@@ -67,6 +69,7 @@ final class Uploader {
                 guard let self else { return }
                 let cameBackOnline = online && !self.isOnline
                 self.isOnline = online
+                if cameBackOnline, PhotoUploadQueue.shared.hasPending { await PhotoUploadQueue.shared.drain() }
                 if cameBackOnline, self.pendingCount > 0 { await self.drainPending() }
             }
         }
@@ -199,6 +202,9 @@ final class Uploader {
         }
         // Tag sidecar rides in front of the audio (mining triggers on the audio).
         await uploadTagsSidecar(for: url)
+        // 照片也必须先于音频到位：音频的到达触发挖矿，挖矿 list 到的照片才进正文。
+        // drain 内部串行化且等真正跑完才返回（不是"已有 drain 在跑就放行"）。
+        await PhotoUploadQueue.shared.drain()
         let endpoint = baseURL
             .appending(path: "upload")
             .appending(path: url.lastPathComponent)

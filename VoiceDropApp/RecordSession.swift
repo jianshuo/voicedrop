@@ -305,7 +305,8 @@ struct RecordSession: View {
         guard let start = sessionStart else { return }
         let offset = Int(date.timeIntervalSince(start))   // 录音开始后第几秒拍的
         let key = RecordingName.photoKey(sessionTs: RecordingName.timestamp(start), offset: offset)
-        await PhotoService.upload(data: data, relKey: key, bearer: AuthStore.shared.bearer)
+        // 落盘队列（PhotoUploadQueue）而非单次直传：失败留盘重试，一张都不能丢。
+        PhotoUploadQueue.shared.enqueue(data: data, relKey: key)
     }
 
     private func openSettings() {
