@@ -2,6 +2,14 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 1.8 提交 App Store 审核（2026-08-02）
+
+复用 TestFlight build 279（7-28 上传，内容 = release/1.7 之后 main 的 25 个 commit：
+重连风暴修复、编辑 WS 25s 心跳+终态重拉、全量 SWR 秒开缓存、API 入口切 voicedrop.cn、
+文章图片三点提示、录音不足 4 秒拦截、下线多风格对比）。发版准备 = 9bbf2e7：project.yml
+MARKETING_VERSION 追上列车 1.8 + 双语 release notes；`workflow_dispatch destination=appstore`
+→ `fastlane release skip_build:true`。125 条单测提交前全绿。
+
 ## 挖矿只产出一篇文章（2026-08-02，纯服务端 prompt）
 
 MINE_SYSTEM（`jianshuo.dev/agent/src/prompts/mine.js`）从「一篇或多篇、可拆 2–3 篇」改为
