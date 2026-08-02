@@ -550,23 +550,27 @@ final class LibraryStore {
 
             // Fetch block reasons (.blocked marker) for recordings the worker couldn't mine.
             // .json / .empty take precedence — only fetch when neither is present.
-            for i in recordings.indices {
-                guard !recordings[i].hasArticles, !recordings[i].isEmpty,
-                      blockedStems.contains(recordings[i].stem) else { continue }
-                recordings[i].blockReason = await fetchBlockReason(recordings[i].stem)
+            // Snapshot stems first, re-find by stem after each await: a swipe-delete
+            // during the suspension shrinks `recordings`, so a positional index held
+            // across an await is a crash (Index out of range — Kaola 2026-08-02).
+            let blockPending = recordings.filter { !$0.hasArticles && !$0.isEmpty && blockedStems.contains($0.stem) }.map(\.stem)
+            for stem in blockPending {
+                let reason = await fetchBlockReason(stem)
+                guard let i = recordings.firstIndex(where: { $0.stem == stem }) else { continue }
+                recordings[i].blockReason = reason
             }
 
             // A recording still mining may carry a pending .tags sidecar (recorded
             // on a tag page) — read it so the row stays on that tag's page through
             // 待处理→挖矿中, not only after 成文. Sidecars are rare (≤ the takes
             // currently in flight), so the extra fetches are ~zero on most loads.
-            for i in recordings.indices {
-                let tagsKey = Recording.tagsKey(forStem: recordings[i].stem)
-                guard !recordings[i].hasArticles, taggedStems.contains(recordings[i].stem) else { continue }
-                if let data = try? await get(tagsKey),
-                   let tags = try? JSONDecoder().decode([String].self, from: data), !tags.isEmpty {
-                    recordings[i].tags = tags
-                }
+            let tagPending = recordings.filter { !$0.hasArticles && taggedStems.contains($0.stem) }.map(\.stem)
+            for stem in tagPending {
+                guard let data = try? await get(Recording.tagsKey(forStem: stem)),
+                      let tags = try? JSONDecoder().decode([String].self, from: data), !tags.isEmpty,
+                      let i = recordings.firstIndex(where: { $0.stem == stem }), !recordings[i].hasArticles
+                else { continue }
+                recordings[i].tags = tags
             }
 
             await fetchMissingTitles()
