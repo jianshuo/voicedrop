@@ -36,9 +36,10 @@ EdgeOne）实测 1.7MB/s 不是瓶颈；8-01 苏州弱网中位 214s 且与文�
   全套 1330 绿；iOS 单测全绿。另修 `prompt-market.test.js` 写死日期随时间衰减翻车的 flake
   （改「10 天前」相对日期）。
 - **给未来 agent**：`.assetsignore` 对 `wrangler pages deploy` **不生效**——worktree 里装过
-  `agent/node_modules`（workerd 107MiB）会撑爆 Pages 25MiB 限制，删掉 worktree 里的
-  node_modules 即可；多条待传音频仍串行（罕见态，第一条最早到达）+ background URLSession
-  列为 future work。
+  `agent/node_modules`（workerd 107MiB）会撑爆 Pages 25MiB 限制。首选解法（记忆库
+  domains-hosting-deploy 已记）：`git archive HEAD` 导出到 /tmp 干净树再 deploy；本次删了
+  worktree 内 node_modules 也通（可重装，但并行会话要重 npm install）。多条待传音频仍串行
+  （罕见态，第一条最早到达）+ background URLSession 列为 future work。
 
 ## push main 恢复自动发 TestFlight（2026-08-02，CI）
 
