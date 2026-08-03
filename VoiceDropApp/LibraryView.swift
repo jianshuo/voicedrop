@@ -9,7 +9,7 @@ enum HomeTab: Hashable { case recordings, community, tag(String) }
 
 struct LibraryView: View {
     @State private var store = LibraryStore()
-    @State private var uploader = Uploader()
+    @State private var uploader = Uploader.shared   // 单例：后台传输收尾要能路由到它
     @State private var community = CommunityStore()
     @State private var statusSession = StatusSession()
     @State private var linkResponder = DeviceLinkResponder()

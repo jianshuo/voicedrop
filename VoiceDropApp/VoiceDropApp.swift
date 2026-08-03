@@ -6,7 +6,12 @@ struct VoiceDropApp: App {
     // APNs 注册 + device token 上传（「文章已生成」推送 / 运维报警都靠它）。
     @UIApplicationDelegateAdaptor(PushRegistrar.self) private var pushRegistrar
 
-    init() { Analytics.setup() }
+    init() {
+        Analytics.setup()
+        // 后台上传通道尽早就位：上一条命没送完的录音任务由系统接管着，
+        // delegate 建好才收得到它们的完成事件（删本地文件/埋点收尾）。
+        BackgroundTransfer.shared.activate()
+    }
 
     var body: some Scene {
         WindowGroup {

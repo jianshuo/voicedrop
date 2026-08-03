@@ -1,33 +1,34 @@
 import Foundation
 import Observation
 import Network
-import UIKit
 
 /// Uploads recordings to jianshuo.dev/files via the R2-backed PUT API.
 /// The Documents directory IS the pending queue: a `VoiceDrop-*.m4a` file that
 /// still exists has not been uploaded. On success the file is deleted.
 ///
 /// Resilience — why a finalized take never gets stuck on 正在上传 anymore:
-/// - each PUT holds a short **background-task assertion**, so an upload kicked
-///   off in the foreground (e.g. right after recording) can finish even if the
-///   user immediately locks the screen or switches apps — iOS no longer kills
-///   the request the instant we leave the foreground;
-/// - transient failures (network blip, timeout, task-cancelled-on-suspend, 5xx)
-///   are **retried with backoff** in-call; a take that still fails is left on
-///   disk for the next drain — it is never lost;
+/// - the PUT itself runs on **BackgroundTransfer 的 background URLSession**：
+///   录完立刻锁屏/装兜里，传输由系统守护进程接管完成，进程被杀也照样送达
+///   （2026-08-04 根因：前台 URLSession 的第一枪随挂起冻结后，文件要等用户
+///   下次打开 App 才补传——延迟 22 分钟～2 小时，与文件大小无关）；
+/// - background session 在 resource 窗口内自己等网自己重试；服务器真拒绝的
+///   失败把文件留在盘上，下一次 drain 触发点重新入队 — it is never lost;
 /// - `drainPending` no longer aborts the queue on the first failure, so one
 ///   stubborn take can't wedge everything queued behind it;
 /// - an `NWPathMonitor` re-drains the queue the moment connectivity returns.
+///
+/// 单例：完成事件可能在 App 隔世重启后由 BackgroundTransfer 回放，收尾
+/// （删本地/埋点/UI 状态）必须路由到唯一实例。
 @MainActor
 @Observable
 final class Uploader {
+
+    static let shared = Uploader()
 
     private(set) var pendingCount: Int = 0
     private(set) var pending: [URL] = []      // local takes still queued (observable)
     private(set) var justUploaded: [String] = []  // uploaded, awaiting server confirmation
     private(set) var lastError: String?
-
-    private let baseURL = API.filesBase
 
     /// Per-user bearer: the Sign-in-with-Apple session if present, else the
     /// anonymous iCloud-Keychain token. Uploads land in this user's own
@@ -50,11 +51,7 @@ final class Uploader {
     // 埋点用的当前网络类型（WiFi/蜂窝/…），由 pathMonitor 随路径变化更新。
     private var networkType = "未知"
 
-    // Keeps a just-started upload alive briefly after the app leaves the
-    // foreground, so short voice memos still finish instead of being cancelled.
-    private var bgTask: UIBackgroundTaskIdentifier = .invalid
-
-    init() {
+    private init() {
         refreshPending()
         startNetworkMonitor()
         // 上次会话没传完的照片（离线/被杀）在启动时接着传。
@@ -148,27 +145,6 @@ final class Uploader {
 
     private static var documentsDir: URL { AudioRecorder.documentsDir }
 
-    // MARK: - Background-task assertion
-
-    private func beginBG() {
-        guard bgTask == .invalid else { return }
-        bgTask = UIApplication.shared.beginBackgroundTask(withName: "vd.upload") { [weak self] in
-            self?.endBG()
-        }
-    }
-
-    private func endBG() {
-        guard bgTask != .invalid else { return }
-        UIApplication.shared.endBackgroundTask(bgTask)
-        bgTask = .invalid
-    }
-
-    // MARK: - Upload
-
-    /// Uploads one file, retrying transient failures with backoff. Returns true
-    /// and removes the local file on success; on persistent failure the file is
-    /// left on disk (still 正在上传) for the next drain — it is never lost.
-    @discardableResult
     // MARK: 标签侧车 —— tag 页发起的录音，挖出的文章缺省带该页标签
 
     /// Local sidecar next to a queued take: Documents/<stem>.tags.json = ["标签"].
@@ -184,25 +160,18 @@ final class Uploader {
         try? data.write(to: tagsSidecarURL(for: audio))
     }
 
-    /// Best-effort: push the local tags sidecar (if any) to R2 and remove it on
-    /// success. A failure keeps the local file — the next drain retries it.
-    private func uploadTagsSidecar(for audio: URL) async {
+    /// Best-effort: queue the local tags sidecar (if any) onto the background
+    /// session. 成功后 delegate 删本地边车；失败留盘，随音频的下一次 drain 再来。
+    private func enqueueTagsSidecar(for audio: URL) {
         let local = Self.tagsSidecarURL(for: audio)
-        guard let data = try? Data(contentsOf: local) else { return }
+        guard FileManager.default.fileExists(atPath: local.path) else { return }
         let stem = audio.deletingPathExtension().lastPathComponent
-        let endpoint = baseURL
-            .appending(path: "upload")
-            .appending(path: "articles")
-            .appending(path: "\(stem).tags")
-        var req = URLRequest(url: endpoint)
-        req.httpMethod = "PUT"
-        req.setBearer(token)
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.httpBody = data
-        req.timeoutInterval = 30
-        if let (_, resp) = try? await URLSession.shared.data(for: req),
-           (200..<300).contains(resp.httpStatusCode) {
-            try? FileManager.default.removeItem(at: local)
+        let tok = token, net = networkType
+        // 独立 Task：失败 return 路径的隐式取消不该掐断边车 PUT。
+        Task {
+            _ = await BackgroundTransfer.shared.upload(
+                file: local, remoteName: "articles/\(stem).tags",
+                contentType: "application/json", bearer: tok, kind: .tags, networkType: net)
         }
     }
 
@@ -220,96 +189,71 @@ final class Uploader {
         // Miner DO 的 backfillSessionPhotos（成文后也能补标记）。
         Task { await PhotoUploadQueue.shared.drain() }
         // tags 边车与音频并行（消费点在成文时刻——ASR 之后分钟级，几百字节永远先到）。
-        // 独立 Task 而非 async let：失败 return 路径的隐式取消不该掐断边车 PUT。
-        let tagsTask = Task { await uploadTagsSidecar(for: url) }
-        let endpoint = baseURL
-            .appending(path: "upload")
-            .appending(path: url.lastPathComponent)
-        var req = URLRequest(url: endpoint)
-        req.httpMethod = "PUT"
-        req.setBearer(token)
-        req.setValue("audio/mp4", forHTTPHeaderField: "Content-Type")
-        req.timeoutInterval = 120
+        enqueueTagsSidecar(for: url)
+        // 音频 PUT 进后台会话：锁屏/切走/杀进程都由系统续传。await 等的是真完成
+        //（收尾在 finishAudioTransfer，进程隔世重启时由 delegate 回放走同一路径）。
+        let ok = await BackgroundTransfer.shared.upload(
+            file: url, remoteName: url.lastPathComponent, contentType: "audio/mp4",
+            bearer: token, kind: .audio, networkType: networkType, enqueuedAt: enqueuedAt)
+        refreshPending()
+        return ok
+    }
 
-        beginBG()
-        defer { endBG() }
-
-        let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int64 ?? 0
-        let fileKB = Int(bytes / 1024)
-        let transferAt = Date()   // 音频 PUT 开始（口径 2：排队 = 等 drain 里排在前面的音频）
-
-        let maxAttempts = 3
-        for attempt in 1...maxAttempts {
-            do {
-                let (_, resp) = try await URLSession.shared.upload(for: req, fromFile: url)
-                let code = resp.httpStatusCode
-                if (200..<300).contains(code) {
-                    // Drop from the queue. If the user wants a local copy kept,
-                    // move it into an `uploaded/` subdir (outside the VoiceDrop-*
-                    // scan) instead.
-                    if Prefs.shared.deleteLocalAfterUpload {
-                        try? FileManager.default.removeItem(at: url)
-                    } else {
-                        Self.keepLocal(url)
-                    }
-                    // The audio is up — this take won't be drained again, so a
-                    // still-lingering tags sidecar has no retry left. Wait for the
-                    // parallel sidecar PUT to settle, then drop the local copy
-                    //（语义同旧串行版：音频成功后边车无论成败都不再重试）。
-                    await tagsTask.value
-                    try? FileManager.default.removeItem(at: Self.tagsSidecarURL(for: url))
-                    // Keep showing this take — now as 待处理 — until the server
-                    // list lists it, so the row changes badge in place instead of
-                    // vanishing then re-appearing half a second later.
-                    if !justUploaded.contains(url.lastPathComponent) {
-                        justUploaded.append(url.lastPathComponent)
-                    }
-                    lastError = nil
-                    refreshPending()
-                    Analytics.capture("录音上传完成", [
-                        "尝试次数": attempt,
-                        "耗时秒": Int(Date().timeIntervalSince(transferAt).rounded()),
-                        // 口径 2（2026-08-03）：排队秒 = 本次 drain 里排在前面的音频占用的
-                        // 等待（单条场景恒 ≈0）。口径 1 的「边车+照片串行等待」已随解耦消亡，
-                        // PostHog 查询按「口径」过滤，新旧数据不混算。
-                        "排队秒": Int(transferAt.timeIntervalSince(enqueuedAt).rounded()),
-                        "文件KB": fileKB,
-                        "网络类型": networkType,
-                        "口径": 2,
-                    ])
-                    return true
-                }
-                // Auth / other 4xx is the server rejecting THIS request — a retry
-                // won't change the outcome, so stop immediately.
-                if code == 401 || code == 403 {
-                    lastError = String(localized: "token 失效（HTTP \(code)）")
-                    Analytics.capture("录音上传失败", ["原因": "token失效", "网络类型": networkType])
-                    return false
-                }
-                if (400..<500).contains(code) {
-                    lastError = String(localized: "上传失败 HTTP \(code)")
-                    Analytics.capture("录音上传失败", ["原因": "HTTP\(code)", "网络类型": networkType])
-                    return false
-                }
-                // 5xx, or 0 (no HTTP response) — transient; fall through to retry.
-                lastError = String(localized: "上传失败 HTTP \(code)")
-            } catch {
-                // Network blip / timeout / task cancelled on app suspension.
-                lastError = error.localizedDescription
+    /// 音频传输收尾（BackgroundTransfer delegate 唯一入口，幂等）：删本地/留副本、
+    /// 清边车、乐观行、埋点。进程死活两条路都走这里。
+    func finishAudioTransfer(job: BackgroundTransfer.Job, ok: Bool, status: Int, errorText: String?) {
+        let url = job.localURL
+        let 耗时秒 = Int((Date().timeIntervalSince1970 - job.transferAt).rounded())
+        if ok {
+            // Drop from the queue. If the user wants a local copy kept, move it
+            // into an `uploaded/` subdir (outside the VoiceDrop-* scan) instead.
+            if Prefs.shared.deleteLocalAfterUpload {
+                try? FileManager.default.removeItem(at: url)
+            } else {
+                Self.keepLocal(url)
             }
-            if attempt < maxAttempts {
-                // 1.5s, then 3s.
-                try? await Task.sleep(nanoseconds: UInt64(attempt) * 1_500_000_000)
+            // The audio is up — this take won't be drained again. 边车若已送达或
+            // 不存在就清掉本地副本；仍在飞的留给它自己的收尾（成功即删）。
+            let sidecar = Self.tagsSidecarURL(for: url)
+            if let p = BackgroundTransfer.Job.localPath(for: sidecar),
+               !BackgroundTransfer.shared.isInFlight(localPath: p) {
+                try? FileManager.default.removeItem(at: sidecar)
             }
+            // Keep showing this take — now as 待处理 — until the server list
+            // lists it, so the row changes badge in place instead of vanishing
+            // then re-appearing half a second later.
+            if !justUploaded.contains(url.lastPathComponent) {
+                justUploaded.append(url.lastPathComponent)
+            }
+            lastError = nil
+            refreshPending()
+            Analytics.capture("录音上传完成", [
+                "尝试次数": 1,
+                // 口径 3（2026-08-04 后台会话）：耗时秒 = 入队→系统送达，含挂起期——
+                // 即用户体感的「录完到传完」。排队秒沿用口径 2（drain 内排在前面的音频）。
+                "耗时秒": 耗时秒,
+                "排队秒": Int((job.transferAt - job.queuedAt).rounded()),
+                "文件KB": job.sizeKB,
+                "网络类型": job.networkType,
+                "口径": 3,
+            ])
+        } else if status == 401 || status == 403 {
+            // Auth 4xx is the server rejecting the request — re-enqueueing won't
+            // change the outcome until the token changes; the file stays on disk.
+            lastError = String(localized: "token 失效（HTTP \(status)）")
+            Analytics.capture("录音上传失败", ["原因": "token失效", "网络类型": job.networkType, "口径": 3])
+        } else {
+            // 服务器拒绝（4xx/5xx）或 resource 窗口耗尽——文件留盘，下一次 drain
+            // 触发点（前台刷新/联网恢复/下次录音）重新入队。
+            lastError = errorText ?? String(localized: "上传失败 HTTP \(status)")
+            Analytics.capture("录音上传失败", [
+                "原因": status > 0 ? "HTTP\(status)" : "网络中断",
+                "耗时秒": 耗时秒,
+                "文件KB": job.sizeKB,
+                "网络类型": job.networkType,
+                "口径": 3,
+            ])
         }
-        Analytics.capture("录音上传失败", [
-            "原因": "重试耗尽",
-            "耗时秒": Int(Date().timeIntervalSince(transferAt).rounded()),
-            "文件KB": fileKB,
-            "网络类型": networkType,
-            "口径": 2,
-        ])
-        return false
     }
 
     /// Uploads every pending file. A failure no longer aborts the queue — we skip

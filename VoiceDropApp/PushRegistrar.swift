@@ -32,6 +32,16 @@ final class PushRegistrar: NSObject, UIApplicationDelegate, UNUserNotificationCe
         EngineRecorder.trace("push: register failed \(error.localizedDescription)")
     }
 
+    /// 后台上传（BackgroundTransfer）在进程死掉后由系统完成时，系统重启我们并
+    /// 回放完成事件——存下收尾回调，delegate 放完事件后调它，系统才收账。
+    func application(_ application: UIApplication,
+                     handleEventsForBackgroundURLSession identifier: String,
+                     completionHandler: @escaping () -> Void) {
+        guard identifier == BackgroundTransfer.sessionIdentifier else { completionHandler(); return }
+        BackgroundTransfer.relaunchCompletion = completionHandler
+        BackgroundTransfer.shared.activate()   // 建 session/delegate，事件才有人收
+    }
+
     /// Show pushes as banners even when the app is foreground (e.g. 报警 while
     /// the admin happens to be in the app).
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,

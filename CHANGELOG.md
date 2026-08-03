@@ -2,6 +2,44 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 录音上传改走 background URLSession：锁屏/杀进程系统续传（2026-08-04，iOS）
+
+昨日解除照片串行后，根因还剩另一半：8-03 晚一条 22 秒/110KB 录音迟到 22 分钟，同
+session 4 张 300-400KB 照片却在录完当秒全部传完、照片队列为空——堵的不是线路也不是
+照片。真凶是**前台 `URLSession.shared` 的第一枪随挂起冻结**：录完立刻锁屏/装兜里，
+bg assertion 只有 ~30s，第一次 PUT 没打完（或一次瞬时失败进了退避 sleep）就随进程
+挂起冻结，之后没有任何机制再试，文件要等「下次打开 App」的 drain 触发点才补传。
+实测 8/1–8/3 每条录音的「录完→R2 落地」延迟恰好等于下次打开 App 的间隔（22 分钟～
+2 小时、8-02 一条 65KB 迟 124 分钟），与文件大小无关；本机对照 PUT 计时 EdgeOne
+4-8s / CF 直连 2-3s，纯线路远够不到分钟级。
+
+- **新增 `BackgroundTransfer.swift`**：唯一的 background session（identifier
+  `com.wangjianshuo.VoiceDrop.upload`，`sessionSendsLaunchEvents`，resource 窗口 6h）。
+  音频与 tags 边车的 PUT 都从这里走：锁屏/切后台/进程被杀，系统守护进程接管传完；
+  完成事件在进程复活后回放。任务元数据在 `taskDescription`（`Job` JSON，存 Documents
+  **相对**路径——容器绝对路径每次安装会变）；同一文件按 `taskByPath` 去重，并发入队
+  挂到在飞任务上等同一结果（输家任务清 taskDescription 再 cancel，delegate 见 job=nil
+  忽略）。收尾（删本地/keepLocal、清边车、乐观行、埋点）集中在 delegate →
+  `Uploader.shared.finishAudioTransfer` **幂等**执行，进程死活两条路同一结果。
+- **`Uploader` 单例化 + 瘦身**：进程内「3 次尝试+1.5s/3s 退避」与 `beginBG/endBG`
+  全删（bg session 在 resource 窗口内自己等网自己重试）；服务器真拒绝（4xx/5xx）→
+  文件留盘等下一次 drain 重新入队。`uploadTagsSidecar` 的前台 PUT 换成后台入队；
+  音频成功时边车仍在飞则留给它自己的收尾删（成功即删，失败留一个无重试点的孤儿
+  小文件，无害）。
+- **接线**：`PushRegistrar.application(_:handleEventsForBackgroundURLSession:)` 存系统
+  收尾回调；`VoiceDropApp.init` 调 `BackgroundTransfer.shared.activate()`（delegate 尽早
+  就位才收得到上一条命的完成事件）；`LibraryView` 改用 `Uploader.shared`。
+- **埋点口径 3**：`耗时秒`=入队→系统送达（**含挂起期**，即用户体感的「录完到传完」）；
+  `排队秒` 沿用口径 2；`尝试次数` 恒 1（进程内不再重试）。PostHog 按口径过滤。
+- 测试：新增 `BackgroundTransferJobTests` 7 例（Job 编解码 roundtrip / Documents 锚定
+  相对路径（/var 与 /private/var）/ 边车远端名派生）；全量 139 绿。
+- **给未来 agent**：① Swift 6 里 NSLock 裸 `lock()/unlock()` 在 async 上下文编译报错，
+  一律 `withLock` 同步闭包（锁绝不跨挂起点）；② 用户 force-quit 会让系统取消后台任务
+  ——文件仍在盘上，下次启动 drain 重新入队，语义不破；③ 照片仍走前台
+  `PhotoService.upload`（拍照即传，录音中 app 必然活着；晚到照片有服务端
+  backfillSessionPhotos 兜底）；④ 多条待传音频在 drainPending 里仍串行 await，离线时
+  第一条会把后面的压到联网后一起走——bg session 下无害，别改成 fail-fast。
+
 ## 弱网上传提速：解除照片串行 + 服务端晚到照片补写（2026-08-03，iOS + agent worker + Pages）
 
 用户报「上传特别慢」，最初设想音频直传腾讯 COS。排查否掉了前提：线路（voicedrop.cn
