@@ -2,6 +2,44 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 弱网上传提速：解除照片串行 + 服务端晚到照片补写（2026-08-03，iOS + agent worker + Pages）
+
+用户报「上传特别慢」，最初设想音频直传腾讯 COS。排查否掉了前提：线路（voicedrop.cn
+EdgeOne）实测 1.7MB/s 不是瓶颈；8-01 苏州弱网中位 214s 且与文件大小无关的真凶是
+`Uploader.upload` 开头**强制串行**的「tags 边车 PUT + 照片队列逐张 3 次退避重试」。
+方向经用户确认：不动存储架构，修真瓶颈。
+
+- **iOS 解除串行（`Uploader.swift`）**：音频立刻 PUT；照片 drain 改 fire-and-forget
+  并行赶路；tags 边车并行 Task（成功分支 `await tagsTask.value` 后再删本地边车，语义
+  同旧版）。`isUploadable` 的 moov 扫描改首尾各 512KB（原全文件扫，每次 refresh 都跑）。
+- **照片队列并行化（`PhotoUploadQueue.swift`）**：`withTaskGroup` 滑动窗口并发 3
+  （`maxConcurrent`，一行可调）、每张每次 drain 只试一次、**退避 sleep 全删**——重试交给
+  下一次 drain 触发点（启动/联网恢复/enqueue/音频上传前/**前台刷新**，最后一个是
+  `LibraryView.refresh` 本次补的）。新增可注入 `uploadImpl`（单测第一次能真正驱动 drain，
+  `PhotoUploadQueueDrainTests` 4 例：并发≤3 / 失败留盘 / 全失败 8 张 <1s / 空文件即清）。
+- **「照片一张不丢」移到服务端兜底（关键，必须先于 iOS 发版部署）**：Pages 照片 PUT 落盘
+  后带 `photoTs`（+admin 时带 scope）poke 用户 Miner DO 分片（`dispatchMine` 扩参）；DO 记
+  `pbf:<ts>` 待办，60s grace（合并 burst）后在 **alarm 里先于 runMine** 调
+  `backfillSessionPhotos`（`miner.js` 新 export）：文章已成文 → 全版本 `photoKeysIn` 算
+  everSeen（出现过又被删=用户意志，永不复活），缺的 `ensurePhotoKeys` 补末尾、
+  `writeArticleDoc` 铸 `photo-backfill` 版本、notifyStatus 推客户端；no-speech/silent 的
+  `.empty` → 清掉（含 D1 flag）同 alarm 看图重挖（ASR checkpoint 防二次扣费）；doc 尚未
+  写盘 → no-op（DO alarm 串行 ⇒ 未来挖矿 fresh 重列必然看见，这是正确性核心）。alarm 改
+  **min 语义**（photo poke 不许拖慢挖矿 500ms poke）。08-02 流水里的「已知残余：成文后
+  才上传成功的照片进不了文章」就此闭环。线上已验证：成文后补传照片，60-90s 内 marker
+  出现 + photo-backfill 版本 + 状态推送。
+- **埋点口径 2**：「录音上传完成/失败」补 `口径:2`；`排队秒` 语义变为「drain 里排在前面
+  的音频占用的等待」（单条恒≈0，口径 1 的照片串行等待已消亡）；照片侧新增「照片队列清空」
+  `{张数,失败,耗时秒,并发}`；服务端补写有 `[pbf]` 日志可查。对比 8-01 基线（口径 1）用
+  `排队秒+耗时秒` 总和对总和。
+- 测试：agent `photo-backfill.test.js` 19 例（含 DO poke/alarm min/trigger 透传/Pages poke），
+  全套 1330 绿；iOS 单测全绿。另修 `prompt-market.test.js` 写死日期随时间衰减翻车的 flake
+  （改「10 天前」相对日期）。
+- **给未来 agent**：`.assetsignore` 对 `wrangler pages deploy` **不生效**——worktree 里装过
+  `agent/node_modules`（workerd 107MiB）会撑爆 Pages 25MiB 限制，删掉 worktree 里的
+  node_modules 即可；多条待传音频仍串行（罕见态，第一条最早到达）+ background URLSession
+  列为 future work。
+
 ## push main 恢复自动发 TestFlight（2026-08-02，CI）
 
 用户要求撤销 2026-07-09 的 `[tf]` opt-in 闸：`build.yml` 里 push main 一律跑

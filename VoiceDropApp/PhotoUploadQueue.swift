@@ -2,13 +2,19 @@ import Foundation
 import UIKit
 
 /// 录音期间拍的照片一张都不能丢：拍完先落盘（Documents/pending-photos/<relKey>），
-/// 上传成功才删除——对齐音频 Uploader 的韧性（后台保活 + 退避重试 + 失败留盘等
-/// 下次 drain）。此前 RecordSession 的照片上传是单次 fire-and-forget：拍完立刻锁屏
+/// 上传成功才删除——对齐音频 Uploader 的韧性（后台保活 + 失败留盘等下次 drain）。
+/// 此前 RecordSession 的照片上传是单次 fire-and-forget：拍完立刻锁屏
 /// 任务被杀、或一次网络抖动，照片就永久没了。
 ///
-/// 照片永远先于音频上传（Uploader.upload 开头先 drain 本队列）：音频的到达才触发
-/// 挖矿，照片先到位，挖矿就一定看得见。晚到的照片还有服务端兜底（miner 写盘前
-/// fresh 重列 session 照片补标记），双保险。
+/// 照片与音频并行上传（2026-08-03 起不再阻塞音频——弱网下串行照片队列曾把录音
+/// 上传拖到中位 214s）。「一张不丢」由服务端双保险兜底：挖矿写盘前 fresh 重列
+/// session 照片补标记；照片 PUT 落盘还会 poke Miner DO 的 backfillSessionPhotos，
+/// 文章已成文后才到的照片也会被补进正文。尽早传仍有价值：赶在挖矿前到位的照片
+/// 由模型做图文编排，晚到的只能程序化补在文末。
+///
+/// drain 内部并发 maxConcurrent 张、每张每次 drain 只试一次、无退避 sleep——
+/// 失败留盘交给下一次 drain 触发点（启动 / 联网恢复 / enqueue / 音频上传前 /
+/// 前台刷新）。
 @MainActor
 final class PhotoUploadQueue {
     static let shared = PhotoUploadQueue()
@@ -45,11 +51,17 @@ final class PhotoUploadQueue {
         Task { await drain() }
     }
 
-    // drain 全量串行化：并发触发（enqueue / 音频上传前 / 联网恢复）时后来者等同一个
-    // 任务真正跑完再返回——音频上传前的 drain 必须是"照片确实都试过了"，不能是
-    // "已有 drain 在跑，直接放行"（那会让音频抢在照片前面，挖矿就看不见图）。
+    // drain 串行化外壳：并发触发（enqueue / 音频上传前 / 联网恢复）合并进同一个
+    // 任务——保护「同一文件不被两个 drain 并发 PUT」（文件内的照片彼此并行）。
     private var current: Task<Void, Never>?
     private var runAgain = false
+
+    /// 同时在飞的照片 PUT 数上限。弱网下并发太高会挤压同时在传的音频，1 行可调。
+    nonisolated static let maxConcurrent = 3
+
+    /// 上传实现，可注入（单测替换掉真网络；默认 = PhotoService.upload）。
+    nonisolated(unsafe) static var uploadImpl: @Sendable (Data, String, String) async -> String? =
+        { data, relKey, bearer in await PhotoService.upload(data: data, relKey: relKey, bearer: bearer) }
 
     func drain() async {
         if let t = current { runAgain = true; await t.value; return }
@@ -66,27 +78,45 @@ final class PhotoUploadQueue {
         defer { endBG() }
         repeat {
             runAgain = false
-            for file in Self.pendingFiles() {
-                guard let data = try? Data(contentsOf: file), !data.isEmpty else {
-                    try? FileManager.default.removeItem(at: file)   // 空/坏文件不许堵队列
-                    continue
-                }
-                let relKey = Self.relKey(forPendingFile: file)
-                var uploaded = false
-                for attempt in 1...3 {
-                    if await PhotoService.upload(data: data, relKey: relKey, bearer: AuthStore.shared.bearer) != nil {
-                        uploaded = true
-                        if attempt > 1 { Analytics.capture("照片重试上传成功", ["尝试次数": attempt]) }
-                        break
+            let bearer = AuthStore.shared.bearer
+            let t0 = Date()
+            var files = Self.pendingFiles()[...]
+            let total = files.count
+            var failed = 0
+            // 滑动窗口并发：始终 ≤ maxConcurrent 张在飞。每张本次只试一次、无退避
+            // sleep——弱网下 N 张 × 重试 × sleep 曾线性堵死排在后面的一切；失败留盘，
+            // 重试交给下一次 drain 触发点。
+            await withTaskGroup(of: (URL, Bool).self) { group in
+                var inFlight = 0
+                func pump() {
+                    while inFlight < Self.maxConcurrent, let file = files.popFirst() {
+                        guard let data = try? Data(contentsOf: file), !data.isEmpty else {
+                            try? FileManager.default.removeItem(at: file)   // 空/坏文件不许堵队列
+                            continue
+                        }
+                        let relKey = Self.relKey(forPendingFile: file)
+                        inFlight += 1
+                        group.addTask { (file, await Self.uploadImpl(data, relKey, bearer) != nil) }
                     }
-                    if attempt < 3 { try? await Task.sleep(nanoseconds: UInt64(attempt) * 1_500_000_000) }
                 }
-                if uploaded {
-                    try? FileManager.default.removeItem(at: file)
-                } else {
-                    Analytics.capture("照片上传失败留队", ["key": relKey])
+                pump()
+                for await (file, ok) in group {
+                    inFlight -= 1
+                    if ok {
+                        try? FileManager.default.removeItem(at: file)
+                    } else {
+                        failed += 1
+                        Analytics.capture("照片上传失败留队", ["key": Self.relKey(forPendingFile: file)])
+                    }
+                    pump()
                 }
-                // 失败留盘：下一次 drain（音频上传前 / 联网恢复 / 下次启动）重试。
+            }
+            if total > 0 {
+                Analytics.capture("照片队列清空", [
+                    "张数": total, "失败": failed,
+                    "耗时秒": Int(Date().timeIntervalSince(t0).rounded()),
+                    "并发": Self.maxConcurrent,
+                ])
             }
         } while runAgain
     }

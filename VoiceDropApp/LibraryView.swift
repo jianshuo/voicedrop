@@ -378,6 +378,9 @@ struct LibraryView: View {
         uploader.refreshPending()                 // surface 正在上传 rows immediately
         await store.load()
         if uploader.pendingCount > 0 { _ = await uploader.drainPending(); await store.load() }
+        // 失败留队的照片：去掉 drain 内退避后，前台刷新是「app 常驻前台、网络无波动」
+        // 场景下的主要重试路径（其余触发点：启动/联网恢复/enqueue/音频上传前）。
+        if PhotoUploadQueue.shared.hasPending { Task { await PhotoUploadQueue.shared.drain() } }
         uploader.dropConfirmed(Set(store.recordings.map(\.audioName)))  // prune confirmed optimistic rows
     }
 

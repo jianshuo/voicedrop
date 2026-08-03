@@ -104,7 +104,14 @@ final class Uploader {
             size > 1024,
             let data = try? Data(contentsOf: url, options: .mappedIfSafe)
         else { return false }
-        return data.range(of: Data("moov".utf8)) != nil
+        // moov atom 在 AVFoundation finalize 的 m4a 里只在文件头或尾——首尾各扫
+        // 512KB 即可，别为存在性检查全文件扫描（每次 pendingFiles/refresh 都要跑，
+        // 长录音是可观的本地 CPU）。
+        let probe = 512 * 1024
+        let moov = Data("moov".utf8)
+        if data.count <= probe * 2 { return data.range(of: moov) != nil }
+        return data.range(of: moov, in: 0..<probe) != nil
+            || data.range(of: moov, in: (data.count - probe)..<data.count) != nil
     }
 
     /// name (VoiceDrop-*.m4a) → its pending tags, read from the local sidecars.
@@ -199,7 +206,7 @@ final class Uploader {
         }
     }
 
-    func upload(_ url: URL) async -> Bool {
+    func upload(_ url: URL, enqueuedAt: Date = Date()) async -> Bool {
         guard hasValidToken else {
             lastError = String(localized: "请先用 Apple 登录")
             return false
@@ -208,12 +215,13 @@ final class Uploader {
             lastError = String(localized: "录音文件损坏，已跳过上传")
             return false
         }
-        // Tag sidecar rides in front of the audio (mining triggers on the audio).
-        let queuedAt = Date()
-        await uploadTagsSidecar(for: url)
-        // 照片也必须先于音频到位：音频的到达触发挖矿，挖矿 list 到的照片才进正文。
-        // drain 内部串行化且等真正跑完才返回（不是"已有 drain 在跑就放行"）。
-        await PhotoUploadQueue.shared.drain()
+        // 照片并行赶路，不再阻塞音频（2026-08-03：串行照片队列曾把弱网录音上传拖到
+        // 中位 214s）。晚到照片有服务端双保险：挖矿写盘前 fresh 重列 + 照片 PUT poke
+        // Miner DO 的 backfillSessionPhotos（成文后也能补标记）。
+        Task { await PhotoUploadQueue.shared.drain() }
+        // tags 边车与音频并行（消费点在成文时刻——ASR 之后分钟级，几百字节永远先到）。
+        // 独立 Task 而非 async let：失败 return 路径的隐式取消不该掐断边车 PUT。
+        let tagsTask = Task { await uploadTagsSidecar(for: url) }
         let endpoint = baseURL
             .appending(path: "upload")
             .appending(path: url.lastPathComponent)
@@ -228,7 +236,7 @@ final class Uploader {
 
         let bytes = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.size] as? Int64 ?? 0
         let fileKB = Int(bytes / 1024)
-        let transferAt = Date()   // 排队（边车+照片）结束、音频 PUT 开始
+        let transferAt = Date()   // 音频 PUT 开始（口径 2：排队 = 等 drain 里排在前面的音频）
 
         let maxAttempts = 3
         for attempt in 1...maxAttempts {
@@ -245,7 +253,10 @@ final class Uploader {
                         Self.keepLocal(url)
                     }
                     // The audio is up — this take won't be drained again, so a
-                    // still-lingering tags sidecar has no retry left. Drop it.
+                    // still-lingering tags sidecar has no retry left. Wait for the
+                    // parallel sidecar PUT to settle, then drop the local copy
+                    //（语义同旧串行版：音频成功后边车无论成败都不再重试）。
+                    await tagsTask.value
                     try? FileManager.default.removeItem(at: Self.tagsSidecarURL(for: url))
                     // Keep showing this take — now as 待处理 — until the server
                     // list lists it, so the row changes badge in place instead of
@@ -258,9 +269,13 @@ final class Uploader {
                     Analytics.capture("录音上传完成", [
                         "尝试次数": attempt,
                         "耗时秒": Int(Date().timeIntervalSince(transferAt).rounded()),
-                        "排队秒": Int(transferAt.timeIntervalSince(queuedAt).rounded()),
+                        // 口径 2（2026-08-03）：排队秒 = 本次 drain 里排在前面的音频占用的
+                        // 等待（单条场景恒 ≈0）。口径 1 的「边车+照片串行等待」已随解耦消亡，
+                        // PostHog 查询按「口径」过滤，新旧数据不混算。
+                        "排队秒": Int(transferAt.timeIntervalSince(enqueuedAt).rounded()),
                         "文件KB": fileKB,
                         "网络类型": networkType,
+                        "口径": 2,
                     ])
                     return true
                 }
@@ -292,6 +307,7 @@ final class Uploader {
             "耗时秒": Int(Date().timeIntervalSince(transferAt).rounded()),
             "文件KB": fileKB,
             "网络类型": networkType,
+            "口径": 2,
         ])
         return false
     }
@@ -308,8 +324,9 @@ final class Uploader {
 
         repeat {
             drainAgain = false
+            let drainStart = Date()   // 口径 2 排队秒的锚：排在前面的音频吃掉的等待
             for file in pendingFiles() {
-                _ = await upload(file)
+                _ = await upload(file, enqueuedAt: drainStart)
             }
             refreshPending()
         } while drainAgain && pendingCount > 0
