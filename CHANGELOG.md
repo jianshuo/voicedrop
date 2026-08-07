@@ -2,6 +2,29 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 用户报「重写失败」排查闭环：假 .jpg 图片 400 + remine 超时上调（2026-08-07，worker 已部署 + iOS）
+
+用户报重写失败，怀疑「还有 15 秒 timeout」。排查结论（obs 拉 5 天全量 /agent/restyle 调用）：
+
+- **今天的真凶不是超时**：08-07 06:19–06:52 UTC 一位用户连试 7 次 restyle 全部
+  `exception 500`（3–7s 即死）。根因 = 照片 media_type 写死 `image/jpeg`
+  （miner.js loadPhoto→buildMinePrompt / image-pipeline / edit-turn 三处），而
+  .jpg 名下字节实为其他格式（安卓/相册导入），Anthropic 整个请求 400
+  （"specified using the image/jpeg media type, but the image appears to be…"
+  / "Could not process image"）→ 一张坏图拖垮整次重写，重试永远失败。
+- **修复（jianshuo.dev 8433af6，worker 53d7c88c 已部署）**：新 `agent/src/image-type.js`
+  按 magic bytes 嗅探 jpeg/png/gif/webp，三处接入；认不出的格式（HEIC 等）跳过该图
+  （[[photo:key]] 标记照留，模型只是看不见）。测试 1338 绿（旧 fixture 假图字节补了
+  JPEG 魔数）。线上 E2E：塞 PNG 假 .jpg 的 session 重写 200 ok（修前必 500）。
+- **15s EO 回源超时已不存在**：上海腾讯云 VPS（49.235.147.96，可当大陆探针）走
+  voicedrop.cn 实测 23s / **119s** 长重写都 200 返回。obs 里 `canceled ≈15.0s` 的
+  批量掐断只出现在 08-02，08-03 起绝迹（EO 侧行为已变）。restyle 路由的
+  `ctx.waitUntil` 保底（1008b09）继续留着。
+- **iOS 残余风险**：列表页「重写」（remine）超时 120s，但 31min 录音重写实测
+  119s、更长必假报「重写失败」（服务端其实会写成）→ 上调 300s 对齐详情页
+  restyle。remine 无 WS preview-done 兜底（那是详情页专属），超 300s 仍会假报——
+  known trade，等有真实反馈再做收尾对账。
+
 ## 社区默认排序改「最新」+ tab 行右侧加搜索（2026-08-07，iOS）
 
 用户拍板：VD社区打开缺省落在「最新」tab（原「推荐」）；tab 行右侧（原空

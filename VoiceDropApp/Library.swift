@@ -911,7 +911,7 @@ final class LibraryStore {
         req.setBearer(token)
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONEncoder().encode(Req(stem: rec.stem))
-        req.timeoutInterval = 120   // opus 重挖可能要几十秒
+        req.timeoutInterval = 300   // 31min 录音重写实测 119s，更长的会超 120s 假报失败（服务端 waitUntil 会写成）——对齐 restyle 的 300s
         guard let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
               let r = try? JSONDecoder().decode(Resp.self, from: data), r.ok else {
             error = String(localized: "重写失败")
