@@ -2,6 +2,22 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 社区默认排序改「最新」+ tab 行右侧加搜索（2026-08-07，iOS）
+
+用户拍板：VD社区打开缺省落在「最新」tab（原「推荐」）；tab 行右侧（原空
+`Spacer()` 位置）加放大镜入口。
+
+- **默认 tab**：`CommunityFeedView.tab` 初值 `.reco` → `.latest`。推荐/回应 tab 本身不动。
+- **搜索**：点放大镜 → 顶行原位切换成胶囊输入框 +「取消」（`searchRow`），**本地过滤**
+  当前 tab 已加载列表的 标题/作者/预览 三字段（不打服务端，秒出结果；预览是
+  community/list 下发的正文前 ~60 字，等于顺带搜了开头正文）。清空按钮、`@FocusState`
+  自动弹键盘、取消即退出并清词。埋点 `社区搜索`（打开入口时记一次）。
+- **过滤逻辑抽成纯函数** `CommunitySearch.filter(_:query:)`（`Community.swift`）：
+  trim 后空查询原样返回；`localizedCaseInsensitiveContains` 匹配；nil 字段不匹配不崩。
+  新增 `CommunitySearchTests` 9 例（空查询/三字段/大小写/nil/保序），全量 148 绿。
+- 给未来 agent：搜索只覆盖**已加载**的帖子（feed 一次全量下发，现阶段等于全站）；
+  以后帖子多到分页时要换服务端搜索端点。
+
 ## 录音上传改走 background URLSession：锁屏/杀进程系统续传（2026-08-04，iOS）
 
 昨日解除照片串行后，根因还剩另一半：8-03 晚一条 22 秒/110KB 录音迟到 22 分钟，同

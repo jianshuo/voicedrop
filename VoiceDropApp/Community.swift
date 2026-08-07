@@ -21,6 +21,19 @@ struct CommunityPost: Codable, Identifiable, Hashable {
     var id: String { shareId }
 }
 
+/// 社区搜索：标题/作者/预览三字段不分大小写包含匹配，纯函数（单测覆盖）。
+enum CommunitySearch {
+    static func filter(_ posts: [CommunityPost], query: String) -> [CommunityPost] {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return posts }
+        return posts.filter { p in
+            [p.title, p.author, p.preview].contains {
+                $0?.localizedCaseInsensitiveContains(q) == true
+            }
+        }
+    }
+}
+
 /// The full shared snapshot (title + articles), read-only.
 struct CommunityFullPost: Decodable {
     let shareId: String

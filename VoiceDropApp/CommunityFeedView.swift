@@ -12,18 +12,24 @@ struct CommunityFeedView: View {
     let onUnshare: (CommunityPost) -> Void
 
     enum FeedTab { case reco, latest, replies }
-    @State private var tab: FeedTab = .reco
+    @State private var tab: FeedTab = .latest   // 缺省「最新」（2026-08-07 用户拍板）
     /// coverPhotoKey → 实测宽高比（w/h）。图片加载后回填，masonry 用它重新估高。
     @State private var coverAspects: [String: CGFloat] = [:]
+    // 搜索（tab 行右侧入口）：本地过滤已加载列表的 标题/作者/预览，不打服务端。
+    @State private var searching = false
+    @State private var query = ""
+    @FocusState private var searchFocused: Bool
 
     static let pageBG = Color(hex: "F3EFE7")   // 比 readBG 略深，衬白卡
 
     private var posts: [CommunityPost] {
+        let base: [CommunityPost]
         switch tab {
-        case .reco:    return store.posts        // reco 排序（applyRanking 后的顺序）
-        case .latest:  return store.timeOrdered  // 服务端原始顺序（纯时间序，不经 reco）
-        case .replies: return store.posts.filter { $0.replyTo != nil }
+        case .reco:    base = store.posts        // reco 排序（applyRanking 后的顺序）
+        case .latest:  base = store.timeOrdered  // 服务端原始顺序（纯时间序，不经 reco）
+        case .replies: base = store.posts.filter { $0.replyTo != nil }
         }
+        return searching ? CommunitySearch.filter(base, query: query) : base
     }
 
     var body: some View {
@@ -48,14 +54,71 @@ struct CommunityFeedView: View {
         .onAppear { Analytics.screen("社区") }
     }
 
-    // MARK: 分段 tab（推荐 / 最新 / 回应）
+    // MARK: 分段 tab（推荐 / 最新 / 回应）＋ 右侧搜索
 
-    private var tabRow: some View {
-        HStack(spacing: 18) {
-            tabLabel(String(localized: "推荐"), .reco)
-            tabLabel(String(localized: "最新"), .latest)
-            tabLabel(String(localized: "回应"), .replies)
-            Spacer()
+    @ViewBuilder private var tabRow: some View {
+        if searching {
+            searchRow
+        } else {
+            HStack(spacing: 18) {
+                tabLabel(String(localized: "推荐"), .reco)
+                tabLabel(String(localized: "最新"), .latest)
+                tabLabel(String(localized: "回应"), .replies)
+                Spacer()
+                Button {
+                    searching = true
+                    searchFocused = true
+                    Analytics.capture("社区搜索")
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Theme.metaChrome)
+                        .frame(width: 32, height: 28)   // 补足热区
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("搜索")
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 2)
+            .padding(.bottom, 10)
+        }
+    }
+
+    /// 搜索态的顶行：胶囊输入框 + 取消。取消即退出搜索、清空关键词。
+    private var searchRow: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.metaChrome)
+                TextField(String(localized: "搜索标题、作者或内容"), text: $query)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.ink)
+                    .focused($searchFocused)
+                    .submitLabel(.search)
+                if !query.isEmpty {
+                    Button { query = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.metaChrome)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("清空")
+                }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(Theme.card, in: Capsule())
+            .overlay(Capsule().stroke(Theme.borderRead, lineWidth: 1))
+            Button {
+                searching = false
+                query = ""
+                searchFocused = false
+            } label: {
+                Text("取消")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.ink)
+            }
+            .buttonStyle(.plain)
         }
         .padding(.horizontal, 18)
         .padding(.top, 2)
