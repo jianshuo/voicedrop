@@ -2,6 +2,22 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 设置加「使用手册」+「意见反馈」（2026-08-09，iOS + worker 已部署）
+
+设置「其他」卡在 数据与备份 和 关于 之间加两行：
+
+- **使用手册**：`Link` 直开 https://voicedrop.cn/help/manual（外部 Safari，页面已在线 200）。
+- **意见反馈**：`FeedbackSheet`（SettingsView.swift，照 NameEditSheet 模式：多行
+  TextEditor + 占位文案 + 2000 字截断 + 发送成功打勾 1.2s 自动关 + 失败留言重试）。
+  发送 = `SettingsStore.sendFeedback` → **`POST /agent/feedback`**（agent worker 新
+  路由，jianshuo.dev 仓）：**身份以 bearer 为准**（服务端 resolveScope 解析 scope，
+  客户端只附 name/version 展示字段），落 R2 `feedback/<YYYY-MM-DD>/<ts>-<rand>.json`
+  存档 + `sendPush` 直推管理员（`env.ADMIN_SCOPE`）手机；同一 scope 60s 内只推第一
+  条防轰炸（marker `ops/feedback-last/<sub>.json`），**存档不受节流影响，反馈永不丢**。
+  空文本 400、无 token 401、文本截 2000 字。测试 `agent/test/feedback.test.js`（5 例，
+  含身份来自 token 非客户端声称、节流仍存档）。worker 已部署并线上冒烟（401/200 +
+  APNs 冒烟推送）。查看反馈：R2 `feedback/` 前缀按日期翻，或等手机推送。
+
 ## 用户报「重写失败」排查闭环：假 .jpg 图片 400 + remine 超时上调（2026-08-07，worker 已部署 + iOS）
 
 用户报重写失败，怀疑「还有 15 秒 timeout」。排查结论（obs 拉 5 天全量 /agent/restyle 调用）：

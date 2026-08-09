@@ -218,6 +218,14 @@ final class SettingsStore {
         }
     }
 
+    /// 意见反馈：POST /agent/feedback。身份 = bearer（服务端从 token 解析 scope，
+    /// 客户端只附 name/version 两个展示字段），落 R2 存档 + 直推管理员手机。
+    func sendFeedback(_ text: String) async -> Bool {
+        guard !token.isEmpty else { return false }
+        return await API.send(API.agentBase.appending(path: "feedback"), bearer: token,
+                              json: ["text": text, "name": name, "version": Prefs.versionBuild])
+    }
+
     var autoShareCommunity = false
 
     private struct AppConfig: Codable { var autoShareCommunity: Bool? }
@@ -390,6 +398,7 @@ struct SettingsView: View {
     @State private var showWechat = false
     @State private var showStyle = false
     @State private var showName = false
+    @State private var showFeedback = false
     @State private var invitePayload: SharePayload?
 
     private var shortTag: String {
@@ -535,6 +544,16 @@ struct SettingsView: View {
                                             title: String(localized: "数据与备份"), subtitle: String(localized: "iCloud 备份 · 导出数据")) { settingsChevron }
                             }
                             settingsRowDivider
+                            Link(destination: URL(string: "https://voicedrop.cn/help/manual")!) {
+                                SettingsRow(tileBG: Theme.tileNeutral, symbol: "book", tileFG: Theme.secondary,
+                                            title: String(localized: "使用手册"), subtitle: String(localized: "怎么录、怎么改、怎么发")) { settingsChevron }
+                            }.buttonStyle(.plain)
+                            settingsRowDivider
+                            Button { showFeedback = true } label: {
+                                SettingsRow(tileBG: Theme.tileNeutral, symbol: "bubble.left.and.bubble.right", tileFG: Theme.secondary,
+                                            title: String(localized: "意见反馈"), subtitle: String(localized: "提改进意见，直达开发者")) { settingsChevron }
+                            }.buttonStyle(.plain)
+                            settingsRowDivider
                             NavigationLink { AboutView() } label: {
                                 SettingsRow(tileBG: Theme.tileNeutral, symbol: "info.circle", tileFG: Theme.secondary,
                                             title: String(localized: "关于"), subtitle: String(localized: "隐私 · 公约 · 联系 · 版本 \(Prefs.versionBuild)")) { settingsChevron }
@@ -551,6 +570,7 @@ struct SettingsView: View {
         .sheet(isPresented: $showWechat) { WechatSettingsSheet(store: store) }
         .sheet(isPresented: $showStyle) { WritingStyleSheet(store: store) }
         .sheet(isPresented: $showName) { NameEditSheet(store: store) }
+        .sheet(isPresented: $showFeedback) { FeedbackSheet(store: store) }
         .sheet(item: $invitePayload) { ShareSheet(items: $0.activityItems) }
     }
 
@@ -665,6 +685,99 @@ struct NameEditSheet: View {
         .presentationDetents([.height(230)])
         .presentationDragIndicator(.visible)
         .onAppear { focused = true }
+    }
+}
+
+// MARK: - 意见反馈 sheet — 设置「其他」→「意见反馈」
+
+/// 多行输入 + 发送。POST /agent/feedback：身份走 bearer（服务端解析 scope，
+/// 客户端附名字和版本号），落 R2 存档并直推开发者手机。发成功打勾后自动关。
+struct FeedbackSheet: View {
+    @Bindable var store: SettingsStore
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft = ""
+    @State private var sending = false
+    @State private var sent = false
+    @State private var failed = false
+    @FocusState private var focused: Bool
+
+    private static let maxLen = 2000
+    private var trimmedDraft: String { draft.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button("取消") { dismiss() }
+                    .font(.system(size: 16)).foregroundStyle(Theme.secondary)
+                Spacer()
+                Text("意见反馈").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.ink)
+                Spacer()
+                Button(sending ? String(localized: "发送中…") : String(localized: "发送")) { send() }
+                    .font(.system(size: 16, weight: .bold))
+                    .foregroundStyle(trimmedDraft.isEmpty || sending || sent ? Theme.faint : Theme.accent)
+                    .disabled(trimmedDraft.isEmpty || sending || sent)
+            }
+            .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 12)
+
+            if sent {
+                VStack(spacing: 10) {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 44)).foregroundStyle(Theme.greenDone)
+                    Text("收到了，谢谢！").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.ink)
+                }
+                .frame(maxWidth: .infinity).padding(.top, 48)
+                Spacer(minLength: 0)
+            } else {
+                ZStack(alignment: .topLeading) {
+                    if draft.isEmpty {
+                        Text("哪里不顺手？想要什么功能？写一句就行。")
+                            .font(.system(size: 16)).foregroundStyle(Theme.faint)
+                            .padding(.top, 22).padding(.leading, 20)
+                    }
+                    TextEditor(text: $draft)
+                        .font(.system(size: 16)).foregroundStyle(Theme.ink)
+                        .scrollContentBackground(.hidden)
+                        .focused($focused)
+                        .padding(.vertical, 14).padding(.horizontal, 15)
+                        .onChange(of: draft) { _, v in
+                            if v.count > Self.maxLen { draft = String(v.prefix(Self.maxLen)) }
+                        }
+                }
+                .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.R.primary))
+                .overlay(RoundedRectangle(cornerRadius: Theme.R.primary).stroke(Theme.accent, lineWidth: 1.5))
+                .padding(.horizontal, 20)
+
+                Text(failed
+                     ? String(localized: "发送失败，请检查网络后重试")
+                     : String(localized: "会带上你的账户身份，方便改进后回访。"))
+                    .font(.system(size: 13))
+                    .foregroundStyle(failed ? Theme.recordRed : Theme.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 16)
+            }
+        }
+        .background(Theme.appBG.ignoresSafeArea())
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+        .onAppear { focused = true }
+    }
+
+    private func send() {
+        let text = trimmedDraft
+        guard !text.isEmpty else { return }
+        sending = true; failed = false
+        Task {
+            let ok = await store.sendFeedback(text)
+            sending = false
+            if ok {
+                sent = true
+                Analytics.capture("意见反馈发送")
+                try? await Task.sleep(for: .seconds(1.2))
+                dismiss()
+            } else {
+                failed = true
+            }
+        }
     }
 }
 

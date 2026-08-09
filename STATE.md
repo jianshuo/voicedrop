@@ -249,6 +249,15 @@ Infra (tunnel + DNS + VPS service) recorded in the iCloud `IT基础设施-更改
 - Called automatically by the Pages Function upload handler via `dispatchMine` (uses `workers.dev` URL, see CF same-zone fetch gotcha above).
 - Manual: `curl -X POST https://voicedrop-agent.jianshuo.workers.dev/agent/mine/trigger -H "Authorization: Bearer <any-valid-token>"` → `queued`.
 
+## 意见反馈（设置「其他」→「意见反馈」，2026-08-09）
+
+`POST /agent/feedback`（agent worker，任意有效用户 token）：body `{text, name?, version?}`；
+**身份以 bearer 为准**（resolveScope 解析 scope 落盘，客户端 name/version 只是展示字段）。
+写 R2 `feedback/<YYYY-MM-DD>/<ts>-<rand>.json` 存档 + APNs 直推管理员（`ADMIN_SCOPE`），
+同一 scope 60s 只推一条（marker `ops/feedback-last/<sub>.json`），存档不节流。空文本 400，
+文本截 2000 字。iOS 入口 = 设置「其他」卡 `FeedbackSheet`；同卡另有「使用手册」行直开
+https://voicedrop.cn/help/manual。测试 `agent/test/feedback.test.js`。
+
 ## Live agent Worker — voice editing + status (`agent/`, `voicedrop-agent`)
 
 A **separate Cloudflare Worker** (Pages can't host Durable Objects), route `jianshuo.dev/agent/*` →
