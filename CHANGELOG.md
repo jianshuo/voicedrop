@@ -18,14 +18,18 @@
   （1 核小机，`busy` → 409，App 提示等写完再来）。`{dry:true}` = 只验认证不起
   job（部署冒烟用）。`BOOK_MAX_TURNS` 默认 80。
 - **认证零内置密钥**：App 带自己已有的 VoiceDrop 用户 bearer
-  （`AuthStore.shared.bearer`），lab 拿它去 `jianshuo.dev/files/api/whoami`
-  验真（返回 scope 落日志）。Caddy 对 `/api/book` 路径豁免 basic_auth
-  （`@needsauth not path /api/book`，Caddyfile 已备份 `.bak-20260810`）；
-  `/api/chat` 网页聊天照旧密码门。
-- 已冒烟：无 token → node 401；有效用户 token dry → 200 带 scope；
+  （`AuthStore.shared.bearer`）。⚠️ anon token 是客户端自造随机数，whoami 对
+  任何格式正确的 token 都返回 scope——**whoami 只做归因不是门槛**（用户当场
+  指出）。真门槛 = lab 同时拿 bearer 调 `GET /files/api/articles`，**该 scope
+  必须已有成文文章**（伪造 token 散列出的 scope 永远是空的 → 401；真用户先
+  录音成文才能写书）+ **每 scope 每天限 2 本**（`BOOK_DAILY_LIMIT`，进程内存
+  计数 → 429）。Caddy 对 `/api/book` 路径豁免 basic_auth（`@needsauth not
+  path /api/book`，Caddyfile 已备份 `.bak-20260810`）；`/api/chat` 网页聊天
+  照旧密码门。
+- 已冒烟：伪造随机 anon token → 401；有效用户（有文章）dry → 200 带 scope；
   /api/chat 仍 401。skill 在 VPS `/opt/claude-agent/.claude/skills/`；书架
   已在线（已有《钱不脏》《散场之后》两本）。
-- 埋点：「写书发起」「写书已受理」。125 条单测全绿。
+- 埋点：「写书发起」「写书已受理」。App 端 401/409/429 各有文案。125 条单测全绿。
 
 ## 使用手册改内置 sheet + admin/feedback 控制台页（2026-08-09 第二弹，iOS + Pages 已部署）
 

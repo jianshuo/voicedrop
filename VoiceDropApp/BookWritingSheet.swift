@@ -143,7 +143,9 @@ struct BookWritingSheet: View {
                 case 409:
                     errorText = String(localized: "服务器正在写另一本书，等它写完再来（通常 10–30 分钟）。")
                 case 401:
-                    errorText = String(localized: "身份校验没过，请稍后重试。")
+                    errorText = String(localized: "还不能写书：先用 VoiceDrop 录几段话、成几篇文章，再来把它们长成书。")
+                case 429:
+                    errorText = String(localized: "今天的写书额度用完了，明天再来。")
                 case let code:
                     errorText = String(localized: "服务器返回 \(code)，请稍后重试。")
                 }

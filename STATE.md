@@ -275,9 +275,11 @@ SwiftUI 按 Theme 原生排版，顶部章节 chips 跳转。**内容真源 = ji
 **用户提交完即可关 App**。同时只跑一本（busy → 409）；`{dry:true}` 只验认证不起 job。
 成书增量发布到公开书架 **voicedrop.cn/books/**（Pages 函数
 `functions/voicedrop/books/[[path]].js`，数据在写书 agent 自己 scope 的 `books/` 下）。
-认证：App 带已有 VoiceDrop 用户 bearer，lab 拿它去 `jianshuo.dev/files/api/whoami`
-验真——**App 零内置密钥**；Caddy 对 `/api/book` 豁免 basic_auth，`/api/chat` 网页聊天
-照旧密码门（断线即中止的旧契约只属于 /api/chat）。
+认证：App 带已有 VoiceDrop 用户 bearer——**App 零内置密钥**。⚠️ anon token 是客户端
+自造随机数，whoami 谁都能过（只做归因）；**真门槛 = lab 拿 bearer 调
+`GET /files/api/articles`，scope 必须已有成文文章**（伪造 token → 空 → 401）+
+每 scope 每天限 2 本（429）。Caddy 对 `/api/book` 豁免 basic_auth，`/api/chat`
+网页聊天照旧密码门（断线即中止的旧契约只属于 /api/chat）。
 
 ## Live agent Worker — voice editing + status (`agent/`, `voicedrop-agent`)
 
