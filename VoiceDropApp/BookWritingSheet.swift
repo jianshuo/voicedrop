@@ -6,33 +6,32 @@ import SwiftUI
 /// 用 wjs-voicedrop-writing-book skill 长成一本书：一个 agent 写大纲、每章一个
 /// subagent 写正文、独立评审过稿后增量发布到公开书架 voicedrop.cn/books/。
 ///
-/// 连接契约：POST /api/chat（SSE）。服务端在客户端断线时会中止 agent——所以
-/// 写书期间必须保持连接（屏幕常亮 + 禁下滑关闭）；中途断线已发布的章节保留。
-/// 访问密码 = lab.jianshuo.dev 前置 Caddy basic auth（用户名 wjs），只存本机。
+/// 契约（2026-08-10 起 fire-and-forget）：`POST lab.jianshuo.dev/api/book`
+/// `{seed}` + VoiceDrop 用户 bearer（服务端拿它去 jianshuo.dev whoami 验真，
+/// App 零内置密钥；该路径豁免 Caddy basic_auth）。202 = 任务已在服务器后台
+/// 开跑——**提交完就可以关 App**，10–30 分钟后书出现在公开书架。
+/// 409 = 服务器正在写另一本（全局串行，1 核小机器）。
 struct BookWritingSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("bookAgentPassword") private var password = ""
     @State private var seed = ""
-    @State private var running = false
-    @State private var finished = false
+    @State private var sending = false
+    @State private var submitted = false
     @State private var errorText: String?
-    @State private var log = ""
-    @State private var task: Task<Void, Never>?
     @FocusState private var seedFocused: Bool
 
     private static let booksURL = URL(string: "https://voicedrop.cn/books/")!
-    private static let chatURL = URL(string: "https://lab.jianshuo.dev/api/chat")!
+    private static let bookAPI = URL(string: "https://lab.jianshuo.dev/api/book")!
 
     private var trimmedSeed: String { seed.trimmingCharacters(in: .whitespacesAndNewlines) }
-    private var canStart: Bool { !trimmedSeed.isEmpty && !password.isEmpty && !running }
+    private var canStart: Bool { !trimmedSeed.isEmpty && !sending && !submitted }
 
     var body: some View {
         VStack(spacing: 0) {
             header
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    if running || finished || errorText != nil {
-                        progressSection
+                    if submitted {
+                        submittedSection
                     } else {
                         introSection
                         inputSection
@@ -42,24 +41,17 @@ struct BookWritingSheet: View {
             }
         }
         .background(Theme.appBG.ignoresSafeArea())
-        .presentationDragIndicator(running ? .hidden : .visible)
-        .interactiveDismissDisabled(running)
-        .onDisappear {
-            task?.cancel()
-            UIApplication.shared.isIdleTimerDisabled = false
-        }
+        .presentationDragIndicator(.visible)
     }
 
     private var header: some View {
         HStack {
-            Button(running ? String(localized: "停止") : String(localized: "关闭")) {
-                if running { task?.cancel() } else { dismiss() }
-            }
-            .font(.system(size: 16)).foregroundStyle(running ? Theme.recordRed : Theme.secondary)
+            Button("关闭") { dismiss() }
+                .font(.system(size: 16)).foregroundStyle(Theme.secondary)
             Spacer()
             Text("写书").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.ink)
             Spacer()
-            Button(running ? String(localized: "写作中…") : String(localized: "开写")) { start() }
+            Button(sending ? String(localized: "提交中…") : String(localized: "开写")) { start() }
                 .font(.system(size: 16, weight: .bold))
                 .foregroundStyle(canStart ? Theme.accent : Theme.faint)
                 .disabled(!canStart)
@@ -72,7 +64,7 @@ struct BookWritingSheet: View {
             Text("给一个词、一句话，或贴一整篇文章，AI 会把它长成一本书：先写大纲，再每章一个写手并行写正文（费曼式白话），独立评审过稿一章、发布一章。")
                 .font(.system(size: 14)).foregroundStyle(Theme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("写一本书通常要 10–30 分钟。期间请把手机留在这个页面（会自动保持屏幕常亮）；中途停止的话，已写完的章节也会留在书架上。")
+            Text("点「开写」提交后就可以关掉 App——书在服务器上继续写，通常 10–30 分钟后出现在公开书架。")
                 .font(.system(size: 13)).foregroundStyle(Theme.faint)
                 .fixedSize(horizontal: false, vertical: true)
             SettingsCard {
@@ -95,148 +87,69 @@ struct BookWritingSheet: View {
                 TextEditor(text: $seed)
                     .font(.system(size: 16)).foregroundStyle(Theme.ink)
                     .scrollContentBackground(.hidden)
-                    .frame(minHeight: 140)
+                    .frame(minHeight: 160)
                     .focused($seedFocused)
                     .padding(.vertical, 14).padding(.horizontal, 15)
             }
             .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.R.primary))
             .overlay(RoundedRectangle(cornerRadius: Theme.R.primary).stroke(Theme.accent, lineWidth: 1.5))
 
-            SecureField(String(localized: "访问密码（实验功能，向开发者索取）"), text: $password)
-                .font(.system(size: 15)).foregroundStyle(Theme.ink)
-                .textContentType(.password)
-                .padding(.vertical, 12).padding(.horizontal, 15)
-                .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.R.primary))
-                .overlay(RoundedRectangle(cornerRadius: Theme.R.primary).stroke(Theme.borderChrome, lineWidth: 1))
-            Text("写书跑在开发者自己的 AI 服务器上（lab.jianshuo.dev），密码只保存在本机。")
-                .font(.system(size: 12.5)).foregroundStyle(Theme.faint)
+            if let err = errorText {
+                Text(err).font(.system(size: 13)).foregroundStyle(Theme.recordRed)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 
-    private var progressSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if finished {
-                VStack(spacing: 10) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 44)).foregroundStyle(Theme.greenDone)
-                    Text("写完了！去书架看看吧。").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.ink)
-                    Link(destination: Self.booksURL) {
-                        Text("打开公开书架")
-                            .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
-                            .padding(.vertical, 12).padding(.horizontal, 24)
-                            .background(Theme.accent, in: Capsule())
-                    }
-                }
-                .frame(maxWidth: .infinity).padding(.top, 20)
-            } else if let err = errorText {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("没写成").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.recordRed)
-                    Text(err).font(.system(size: 14)).foregroundStyle(Theme.secondary)
-                    Button {
-                        errorText = nil; log = ""
-                    } label: {
-                        Text("返回重试").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.accent)
-                    }
-                }
-            } else {
-                HStack(spacing: 10) {
-                    ProgressView().tint(Theme.accent)
-                    Text("正在写书……请保持在这个页面")
-                        .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.ink)
-                }
-            }
-            if !log.isEmpty {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        Text(log)
-                            .font(.system(size: 12, design: .monospaced)).foregroundStyle(Theme.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(12)
-                        Color.clear.frame(height: 1).id("tail")
-                    }
-                    .frame(height: 320)
-                    .background(Theme.card, in: RoundedRectangle(cornerRadius: Theme.R.primary))
-                    .overlay(RoundedRectangle(cornerRadius: Theme.R.primary).stroke(Theme.borderChrome, lineWidth: 1))
-                    .onChange(of: log) { _, _ in withAnimation { proxy.scrollTo("tail", anchor: .bottom) } }
-                }
+    private var submittedSection: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 44)).foregroundStyle(Theme.greenDone)
+            Text("开始写了！").font(.system(size: 17, weight: .semibold)).foregroundStyle(Theme.ink)
+            Text("现在可以关掉 App。书通常 10–30 分钟写完，过稿一章、上架一章——过会儿去公开书架看。")
+                .font(.system(size: 14)).foregroundStyle(Theme.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            Link(destination: Self.booksURL) {
+                Text("打开公开书架")
+                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                    .padding(.vertical, 12).padding(.horizontal, 24)
+                    .background(Theme.accent, in: Capsule())
             }
         }
+        .frame(maxWidth: .infinity).padding(.top, 24)
     }
 
     private func start() {
         guard canStart else { return }
         seedFocused = false
-        running = true; finished = false; errorText = nil; log = ""
-        UIApplication.shared.isIdleTimerDisabled = true
+        sending = true; errorText = nil
         Analytics.capture("写书发起")
-        let message = "用 wjs-voicedrop-writing-book skill 写一本书。种子：\n\(trimmedSeed)"
-        task = Task {
+        let seedText = trimmedSeed
+        Task {
+            defer { sending = false }
+            var req = URLRequest(url: Self.bookAPI)
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.setValue("Bearer \(AuthStore.shared.bearer)", forHTTPHeaderField: "Authorization")
+            req.httpBody = try? JSONSerialization.data(withJSONObject: ["seed": seedText])
+            req.timeoutInterval = 30
             do {
-                try await streamChat(message: message)
-                if !Task.isCancelled { finished = true; Analytics.capture("写书完成") }
-            } catch is CancellationError {
-                errorText = String(localized: "已停止。写到一半的书，已过稿的章节保留在书架上。")
-            } catch let e as BookAgentError {
-                errorText = e.message
-            } catch {
-                errorText = String(localized: "连接断了：\(error.localizedDescription)。已过稿的章节保留在书架上。")
-            }
-            running = false
-            UIApplication.shared.isIdleTimerDisabled = false
-        }
-    }
-
-    private struct BookAgentError: Error { let message: String }
-
-    /// POST /api/chat and follow the SSE stream until `done`. The connection
-    /// IS the job — server aborts the agent when we drop it.
-    private func streamChat(message: String) async throws {
-        var req = URLRequest(url: Self.chatURL)
-        req.httpMethod = "POST"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        let basic = Data("wjs:\(password)".utf8).base64EncodedString()
-        req.setValue("Basic \(basic)", forHTTPHeaderField: "Authorization")
-        req.httpBody = try JSONSerialization.data(withJSONObject: ["message": message])
-        req.timeoutInterval = 120  // server heartbeats every 15s; only a dead pipe times out
-
-        let config = URLSessionConfiguration.default
-        config.timeoutIntervalForResource = 3 * 3600
-        let session = URLSession(configuration: config)
-        defer { session.finishTasksAndInvalidate() }
-
-        let (bytes, response) = try await session.bytes(for: req)
-        guard let http = response as? HTTPURLResponse else { throw BookAgentError(message: String(localized: "服务器没有响应")) }
-        if http.statusCode == 401 { throw BookAgentError(message: String(localized: "访问密码不对")) }
-        guard http.statusCode == 200 else { throw BookAgentError(message: String(localized: "服务器返回 \(http.statusCode)")) }
-
-        var event = ""
-        for try await line in bytes.lines {
-            try Task.checkCancellation()
-            if line.hasPrefix("event: ") { event = String(line.dropFirst(7)); continue }
-            guard line.hasPrefix("data: "),
-                  let obj = try? JSONSerialization.jsonObject(with: Data(line.dropFirst(6).utf8)) as? [String: Any]
-            else { continue }
-            switch event {
-            case "text":
-                if let d = obj["delta"] as? String { appendLog(d) }
-            case "tool_use":
-                if let name = obj["name"] as? String { appendLog("\n▸ \(name)\n") }
-            case "error":
-                throw BookAgentError(message: (obj["message"] as? String) ?? String(localized: "服务器出错"))
-            case "result":
-                if (obj["isError"] as? Bool) == true {
-                    throw BookAgentError(message: String(localized: "agent 没跑完（\((obj["error"] as? String) ?? "unknown")）。已过稿的章节保留在书架上。"))
+                let (_, resp) = try await URLSession.shared.data(for: req)
+                switch (resp as? HTTPURLResponse)?.statusCode ?? 0 {
+                case 202:
+                    submitted = true
+                    Analytics.capture("写书已受理")
+                case 409:
+                    errorText = String(localized: "服务器正在写另一本书，等它写完再来（通常 10–30 分钟）。")
+                case 401:
+                    errorText = String(localized: "身份校验没过，请稍后重试。")
+                case let code:
+                    errorText = String(localized: "服务器返回 \(code)，请稍后重试。")
                 }
-            case "done":
-                return
-            default:
-                break
+            } catch {
+                errorText = String(localized: "没连上服务器：\(error.localizedDescription)")
             }
         }
-    }
-
-    private func appendLog(_ s: String) {
-        log += s
-        if log.count > 20000 { log = String(log.suffix(12000)) }  // keep the view light on a long run
     }
 }
