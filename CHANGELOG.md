@@ -2,6 +2,23 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 使用手册改内置 sheet + admin/feedback 控制台页（2026-08-09 第二弹，iOS + Pages 已部署）
+
+- **使用手册不再外跳网页**：设置「使用手册」行改开内置 `HelpManualSheet`
+  （`HelpManualView.swift`）。`ManualParser`（纯逻辑、可单测）把 markdown 解析成
+  块（#/##/### 标题、表格、代码块、-/数字列表、段落），SwiftUI 按 Theme 排版，
+  行内加粗/链接走 `AttributedString(markdown:)`，顶部横滑章节 chips 用
+  `ScrollViewReader` 跳转。内容 = bundle 资源 `Resources/HelpManual.md`
+  （project.yml 新增 `Resources` 路径 `buildPhase: resources`）——**真源仍是
+  jianshuo.dev repo `voicedrop/help/manual/manual.md`，网页版改了 cp 一份过来**。
+  测试 `HelpManualParserTests.swift`（5 例，含真手册整本解析：8 章、表格在、无空段）。
+- **admin/feedback 控制台页**（jianshuo.dev 仓，已部署）：
+  `jianshuo.dev/voicedrop/admin/feedback`，照 llm.html 的 gate/换 token 模式，按日期
+  下拉看当天全部反馈卡片（名字/scope/版本/时间/正文）。后端
+  `GET /files/api/feedback/{dates,list?date=}`（admin-only 403，list 连内容一起返回、
+  ts 倒序、坏 JSON 跳过；日期文件夹用 cursor 翻页的 listDateFolders，防截断坑）。
+  全部控制台页导航加了「用户反馈」tab。测试 `agent/test/feedback-admin.test.js`（4 例）。
+
 ## 设置加「使用手册」+「意见反馈」（2026-08-09，iOS + worker 已部署）
 
 设置「其他」卡在 数据与备份 和 关于 之间加两行：

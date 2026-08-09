@@ -398,6 +398,7 @@ struct SettingsView: View {
     @State private var showWechat = false
     @State private var showStyle = false
     @State private var showName = false
+    @State private var showManual = false
     @State private var showFeedback = false
     @State private var invitePayload: SharePayload?
 
@@ -544,7 +545,7 @@ struct SettingsView: View {
                                             title: String(localized: "数据与备份"), subtitle: String(localized: "iCloud 备份 · 导出数据")) { settingsChevron }
                             }
                             settingsRowDivider
-                            Link(destination: URL(string: "https://voicedrop.cn/help/manual")!) {
+                            Button { showManual = true } label: {
                                 SettingsRow(tileBG: Theme.tileNeutral, symbol: "book", tileFG: Theme.secondary,
                                             title: String(localized: "使用手册"), subtitle: String(localized: "怎么录、怎么改、怎么发")) { settingsChevron }
                             }.buttonStyle(.plain)
@@ -570,6 +571,7 @@ struct SettingsView: View {
         .sheet(isPresented: $showWechat) { WechatSettingsSheet(store: store) }
         .sheet(isPresented: $showStyle) { WritingStyleSheet(store: store) }
         .sheet(isPresented: $showName) { NameEditSheet(store: store) }
+        .sheet(isPresented: $showManual) { HelpManualSheet() }
         .sheet(isPresented: $showFeedback) { FeedbackSheet(store: store) }
         .sheet(item: $invitePayload) { ShareSheet(items: $0.activityItems) }
     }

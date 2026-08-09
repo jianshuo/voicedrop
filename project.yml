@@ -18,6 +18,10 @@ targets:
     deploymentTarget: "18.0"
     sources:
       - path: VoiceDropApp
+      # 内置使用手册（设置→使用手册 sheet 的内容源）。真源 = jianshuo.dev repo
+      # voicedrop/help/manual/manual.md，改网页版后 cp 过来一份保持同步。
+      - path: Resources
+        buildPhase: resources
     configFiles:
       Debug: Secrets.xcconfig
       Release: Secrets.xcconfig
