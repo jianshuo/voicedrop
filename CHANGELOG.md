@@ -2,6 +2,29 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 关于页加「实验功能 → 写书」（2026-08-10，iOS）
+
+「关于」页新增「实验功能」区 + 「写书」行 → `BookWritingSheet`（新文件
+`BookWritingSheet.swift`）：
+
+- **功能**：给一个词/一句话/一篇文章当种子，点「开写」直连
+  **lab.jianshuo.dev**（Tokyo VPS 常驻 Claude Agent SDK 服务）的
+  `POST /api/chat`，让它用 **wjs-voicedrop-writing-book** skill 写一本书
+  （大纲 agent → 每章并行写手 → 独立评审 → 过稿一章发一章）。成书在公开书架
+  **https://voicedrop.cn/books/**（sheet 里有链接行 + 写完页大按钮）。
+- **连接契约（重要）**：lab 服务端在客户端断线时会 abort agent——所以 sheet
+  在写书期间**保持 SSE 连接**（禁下滑关闭 + `isIdleTimerDisabled` 屏幕常亮），
+  流式显示 agent 的文字/工具事件到等宽日志框。中途停止/断线时已过稿章节保留
+  （skill 边写边发）。SSE 解析 = `event:`/`data:` 行级解析，心跳 `: ping` 忽略；
+  `result.isError`、`error` 事件、401（密码错）都有对应错误文案。
+- **认证**：lab.jianshuo.dev 前置 Caddy basic auth（用户名 `wjs`），sheet 里
+  SecureField 输密码，`@AppStorage("bookAgentPassword")` 只存本机——**不内置
+  密码**（订阅 token 单用户，不能公开）；普通用户看到的是「向开发者索取」。
+- **服务端零改动**：skill 已在 VPS `/opt/claude-agent/.claude/skills/`（HOME=
+  /opt/claude-agent，用户级 skill 正常加载）；书架路由 `voicedrop.cn/books/`
+  已在线（已有《钱不脏》《散场之后》两本）。
+- 埋点：「写书发起」「写书完成」。125 条单测全绿。
+
 ## 使用手册改内置 sheet + admin/feedback 控制台页（2026-08-09 第二弹，iOS + Pages 已部署）
 
 - **使用手册不再外跳网页**：设置「使用手册」行改开内置 `HelpManualSheet`

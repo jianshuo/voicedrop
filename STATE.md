@@ -266,6 +266,17 @@ SwiftUI 按 Theme 原生排版，顶部章节 chips 跳转。**内容真源 = ji
 同步（project.yml 的 `Resources` 路径 buildPhase: resources）。解析器测试
 `VoiceDropTests/HelpManualParserTests.swift`。
 
+## 实验功能：写书（关于 →「实验功能」→「写书」，2026-08-10）
+
+`BookWritingSheet.swift` — 种子（词/句/文章）→ 直连 **lab.jianshuo.dev**（Tokyo VPS
+Claude Agent SDK 服务，见 jianshuo-memory `lab-jianshuo-dev-agent.md`）`POST /api/chat`
+（SSE，JSON `{message}`），message 点名 **wjs-voicedrop-writing-book** skill（在 VPS
+`/opt/claude-agent/.claude/skills/`）。成书增量发布到公开书架 **voicedrop.cn/books/**
+（Pages 函数 `functions/voicedrop/books/[[path]].js`，数据在写书 agent 自己 scope 的
+`books/` 下）。⚠️ 契约：lab 服务端**断线即 abort agent** → sheet 写书期间保持连接
+（禁下滑关 + 屏幕常亮）；已过稿章节断线也保留。认证 = Caddy basic auth（用户 `wjs`），
+密码用户手输、`@AppStorage("bookAgentPassword")` 仅存本机，App 不内置。
+
 ## Live agent Worker — voice editing + status (`agent/`, `voicedrop-agent`)
 
 A **separate Cloudflare Worker** (Pages can't host Durable Objects), route `jianshuo.dev/agent/*` →
