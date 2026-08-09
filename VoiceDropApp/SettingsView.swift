@@ -398,8 +398,6 @@ struct SettingsView: View {
     @State private var showWechat = false
     @State private var showStyle = false
     @State private var showName = false
-    @State private var showManual = false
-    @State private var showFeedback = false
     @State private var invitePayload: SharePayload?
 
     private var shortTag: String {
@@ -545,19 +543,9 @@ struct SettingsView: View {
                                             title: String(localized: "数据与备份"), subtitle: String(localized: "iCloud 备份 · 导出数据")) { settingsChevron }
                             }
                             settingsRowDivider
-                            Button { showManual = true } label: {
-                                SettingsRow(tileBG: Theme.tileNeutral, symbol: "book", tileFG: Theme.secondary,
-                                            title: String(localized: "使用手册"), subtitle: String(localized: "怎么录、怎么改、怎么发")) { settingsChevron }
-                            }.buttonStyle(.plain)
-                            settingsRowDivider
-                            Button { showFeedback = true } label: {
-                                SettingsRow(tileBG: Theme.tileNeutral, symbol: "bubble.left.and.bubble.right", tileFG: Theme.secondary,
-                                            title: String(localized: "意见反馈"), subtitle: String(localized: "提改进意见，直达开发者")) { settingsChevron }
-                            }.buttonStyle(.plain)
-                            settingsRowDivider
-                            NavigationLink { AboutView() } label: {
+                            NavigationLink { AboutView(store: store) } label: {
                                 SettingsRow(tileBG: Theme.tileNeutral, symbol: "info.circle", tileFG: Theme.secondary,
-                                            title: String(localized: "关于"), subtitle: String(localized: "隐私 · 公约 · 联系 · 版本 \(Prefs.versionBuild)")) { settingsChevron }
+                                            title: String(localized: "关于"), subtitle: String(localized: "手册 · 反馈 · 隐私 · 版本 \(Prefs.versionBuild)")) { settingsChevron }
                             }
                         }
                     }
@@ -571,8 +559,6 @@ struct SettingsView: View {
         .sheet(isPresented: $showWechat) { WechatSettingsSheet(store: store) }
         .sheet(isPresented: $showStyle) { WritingStyleSheet(store: store) }
         .sheet(isPresented: $showName) { NameEditSheet(store: store) }
-        .sheet(isPresented: $showManual) { HelpManualSheet() }
-        .sheet(isPresented: $showFeedback) { FeedbackSheet(store: store) }
         .sheet(item: $invitePayload) { ShareSheet(items: $0.activityItems) }
     }
 
@@ -833,15 +819,29 @@ struct DataBackupView: View {
 
 // MARK: - 关于 (隐私 / 公约 / 屏蔽 / 联系) — moved out of 设置「其他」behind one entry
 
-/// The four secondary items (隐私说明 / 社区公约 / 已屏蔽用户 / 联系我们) live here, one
-/// tap into 设置「其他」→「关于」. 版本 stays on the 其他 card.
+/// The secondary items (使用手册 / 意见反馈 / 隐私说明 / 社区公约 / 已屏蔽用户 / 联系我们)
+/// live here, one tap into 设置「其他」→「关于」. 版本 stays on the 其他 card.
 struct AboutView: View {
+    let store: SettingsStore
     @State private var showPrivacy = false
     @State private var showGuidelines = false
+    @State private var showManual = false
+    @State private var showFeedback = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 10) {
+                SettingsCard {
+                    Button { showManual = true } label: {
+                        SettingsRow(tileBG: Theme.tileNeutral, symbol: "book", tileFG: Theme.secondary,
+                                    title: String(localized: "使用手册"), subtitle: String(localized: "怎么录、怎么改、怎么发")) { settingsChevron }
+                    }.buttonStyle(.plain)
+                    settingsRowDivider
+                    Button { showFeedback = true } label: {
+                        SettingsRow(tileBG: Theme.tileNeutral, symbol: "bubble.left.and.bubble.right", tileFG: Theme.secondary,
+                                    title: String(localized: "意见反馈"), subtitle: String(localized: "提改进意见，直达开发者")) { settingsChevron }
+                    }.buttonStyle(.plain)
+                }
                 SettingsCard {
                     Button { showPrivacy = true } label: {
                         SettingsRow(tileBG: Theme.tileNeutral, symbol: "hand.raised", tileFG: Theme.secondary,
@@ -869,6 +869,8 @@ struct AboutView: View {
         .background(Theme.appBG.ignoresSafeArea())
         .navigationTitle("关于")
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $showManual) { HelpManualSheet() }
+        .sheet(isPresented: $showFeedback) { FeedbackSheet(store: store) }
         .alert("隐私说明", isPresented: $showPrivacy) {
             Button("好") {}
         } message: {

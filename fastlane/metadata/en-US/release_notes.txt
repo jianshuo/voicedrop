@@ -1,7 +1,7 @@
 What's new:
-• Faster everywhere: recordings, community, and article pages open instantly from local cache, then refresh in place
-• Faster access in China via the voicedrop.cn edge network
-• More reliable voice editing: connections stay alive and results sync immediately, even on weak networks
-• Recordings under 4 seconds now get an instant "too short" hint instead of a long wait
-• A subtle hint on article images — tap it to edit the picture
-• Bug fixes and performance improvements
+• Rock-solid uploads: lock the screen, switch apps, or even kill the app right after recording — the system finishes the upload in the background
+• Much faster uploads on weak networks: audio goes first, no longer waiting behind photos
+• New built-in User Manual: Settings → About, readable offline with chapter navigation
+• New Feedback: Settings → About, one sentence straight to the developer
+• Community now sorts by newest by default, plus a new search
+• Fixed false "rewrite failed" on long recordings and rewrite failures caused by certain photos
