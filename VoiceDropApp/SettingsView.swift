@@ -397,6 +397,7 @@ struct SettingsView: View {
     @State private var store = SettingsStore()
     @State private var showWechat = false
     @State private var showStyle = false
+    @State private var showBookWriting = false
     @State private var showName = false
     @State private var invitePayload: SharePayload?
 
@@ -536,6 +537,15 @@ struct SettingsView: View {
                         }
                     }
 
+                    group(String(localized: "实验功能")) {
+                        SettingsCard {
+                            Button { showBookWriting = true } label: {
+                                SettingsRow(tileBG: Theme.tileNeutral, symbol: "books.vertical", tileFG: Theme.secondary,
+                                            title: String(localized: "写书"), subtitle: String(localized: "一颗种子长成一本书 · 每本 320 算力")) { settingsChevron }
+                            }.buttonStyle(.plain)
+                        }
+                    }
+
                     group(String(localized: "其他")) {
                         SettingsCard {
                             NavigationLink { DataBackupView(libraryStore: libraryStore) } label: {
@@ -559,6 +569,7 @@ struct SettingsView: View {
         .sheet(isPresented: $showWechat) { WechatSettingsSheet(store: store) }
         .sheet(isPresented: $showStyle) { WritingStyleSheet(store: store) }
         .sheet(isPresented: $showName) { NameEditSheet(store: store) }
+        .sheet(isPresented: $showBookWriting) { BookWritingSheet() }
         .sheet(item: $invitePayload) { ShareSheet(items: $0.activityItems) }
     }
 
@@ -827,7 +838,6 @@ struct AboutView: View {
     @State private var showGuidelines = false
     @State private var showManual = false
     @State private var showFeedback = false
-    @State private var showBookWriting = false
 
     var body: some View {
         ScrollView {
@@ -864,14 +874,6 @@ struct AboutView: View {
                                     title: String(localized: "联系我们 / 内容投诉")) { settingsChevron }
                     }.buttonStyle(.plain)
                 }
-                settingsSectionLabel(String(localized: "实验功能"))
-                    .padding(.top, 8)
-                SettingsCard {
-                    Button { showBookWriting = true } label: {
-                        SettingsRow(tileBG: Theme.tileNeutral, symbol: "books.vertical", tileFG: Theme.secondary,
-                                    title: String(localized: "写书"), subtitle: String(localized: "一颗种子长成一本书，发到公开书架")) { settingsChevron }
-                    }.buttonStyle(.plain)
-                }
             }
             .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 40)
         }
@@ -880,7 +882,6 @@ struct AboutView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $showManual) { HelpManualSheet() }
         .sheet(isPresented: $showFeedback) { FeedbackSheet(store: store) }
-        .sheet(isPresented: $showBookWriting) { BookWritingSheet() }
         .alert("隐私说明", isPresented: $showPrivacy) {
             Button("好") {}
         } message: {

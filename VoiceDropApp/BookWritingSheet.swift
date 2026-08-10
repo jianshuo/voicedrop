@@ -1,16 +1,16 @@
 import SwiftUI
 
-// MARK: - 写书（实验功能）— 关于 → 实验功能 → 写书
+// MARK: - 写书（实验功能）— 设置 → 实验功能 → 写书
 
 /// 把一个词 / 一句话 / 一篇文章交给 lab.jianshuo.dev 上的常驻 Claude agent，
 /// 用 wjs-voicedrop-writing-book skill 长成一本书：一个 agent 写大纲、每章一个
 /// subagent 写正文、独立评审过稿后增量发布到公开书架 voicedrop.cn/books/。
 ///
-/// 契约（2026-08-10 起 fire-and-forget）：`POST lab.jianshuo.dev/api/book`
-/// `{seed}` + VoiceDrop 用户 bearer（服务端拿它去 jianshuo.dev whoami 验真，
-/// App 零内置密钥；该路径豁免 Caddy basic_auth）。202 = 任务已在服务器后台
-/// 开跑——**提交完就可以关 App**，10–30 分钟后书出现在公开书架。
-/// 409 = 服务器正在写另一本（全局串行，1 核小机器）。
+/// 契约（fire-and-forget + 计费制，2026-08-10）：`POST lab.jianshuo.dev/api/book`
+/// `{seed}` + VoiceDrop 用户 bearer。lab 转手调 agent worker 的
+/// `/agent/usage/book-charge` 一口价扣 **320 算力**，扣成功即 202 开写——
+/// **提交完就可以关 App**，10–30 分钟后书出现在公开书架。没有数量限制，
+/// 算力就是闸门：402 = 算力不足（带 need_suanli/suanli），401 = token 无效。
 struct BookWritingSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var seed = ""
@@ -64,7 +64,7 @@ struct BookWritingSheet: View {
             Text("给一个词、一句话，或贴一整篇文章，AI 会把它长成一本书：先写大纲，再每章一个写手并行写正文（费曼式白话），独立评审过稿一章、发布一章。")
                 .font(.system(size: 14)).foregroundStyle(Theme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("点「开写」提交后就可以关掉 App——书在服务器上继续写，通常 10–30 分钟后出现在公开书架。")
+            Text("每本书消耗 320 算力。点「开写」提交后就可以关掉 App——书在服务器上继续写，通常 10–30 分钟后出现在公开书架。")
                 .font(.system(size: 13)).foregroundStyle(Theme.faint)
                 .fixedSize(horizontal: false, vertical: true)
             SettingsCard {
@@ -135,17 +135,18 @@ struct BookWritingSheet: View {
             req.httpBody = try? JSONSerialization.data(withJSONObject: ["seed": seedText])
             req.timeoutInterval = 30
             do {
-                let (_, resp) = try await URLSession.shared.data(for: req)
+                let (data, resp) = try await URLSession.shared.data(for: req)
                 switch (resp as? HTTPURLResponse)?.statusCode ?? 0 {
                 case 202:
                     submitted = true
                     Analytics.capture("写书已受理")
-                case 409:
-                    errorText = String(localized: "服务器正在写另一本书，等它写完再来（通常 10–30 分钟）。")
+                case 402:
+                    // body: {error:"no-credit", need_suanli, suanli}
+                    let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+                    let have = Int(((body?["suanli"] as? Double) ?? 0).rounded())
+                    errorText = String(localized: "算力不足：写一本书要 320 算力，你现在有 \(have)。去「设置 → 算力」看看怎么攒。")
                 case 401:
-                    errorText = String(localized: "还不能写书：先用 VoiceDrop 录几段话、成几篇文章，再来把它们长成书。")
-                case 429:
-                    errorText = String(localized: "今天的写书额度用完了，明天再来。")
+                    errorText = String(localized: "身份校验没过，请稍后重试。")
                 case let code:
                     errorText = String(localized: "服务器返回 \(code)，请稍后重试。")
                 }

@@ -266,20 +266,21 @@ SwiftUI 按 Theme 原生排版，顶部章节 chips 跳转。**内容真源 = ji
 同步（project.yml 的 `Resources` 路径 buildPhase: resources）。解析器测试
 `VoiceDropTests/HelpManualParserTests.swift`。
 
-## 实验功能：写书（关于 →「实验功能」→「写书」，2026-08-10）
+## 实验功能：写书（设置 →「实验功能」→「写书」，2026-08-10）
 
-`BookWritingSheet.swift` — 种子（词/句/文章）→ **`POST lab.jianshuo.dev/api/book`**
-（Tokyo VPS Claude Agent SDK 服务，见 jianshuo-memory `lab-jianshuo-dev-agent.md`）：
-**fire-and-forget**——服务端验完 token 立刻 202，agent 在 VPS 后台用
-**wjs-voicedrop-writing-book** skill（`/opt/claude-agent/.claude/skills/`）跑完整本书，
-**用户提交完即可关 App**。同时只跑一本（busy → 409）；`{dry:true}` 只验认证不起 job。
-成书增量发布到公开书架 **voicedrop.cn/books/**（Pages 函数
-`functions/voicedrop/books/[[path]].js`，数据在写书 agent 自己 scope 的 `books/` 下）。
-认证：App 带已有 VoiceDrop 用户 bearer——**App 零内置密钥**。⚠️ anon token 是客户端
-自造随机数，whoami 谁都能过（只做归因）；**真门槛 = lab 拿 bearer 调
-`GET /files/api/articles`，scope 必须已有成文文章**（伪造 token → 空 → 401）+
-每 scope 每天限 2 本（429）。Caddy 对 `/api/book` 豁免 basic_auth，`/api/chat`
-网页聊天照旧密码门（断线即中止的旧契约只属于 /api/chat）。
+`BookWritingSheet.swift`（设置页入口；曾短暂在「关于」页，同日挪出）— 种子（词/句/
+文章）→ **`POST lab.jianshuo.dev/api/book`**（Tokyo VPS Claude Agent SDK 服务，见
+jianshuo-memory `lab-jianshuo-dev-agent.md`）：**fire-and-forget**——扣费成功立刻 202，
+agent 在 VPS 后台用 **wjs-voicedrop-writing-book** skill（`/opt/claude-agent/.claude/
+skills/`）跑完整本书，**用户提交完即可关 App**。成书增量发布到公开书架
+**voicedrop.cn/books/**（Pages 函数 `functions/voicedrop/books/[[path]].js`）。
+**认证 = 计费（无数量限制）**：App 带已有用户 bearer（零内置密钥），lab 转手调
+agent worker **`POST /agent/usage/book-charge`** 一口价扣 **320 算力**（`BOOK_SUANLI`，
+usage.js；ledger reason `book`＝「写书」）。伪造随机 token 的新账户只有 200 注册赠送
+< 320 → 402 天然挡住；余额不足 402 带 `{need_suanli,suanli}`，App 显示差额文案。
+`{dry:true}` 只验余额不扣费（冒烟用）。早期的「须有成文文章 + 每日 2 本 + 全局单本」
+限制已全部移除——算力就是闸门。Caddy 对 `/api/book` 豁免 basic_auth，`/api/chat`
+网页聊天照旧密码门。测试：`agent/test/book-charge.test.js`（3 例）。
 
 ## Live agent Worker — voice editing + status (`agent/`, `voicedrop-agent`)
 

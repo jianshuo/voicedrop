@@ -2,6 +2,23 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 写书改计费制 + 挪到设置页（2026-08-10 第二弹，iOS + worker + lab 已部署）
+
+- **限制全拆**：「每 scope 每天 2 本」「全局同时只写一本」「须有成文文章」三道闸
+  全部移除——**算力就是闸门，每本书一口价 320 算力**。
+- **agent worker 新路由 `POST /agent/usage/book-charge`**（user bearer）：余额
+  < 320 → 402 `{error:"no-credit",need_suanli,suanli}` 不扣；够 → `debit` 记
+  ledger reason `book`（reasonZH「写书」）返新余额；`{dry:true}` 只验不扣。
+  常量 `BOOK_SUANLI=320`/`bookCostUY()`（usage.js）。伪造随机 token 的新账户
+  只有 200 注册赠送 < 320，天然被 402 挡住——上一版的「查成文文章」门槛因此
+  退役。测试 `agent/test/book-charge.test.js`（3 例，全套 1350 绿）。
+- **lab `/api/book` 简化**：verify+quota 逻辑全删，换成转发 bearer 调
+  book-charge——扣成功才 `runBookJob`，202 带 `{charged_suanli,suanli}`。
+- **iOS**：「写书」行从「关于」页挪到**设置页新「实验功能」分组**（发布与其他
+  之间），副标题标明「每本 320 算力」；sheet 文案加价格；402 显示「要 320、
+  你有 N」并指去算力页；409/429 分支删除。
+- 冒烟：真 token dry 200（余额 15707）；伪 token 402（200<320）；无 token 401。
+
 ## 关于页加「实验功能 → 写书」（2026-08-10，iOS + lab VPS 已部署）
 
 「关于」页新增「实验功能」区 + 「写书」行 → `BookWritingSheet`（新文件
