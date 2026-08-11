@@ -397,7 +397,6 @@ struct SettingsView: View {
     @State private var store = SettingsStore()
     @State private var showWechat = false
     @State private var showStyle = false
-    @State private var showBookWriting = false
     @State private var showName = false
     @State private var invitePayload: SharePayload?
 
@@ -537,15 +536,6 @@ struct SettingsView: View {
                         }
                     }
 
-                    group(String(localized: "实验功能")) {
-                        SettingsCard {
-                            Button { showBookWriting = true } label: {
-                                SettingsRow(tileBG: Theme.tileNeutral, symbol: "books.vertical", tileFG: Theme.secondary,
-                                            title: String(localized: "写书"), subtitle: String(localized: "一颗种子长成一本书 · 每本 320 算力")) { settingsChevron }
-                            }.buttonStyle(.plain)
-                        }
-                    }
-
                     group(String(localized: "其他")) {
                         SettingsCard {
                             NavigationLink { DataBackupView(libraryStore: libraryStore) } label: {
@@ -569,7 +559,6 @@ struct SettingsView: View {
         .sheet(isPresented: $showWechat) { WechatSettingsSheet(store: store) }
         .sheet(isPresented: $showStyle) { WritingStyleSheet(store: store) }
         .sheet(isPresented: $showName) { NameEditSheet(store: store) }
-        .sheet(isPresented: $showBookWriting) { BookWritingSheet() }
         .sheet(item: $invitePayload) { ShareSheet(items: $0.activityItems) }
     }
 

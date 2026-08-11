@@ -5,7 +5,7 @@ import UIKit
 /// pure-red record key at the bottom opens the full-screen recording takeover;
 /// the gear pushes Settings. Pulls fresh data on appear and drains any pending
 /// local uploads.
-enum HomeTab: Hashable { case recordings, community, tag(String) }
+enum HomeTab: Hashable { case recordings, community, books, tag(String) }
 
 struct LibraryView: View {
     @State private var store = LibraryStore()
@@ -166,6 +166,7 @@ struct LibraryView: View {
             switch tab {
             case .recordings: recordingsContent
             case .community: communityContent
+            case .books: BooksShelfView()
             case .tag(let t): tagContent(t)
             }
         }
@@ -187,7 +188,8 @@ struct LibraryView: View {
         .overlay(alignment: .bottom) {
             // The red key (record + press-and-hold voice commands) lives on 我的
             // 录音 AND every tag page — a tag page is the same list, filtered.
-            if tab != .community {
+            // VD社区和写书书架没有它（书架第一格自己就是入口）。
+            if tab != .community && tab != .books {
                 recordButton
             } else {
                 EmptyView()
@@ -280,6 +282,8 @@ struct LibraryView: View {
                 Task { await refresh() }
             case .community:
                 tab = .community; selectedRec = nil; selectedPost = nil; showSettings = false; showUsage = false; sharedArticle = nil
+            case .books:
+                tab = .books; selectedRec = nil; selectedPost = nil; showSettings = false; showUsage = false; sharedArticle = nil
             case .settings:
                 selectedRec = nil; selectedPost = nil; showSettings = true; showUsage = false; sharedArticle = nil
             case .usage:
@@ -401,17 +405,24 @@ struct LibraryView: View {
     // MARK: Tabs (我的录音 / 社区)
 
     private var tabHeader: some View {
-        // Horizontally scrollable: the two fixed tabs plus one tab per existing
+        // Horizontally scrollable: the three fixed tabs plus one tab per existing
         // article tag (newest first). With no tags the layout is unchanged.
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .firstTextBaseline, spacing: 20) {
-                tabLabel(String(localized: "我的录音"), .recordings)
-                tabLabel(String(localized: "VD社区"), .community)
-                ForEach(allTags, id: \.self) { t in
-                    tabLabel(t, .tag(t))
+        // 选中的 tab 自动滚进可视区——深链/点选落在被截断的 tab 上时把它带进来。
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .firstTextBaseline, spacing: 20) {
+                    tabLabel(String(localized: "我的录音"), .recordings)
+                    tabLabel(String(localized: "VD社区"), .community)
+                    tabLabel(String(localized: "写书"), .books)
+                    ForEach(allTags, id: \.self) { t in
+                        tabLabel(t, .tag(t))
+                    }
                 }
+                .padding(.horizontal, 22)
             }
-            .padding(.horizontal, 22)
+            .onChange(of: tab) { _, t in
+                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(t) }
+            }
         }
         .padding(.bottom, 10)
     }
@@ -430,6 +441,7 @@ struct LibraryView: View {
             }
         }
         .buttonStyle(.plain)
+        .id(t)
     }
 
     // MARK: List

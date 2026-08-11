@@ -11,6 +11,7 @@ import SafariServices
 /// Addresses:
 ///   voicedrop://recordings        我的录音（列表根）
 ///   voicedrop://community         VD社区
+///   voicedrop://books             写书（图书馆书架）
 ///   voicedrop://settings          设置
 ///   voicedrop://usage             算力账单（「文章被投喂」推送点开落这里）
 ///   voicedrop://prompt/<7位码>    提示词导入 sheet 预填该码（网页「一键收进
@@ -35,6 +36,7 @@ import SafariServices
 enum DeepLink: Equatable {
     case recordings
     case community
+    case books
     case settings
     case usage
     case record(tag: String?)
@@ -71,6 +73,7 @@ final class AppRouter: ObservableObject {
         switch (url.host ?? "").lowercased() {
         case "", "recordings", "home": pending = .recordings
         case "community":              pending = .community
+        case "books", "library":       pending = .books
         case "settings", "setting":    pending = .settings
         case "usage", "billing":       pending = .usage
         case "prompt":
@@ -111,6 +114,8 @@ final class AppRouter: ObservableObject {
             return nil
         }
         guard let first = segs.first else { return .recordings }   // 落地页 = App 主页
+        // voicedrop.cn/books（书架根）→ 原生「写书」tab；/books/<slug> 单本书仍走 .web。
+        if segs.count == 1, first == "books" { return .books }
         // 7 位纯数字＝提示词魔法数字（Task 6），判在 shareLink 前面：文章分享 id 是 10 位
         // hex、社区帖 12 位，跟 7 位数字没有交集，但 shareLink 的宽正则会把纯数字也吃进去，
         // 所以窄的先判。jianshuo.dev/voicedrop/<7位码> 也有意在此识别，与服务端落地页路由对齐。

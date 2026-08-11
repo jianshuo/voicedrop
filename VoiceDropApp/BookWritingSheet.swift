@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - 写书（实验功能）— 设置 → 实验功能 → 写书
+// MARK: - 写书 — 「写书」tab 图书馆第一格（BooksShelfView）弹出
 
 /// 把一个词 / 一句话 / 一篇文章交给 lab.jianshuo.dev 上的常驻 Claude agent，
 /// 用 wjs-voicedrop-writing-book skill 长成一本书：一个 agent 写大纲、每章一个

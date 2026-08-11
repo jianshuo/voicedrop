@@ -2,6 +2,36 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 第三个 tab「写书」= 图书馆书架（2026-08-11，iOS + Pages 已部署）
+
+设计稿 `Books.dc.html` ①（design 项目 claude.ai/design/p/834ad7a9…）。只落地
+图书馆屏；新书设置/写作中/成书三屏没做——写书流程沿用现有 `BookWritingSheet`
+fire-and-forget，读书沿用网页版。
+
+- **iOS 新 tab**：`HomeTab` 加 `.books`，tab 头「我的录音 · VD社区 · **写书** ·
+  <标签…>」；书架页 = 新文件 `BooksShelfView.swift`——实体书两本一排 + 木色
+  搁板，**第一格固定是「写书」入口**（虚线封面 + 红加号）→ 弹现有
+  `BookWritingSheet`；书封：有 cover.jpg 直接铺图（保留书脊/页口/投影），
+  没有就布面缺省封面（宋体书名 + 细线 + 副题，颜色 = 服务端按 slug 哈希，
+  和网页书架同色）。点一本书 → 站内 Safari 开 `voicedrop.cn/books/<slug>/`。
+  数据缓存在 UserDefaults，离线先画上次的书架。红色录音键在写书 tab 隐藏
+  （第一格自己就是入口）。
+- **tab 头自动滚动**：`tabHeader` 包 `ScrollViewReader`，选中的 tab 自动滚进
+  可视区（英文 locale 下前两个 tab 很长，写书原本被截在屏幕外）。
+- **设置页「实验功能 → 写书」入口撤销**（设计稿明确取消；`showBookWriting`
+  状态与 sheet 一并删除，`BookWritingSheet` 文件保留由书架调用）。
+- **深链**：`voicedrop://books`（alias `library`）+ universal link
+  `voicedrop.cn/books`（书架根 → 原生 tab；`/books/<slug>` 单本书仍走 .web）。
+- **服务端**（jianshuo.dev Pages，已部署）：书架函数
+  `functions/voicedrop/books/[[path]].js` 加 **`GET /books/?format=json`** —
+  `{books:[{slug,title,main,sub,c,c2,cover,chapters}]}`，与 HTML 书封同一个
+  `collectBooks`（title 取 `<slug>/index.html` 的 `<title>`，main/sub 按
+  ——／：／· 拆，c/c2 = slug 哈希配色）；另补 cover.jpg 存在性（head）和顶层
+  章节数（`.html` 计数，index/intro 不算；单页书为 0，App 端回落显示副题）。
+  60s 缓存 + CORS `*`。
+- 验证：153 条单测改动前后全绿；模拟器深链 `voicedrop://books` 截图核对设计稿
+  （入口格与书同高、搁板、章数 meta、tab 下划线）。
+
 ## 写书改计费制 + 挪到设置页（2026-08-10 第二弹，iOS + worker + lab 已部署）
 
 - **限制全拆**：「每 scope 每天 2 本」「全局同时只写一本」「须有成文文章」三道闸

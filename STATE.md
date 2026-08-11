@@ -266,9 +266,22 @@ SwiftUI 按 Theme 原生排版，顶部章节 chips 跳转。**内容真源 = ji
 同步（project.yml 的 `Resources` 路径 buildPhase: resources）。解析器测试
 `VoiceDropTests/HelpManualParserTests.swift`。
 
-## 实验功能：写书（设置 →「实验功能」→「写书」，2026-08-10）
+## 写书 = 第三个 tab「图书馆」（2026-08-11 起；曾在设置「实验功能」/「关于」页）
 
-`BookWritingSheet.swift`（设置页入口；曾短暂在「关于」页，同日挪出）— 种子（词/句/
+首页 tab 头「我的录音 · VD社区 · **写书** · <标签…>」（`HomeTab.books`）。tab 内容 =
+`BooksShelfView.swift`：实体书书架（两本一排 + 搁板），**第一格固定「写书」入口**
+（虚线封面 + 红加号）→ 弹 `BookWritingSheet`；后面是公开书架的书——有 cover.jpg
+铺图，没有就布面缺省封面（宋体主/副题 + slug 哈希配色，与网页书架同源）。点书 →
+站内 Safari 开 `voicedrop.cn/books/<slug>/`。数据 = **`GET voicedrop.cn/books/
+?format=json`**（jianshuo.dev Pages `functions/voicedrop/books/[[path]].js`，公开
+无鉴权 60s 缓存）：`{books:[{slug,title,main,sub,c,c2,cover,chapters}]}`，chapters =
+顶层章节 html 数（index/intro 不算，单页书 0 → App 回落显示副题）。UserDefaults 缓存
+上次响应离线先画。深链 `voicedrop://books`（alias `library`）、universal link
+`voicedrop.cn/books`（书架根；`/books/<slug>` 仍 .web）。红色录音键在此 tab 隐藏。
+设置页入口已撤。设计稿 = design 项目 `Books.dc.html` ①（②③④新书设置/写作中/成书
+未做，流程沿用下述 fire-and-forget + 网页阅读）。
+
+`BookWritingSheet.swift`（书架第一格弹出）— 种子（词/句/
 文章）→ **`POST lab.jianshuo.dev/api/book`**（Tokyo VPS Claude Agent SDK 服务，见
 jianshuo-memory `lab-jianshuo-dev-agent.md`）：**fire-and-forget**——扣费成功立刻 202，
 agent 在 VPS 后台用 **wjs-voicedrop-writing-book** skill（`/opt/claude-agent/.claude/
