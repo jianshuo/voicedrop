@@ -583,7 +583,11 @@ gear → **设置** (redesign "方案二"; the old `ContentView` 3-tab `TabView`
   **待处理 / 无语音** 状态仍用居中的大 `playerCard`（设计只重做了成文页）。 + the article
   rendered **with photos混排 inline** (`ArticleBody.segments` splits the body at `[[photo:N]]` markers;
   `PhotoTile` downloads each via the auth'd Files API and shows a full-width square; unreferenced photos
-  append at the end). Per-article chip switcher only when >1. **Voice-edit locators** (design "Voice Edit
+  append at the end). **块级 Markdown 渲染 (2026-08-11)：** 每个只读段落行经 `MarkdownRowView`
+  (`MarkdownBlock.swift`) 渲染——`#`/`##`/`###+` 标题、`-`/`*`/`+` 列表、`1.`/`1)`/`1、` 有序列表、`>` 引用、
+  `---` 分隔线，块级样式套行内 Markdown（inline 解析仍走 BodyParseCache）；社区帖正文同款
+  (`MarkdownTextBlock`)。纯显示层——编辑（键盘精修/语音编辑）仍操作原始 Markdown 文本，第N行编号与
+  `replacingLine` 契约零改动。分类器单测 `MarkdownBlockTests.swift`。Per-article chip switcher only when >1. **Voice-edit locators** (design "Voice Edit
   Locators"): while the user holds-to-talk, **line numbers** (第N行) fade
   in floating in the **left margin** — absolutely positioned via `.overlay(alignment:.topLeading)` + `offset`
   so the text never reflows — and **图N badges** fade in on each image's top-left corner. **`bodyRows()` numbers

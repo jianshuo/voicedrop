@@ -723,9 +723,7 @@ struct CommunityPostView: View {
             ForEach(ArticleBody.segments(a.body)) { seg in
                 switch seg {
                 case .text(let t):
-                    Text(textAttributed(t))
-                        .font(.system(size: 16)).foregroundStyle(Theme.bodyRead)
-                        .lineSpacing(9).textSelection(.enabled)
+                    MarkdownTextBlock(text: t)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 case .photo(let token):
                     if let owner = full?.owner,
@@ -736,12 +734,6 @@ struct CommunityPostView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func textAttributed(_ s: String) -> AttributedString {
-        (try? AttributedString(markdown: s, options: .init(
-            interpretedSyntax: .inlineOnlyPreservingWhitespace,
-            failurePolicy: .returnPartiallyParsedIfPossible))) ?? AttributedString(s)
     }
 
     // MARK: 提示词帖导入 CTA（仅提示词帖 + 非本人帖显示；文章帖零改动）
@@ -1184,11 +1176,7 @@ struct SharedArticleView: View {
             ForEach(ArticleBody.segments(a.body)) { seg in
                 switch seg {
                 case .text(let t):
-                    Text((try? AttributedString(markdown: t, options: .init(
-                        interpretedSyntax: .inlineOnlyPreservingWhitespace,
-                        failurePolicy: .returnPartiallyParsedIfPossible))) ?? AttributedString(t))
-                        .font(.system(size: 16)).foregroundStyle(Theme.bodyRead)
-                        .lineSpacing(9).textSelection(.enabled)
+                    MarkdownTextBlock(text: t)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 case .photo(let token):
                     if let relKey = ArticleBody.resolvePhotoKey(token, photos: shared.photos ?? []) {

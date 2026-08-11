@@ -2,6 +2,26 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 正文块级 Markdown 渲染：#/## 标题、列表、引用、分隔线（2026-08-11 第三弹）
+
+此前正文只走 `AttributedString(.inlineOnlyPreservingWhitespace)`——**粗体**、`代码`、
+[链接] 能渲染，但 `#`/`##` 标题、`-` 列表、`1.` 有序列表、`>` 引用、`---` 分隔线
+都原样露出符号。现在：
+
+- **新增 `VoiceDropApp/MarkdownBlock.swift`**：`MarkdownBlock.classify` 按「一行一个
+  block」分类（h1/h2/h3、bullet、ordered、quote、divider、plain），与 bodyRows 的
+  第N行切分天然对齐。`####`–`######` 统一按 h3 渲染；`#话题`（井号后无空格）、
+  4 位数字（年份）、`1.5` 这类不误判。有序列表认 `1.` / `1)` / `1、` 三种。
+- **`MarkdownRowView`**：单行渲染视图，块级样式套行内 Markdown。标题用 inkRead
+  加大加粗（22/19/17pt），列表加赭红 `•`/序号，引用左侧赭红竖条 + metaRead，
+  分隔线细线。行内解析闭包可注入——文章页复用自己的 BodyParseCache。
+- **接入三处**：`RecordingDetailView` 只读段落行（长按菜单/高亮/行号 overlay 全部
+  不动）、`Community.swift` 社区帖两处正文（改用 `MarkdownTextBlock` 多行版，原
+  局部 textAttributed 已删）。
+- **编辑通道零改动**：键盘精修/语音编辑仍编辑原始 Markdown 文本（第N行编号、
+  `replacingLine` 拼接都按原文走），渲染只是显示层的甜头。
+- 测试：`VoiceDropTests/MarkdownBlockTests.swift` 24 条纯逻辑单测；全仓 176 条 pass。
+
 ## 写书页重设计：明码 320 + 攒算力指引 + 真实署名（2026-08-11 第二弹，全链已部署）
 
 `BookWritingSheet` 推倒重排（入口不变 = 书架第一格）：

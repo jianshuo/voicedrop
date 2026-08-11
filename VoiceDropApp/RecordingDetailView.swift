@@ -863,9 +863,9 @@ struct RecordingDetailView: View {
                     } else {
                         // 长按出操作菜单（自绘覆盖层）——为此取消了 .textSelection（长按
                         // 选择与菜单手势冲突），菜单尾部的本地「拷贝/编辑」项补偿。
-                        Text(textAttributed(text))
-                            .font(.system(size: 16)).foregroundStyle(Theme.bodyRead)
-                            .lineSpacing(9)
+                        // 块级 Markdown（#/##/列表/引用/分隔线）由 MarkdownRowView 渲染，
+                        // 行内解析仍走 textAttributed 的缓存。
+                        MarkdownRowView(text: text, attributed: textAttributed)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             // 刚落地的编辑改过的行：荧光笔高亮几秒后淡出。
                             .background((highlightLines[articleIndex]?.contains(n) ?? false) ? Theme.fuHighlight : .clear,
