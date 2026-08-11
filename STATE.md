@@ -282,9 +282,16 @@ SwiftUI 按 Theme 原生排版，顶部章节 chips 跳转。**内容真源 = ji
 设置页入口已撤。设计稿 = design 项目 `Books.dc.html` ①（②③④新书设置/写作中/成书
 未做，流程沿用下述 fire-and-forget + 网页阅读）。
 
-`BookWritingSheet.swift`（书架第一格弹出）— 种子（词/句/
+`BookWritingSheet.swift`（书架第一格弹出；2026-08-11 重设计：价签 hero 明码
+320 + 实时余额，算力不够时攒法卡带现价——「加油一次约得 N」来自
+`GET /agent/referral/link` 的 `suanliFeedAuthor`、「邀请一个约得 M」来自
+`suanliInviter`，附 ShareLink 发邀请链接；种子输入引导写「中心思想」+
+四步流程卡；无公开书架链接）— 中心思想（词/句/
 文章）→ **`POST lab.jianshuo.dev/api/book`**（Tokyo VPS Claude Agent SDK 服务，见
-jianshuo-memory `lab-jianshuo-dev-agent.md`）：**fire-and-forget**——扣费成功立刻 202，
+jianshuo-memory `lab-jianshuo-dev-agent.md`）：**fire-and-forget**——扣费成功立刻 202。
+**署名 = 提交者**：lab 用 bearer 拉 `CLAUDE.json` `profile.name` 进 skill 提示词
+（没名字不署，绝不默认王建硕）；`build.mjs` 出 `<meta name="author">`，Pages 书架
+印章/books JSON 按作者显示（存量无 author 归建硕）。扣费成功立刻 202，
 agent 在 VPS 后台用 **wjs-voicedrop-writing-book** skill（`/opt/claude-agent/.claude/
 skills/`）跑完整本书，**用户提交完即可关 App**。成书增量发布到公开书架
 **voicedrop.cn/books/**（Pages 函数 `functions/voicedrop/books/[[path]].js`）。

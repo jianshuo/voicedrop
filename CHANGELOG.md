@@ -2,6 +2,35 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 写书页重设计：明码 320 + 攒算力指引 + 真实署名（2026-08-11 第二弹，全链已部署）
+
+`BookWritingSheet` 推倒重排（入口不变 = 书架第一格）：
+
+- **去掉公开书架入口行**——书架就是身后的「写书」tab，不再另给链接。
+- **320 算力做成价签 hero**：琥珀底大字「⚡320 算力」+ 右侧实时余额（够=绿
+  不够=红；`GET /agent/usage/balance`）。CTA =「开始写书 · 320 算力」，
+  不够时变灰「算力不够 · 还差 X」。
+- **算力不够 → 攒法卡紧跟价签**（第一眼要的是「怎么办」）：两条来路带现价
+  数字——「请朋友给你的文章加油，一次约得 N 算力（约 x 次就够）」「邀请朋友
+  装 VoiceDrop，装一个约得 M 算力（约 y 个就够）」+ ShareLink 直接发邀请
+  链接。数字来自 **`GET /agent/referral/link` 新增的 `suanliFeedAuthor`**
+  （作者侧 2 币×mint-rate 币价）与既有 `suanliInviter`；现价拿不到只说通用
+  文案，绝不编数字。
+- **流程简介 + 中心思想引导**：「怎么写成」四步卡（拆大纲→并行写→独立评审→
+  上你的架）；种子输入改名「中心思想」，文案引导一句话说清要讲明白的问题/
+  主张（也可贴整篇文章）。
+- **真实署名（王建硕 → 提交者）**：lab `/api/book` 受理后用提交者 bearer 拉
+  `CLAUDE.json` `profile.name`（设置页「名字」，挖文章署名同源）写进 skill
+  提示词；skill `book.json.author` 不再默认王建硕，没名字整个不署。
+  `build.mjs` 索引页新增 `<meta name="author">`；Pages 书架印章按作者出
+  （中文 3 字去姓；存量无 author 的书归「建硕」），books JSON 加 `author`。
+  `payload.author` 可显式覆盖（App 暂不传，lab 自取）。
+- **book-charge dry 响应带 `need_suanli`**——价目字段两种结果同形。
+- 部署：agent worker（1350 测试绿）+ Pages + lab VPS + VPS skill 全部上线；
+  冒烟：加油现价 75、邀请现价 338、dry 返回 320/余额。iOS 153 单测绿，
+  模拟器实拍两态（余额够 / 新账号 200 不够——差 120、约 2 次加油或 1 个
+  邀请就够，与服务端数字一致）。
+
 ## 第三个 tab「写书」= 图书馆书架（2026-08-11，iOS + Pages 已部署）
 
 设计稿 `Books.dc.html` ①（design 项目 claude.ai/design/p/834ad7a9…）。只落地
