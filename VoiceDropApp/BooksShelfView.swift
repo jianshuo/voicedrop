@@ -1,4 +1,5 @@
 import SwiftUI
+import WebKit
 
 // MARK: - 「写书」tab · 图书馆（设计稿 Books.dc.html ①）
 //
@@ -6,13 +7,14 @@ import SwiftUI
 // 红色加号），点开现有的 BookWritingSheet；后面是公开书架 voicedrop.cn/books/ 上
 // 已出版的书。有 cover.jpg 的书直接铺封面图（保留书脊、页口、投影的实体感），
 // 没有的用书名＋副标题排一张布面缺省封面，颜色由服务端按 slug 哈希稳定分配。
-// 点一本书 → 站内 Safari 打开 voicedrop.cn/books/<slug>/（阅读体验沿用网页版）。
+// 点一本书 → 原地推入 BookReaderView（同一导航栈，像打开一篇文章），内嵌
+// WKWebView 显示 voicedrop.cn/books/<slug>/ 的网页书（阅读体验沿用网页版）。
 //
 // 数据 = GET voicedrop.cn/books/?format=json（公开无鉴权，60s 缓存）：
 // {books:[{slug,title,main,sub,c,c2,cover,chapters}]}。最近一次成功的响应存
 // UserDefaults，离线/加载中先画上次的书架。
 
-struct ShelfBook: Decodable, Identifiable, Equatable {
+struct ShelfBook: Decodable, Identifiable, Equatable, Hashable {
     let slug: String
     let title: String
     let main: String
@@ -98,11 +100,7 @@ struct BooksShelfView: View {
         .task { await store.load() }
         .onAppear { Analytics.screen("书架") }
         .sheet(isPresented: $showBookWriting) { BookWritingSheet() }
-        .sheet(item: $openBook) { book in
-            if let url = book.pageURL {
-                SafariView(url: url).ignoresSafeArea()
-            }
-        }
+        .navigationDestination(item: $openBook) { book in BookReaderView(book: book) }
     }
 
     // MARK: rows（第一格永远是写书入口，两格一排）
@@ -285,4 +283,50 @@ struct BooksShelfView: View {
             .padding(.horizontal, -6)
             .padding(.bottom, 14)
     }
+}
+
+// MARK: - 读一本书（原地推入，设计稿 Books.dc.html ④ 的头部样式）
+
+/// 点书后推入同一导航栈：暖纸顶栏（返回键 + 宋体书名）+ 内嵌 WKWebView 显示
+/// voicedrop.cn/books/<slug>/ 的网页书。章节跳转都在这个 WebView 里进行，
+/// 左缘手势先回退网页历史，退无可退时由系统 pop 回书架。
+struct BookReaderView: View {
+    @Environment(\.dismiss) private var dismiss
+    let book: ShelfBook
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 14) {
+                NavSquare(systemName: "chevron.left") { dismiss() }.accessibilityLabel("返回")
+                Text(book.main)
+                    .font(.custom("Songti SC", size: 21).weight(.semibold))
+                    .foregroundStyle(Theme.ink).lineLimit(1)
+                Spacer()
+            }
+            .padding(.horizontal, 20).padding(.top, 6).padding(.bottom, 10)
+            if let url = book.pageURL {
+                BookWebView(url: url)
+                    .ignoresSafeArea(edges: .bottom)
+            }
+        }
+        .background(Theme.appBG.ignoresSafeArea())
+        .toolbar(.hidden, for: .navigationBar)
+        .onAppear { Analytics.screen("读书") }
+    }
+}
+
+private struct BookWebView: UIViewRepresentable {
+    let url: URL
+
+    func makeUIView(context: Context) -> WKWebView {
+        let wv = WKWebView()
+        wv.allowsBackForwardNavigationGestures = true
+        wv.isOpaque = false
+        wv.backgroundColor = UIColor(Theme.appBG)   // 加载间隙透出暖纸色，不闪白
+        wv.scrollView.backgroundColor = UIColor(Theme.appBG)
+        wv.load(URLRequest(url: url))
+        return wv
+    }
+
+    func updateUIView(_ wv: WKWebView, context: Context) {}
 }

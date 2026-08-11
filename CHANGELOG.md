@@ -13,7 +13,10 @@ fire-and-forget，读书沿用网页版。
   搁板，**第一格固定是「写书」入口**（虚线封面 + 红加号）→ 弹现有
   `BookWritingSheet`；书封：有 cover.jpg 直接铺图（保留书脊/页口/投影），
   没有就布面缺省封面（宋体书名 + 细线 + 副题，颜色 = 服务端按 slug 哈希，
-  和网页书架同色）。点一本书 → 站内 Safari 开 `voicedrop.cn/books/<slug>/`。
+  和网页书架同色）。点一本书 → **原地推入 `BookReaderView`**（同一导航栈，
+  像打开一篇文章）：暖纸顶栏（返回键 + 宋体书名）+ 内嵌 WKWebView 显示
+  `voicedrop.cn/books/<slug>/`，章节跳转都在 WebView 里、左缘手势先退网页
+  历史再 pop 回书架（初版曾是底部 Safari sheet，按用户要求同日改推入）。
   数据缓存在 UserDefaults，离线先画上次的书架。红色录音键在写书 tab 隐藏
   （第一格自己就是入口）。
 - **tab 头自动滚动**：`tabHeader` 包 `ScrollViewReader`，选中的 tab 自动滚进

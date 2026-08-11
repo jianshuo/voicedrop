@@ -272,7 +272,8 @@ SwiftUI 按 Theme 原生排版，顶部章节 chips 跳转。**内容真源 = ji
 `BooksShelfView.swift`：实体书书架（两本一排 + 搁板），**第一格固定「写书」入口**
 （虚线封面 + 红加号）→ 弹 `BookWritingSheet`；后面是公开书架的书——有 cover.jpg
 铺图，没有就布面缺省封面（宋体主/副题 + slug 哈希配色，与网页书架同源）。点书 →
-站内 Safari 开 `voicedrop.cn/books/<slug>/`。数据 = **`GET voicedrop.cn/books/
+原地推入 `BookReaderView`（同一导航栈：返回键+宋体书名顶栏，内嵌 WKWebView 显示
+`voicedrop.cn/books/<slug>/`，章节跳转留在 WebView 内）。数据 = **`GET voicedrop.cn/books/
 ?format=json`**（jianshuo.dev Pages `functions/voicedrop/books/[[path]].js`，公开
 无鉴权 60s 缓存）：`{books:[{slug,title,main,sub,c,c2,cover,chapters}]}`，chapters =
 顶层章节 html 数（index/intro 不算，单页书 0 → App 回落显示副题）。UserDefaults 缓存
