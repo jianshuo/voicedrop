@@ -2,6 +2,13 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 1.10 提交 App Store 审核（2026-08-12）
+
+垫 MARKETING_VERSION 1.9→1.10（主 target 与 VoiceDropShare 扩展对齐，扩展此前一直落在 1.8），
+双语 release notes 主打「写书」tab 与正文块级 Markdown 排版。流程照旧：单测 176 条全过 →
+push main 出 TestFlight 构建 → dispatch `appstore` → `fastlane release skip_build:true`。
+ASC 已确认 1.10 WAITING_FOR_REVIEW，`release/1.10` 标签已打。
+
 ## 正文块级 Markdown 渲染：#/## 标题、列表、引用、分隔线（2026-08-11 第三弹）
 
 此前正文只走 `AttributedString(.inlineOnlyPreservingWhitespace)`——**粗体**、`代码`、
