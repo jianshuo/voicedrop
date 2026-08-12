@@ -1,7 +1,4 @@
 What's new:
-• Rock-solid uploads: lock the screen, switch apps, or even kill the app right after recording — the system finishes the upload in the background
-• Much faster uploads on weak networks: audio goes first, no longer waiting behind photos
-• New built-in User Manual: Settings → About, readable offline with chapter navigation
-• New Feedback: Settings → About, one sentence straight to the developer
-• Community now sorts by newest by default, plus a new search
-• Fixed false "rewrite failed" on long recordings and rewrite failures caused by certain photos
+• New "Write a Book" tab: turn your recordings and articles into a real book. A library-style bookshelf — tap a book to read it right in the app; book writing keeps going even after you close the app
+• Richer article formatting: headings, lists, quotes, and dividers
+• Various polish and bug fixes
