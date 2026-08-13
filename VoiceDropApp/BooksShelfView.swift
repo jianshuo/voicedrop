@@ -69,7 +69,6 @@ struct BooksShelfView: View {
     @State private var store = BooksShelfStore()
     @State private var showBookWriting = false
     @State private var openBook: ShelfBook?
-    @State private var sharePayload: SharePayload?
 
     /// 封面文字用的奶油白（布面书封上的烫字）。
     private static let cream = Color(hex: "F7F1DF")
@@ -103,7 +102,6 @@ struct BooksShelfView: View {
         .task { await store.load() }
         .onAppear { Analytics.screen("书架") }
         .sheet(isPresented: $showBookWriting) { BookWritingSheet() }
-        .sheet(item: $sharePayload) { ShareSheet(items: $0.activityItems) }
         .navigationDestination(item: $openBook) { book in BookReaderView(book: book) }
     }
 
@@ -176,42 +174,6 @@ struct BooksShelfView: View {
             }
         }
         .buttonStyle(.plain)
-        // ⋯ 菜单盖在 Button 外面（放 label 里会被整格点击吞掉），仿社区文章的更多菜单。
-        .overlay(alignment: .topTrailing) { bookMenu(book) }
-    }
-
-    /// 封面右上角的 ⋯（仿 VD 社区）：深色小方块 + 白色三点，展开分享。
-    private func bookMenu(_ book: ShelfBook) -> some View {
-        Menu {
-            Button { Task { await shareBook(book) } } label: {
-                Label("分享", systemImage: "square.and.arrow.up")
-            }
-        } label: {
-            RoundedRectangle(cornerRadius: 7)
-                .fill(.black.opacity(0.42))
-                .frame(width: 28, height: 28)
-                .overlay {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 13, weight: .semibold)).foregroundStyle(.white)
-                }
-                .padding(6)          // 让出书封圆角，也扩大热区
-        }
-        .accessibilityLabel("更多")
-    }
-
-    /// 分享一本书：微信拿裸链接出富卡片（有 cover.jpg 就带上当缩略图），
-    /// X / 复制等拿「《书名》— 作者 + 链接」的整段文字。同社区的 SharePayload 通路。
-    private func shareBook(_ book: ShelfBook) async {
-        guard let url = book.pageURL else { return }
-        let byline = (book.author?.isEmpty == false) ? " — \(book.author!)" : ""
-        let text = "《\(book.title)》\(byline)\n\(url.absoluteString)"
-        var image: UIImage?
-        if book.cover, let coverURL = book.coverURL,
-           let (data, resp) = try? await URLSession.shared.data(from: coverURL), resp.isOK {
-            image = UIImage(data: data)
-        }
-        Analytics.capture("分享书", ["书": book.slug])
-        sharePayload = SharePayload(text: text, url: url, title: book.title, image: image)
     }
 
     private func metaLine(_ book: ShelfBook) -> String {
@@ -333,6 +295,7 @@ struct BooksShelfView: View {
 struct BookReaderView: View {
     @Environment(\.dismiss) private var dismiss
     let book: ShelfBook
+    @State private var sharePayload: SharePayload?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -342,6 +305,7 @@ struct BookReaderView: View {
                     .font(.custom("Songti SC", size: 21).weight(.semibold))
                     .foregroundStyle(Theme.ink).lineLimit(1)
                 Spacer()
+                moreMenu
             }
             .padding(.horizontal, 20).padding(.top, 6).padding(.bottom, 10)
             if let url = book.pageURL {
@@ -352,6 +316,41 @@ struct BookReaderView: View {
         .background(Theme.appBG.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .onAppear { Analytics.screen("读书") }
+        .sheet(item: $sharePayload) { ShareSheet(items: $0.activityItems) }
+    }
+
+    /// 顶栏右上角的 ⋯（仿 VD 社区文章页）：深色方块 + 白色三点，展开分享。
+    private var moreMenu: some View {
+        Menu {
+            Button { Task { await shareBook() } } label: {
+                Label("分享", systemImage: "square.and.arrow.up")
+            }
+        } label: {
+            RoundedRectangle(cornerRadius: Theme.R.nav)
+                .fill(Theme.ink)
+                .frame(width: 38, height: 38)
+                .overlay {
+                    Image(systemName: "ellipsis").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                }
+                .navButtonShadow()
+        }
+        .accessibilityLabel("更多")
+    }
+
+    /// 分享这本书：微信拿裸链接 voicedrop.cn/books/<slug>/ 出富卡片（有 cover.jpg
+    /// 就带上当缩略图），X / 复制等拿「《书名》— 作者 + 链接」的整段文字。
+    /// 同社区的 SharePayload 通路。
+    private func shareBook() async {
+        guard let url = book.pageURL else { return }
+        let byline = (book.author?.isEmpty == false) ? " — \(book.author!)" : ""
+        let text = "《\(book.title)》\(byline)\n\(url.absoluteString)"
+        var image: UIImage?
+        if book.cover, let coverURL = book.coverURL,
+           let (data, resp) = try? await URLSession.shared.data(from: coverURL), resp.isOK {
+            image = UIImage(data: data)
+        }
+        Analytics.capture("分享书", ["书": book.slug])
+        sharePayload = SharePayload(text: text, url: url, title: book.title, image: image)
     }
 }
 

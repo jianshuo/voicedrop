@@ -9,11 +9,12 @@
   的诞生时间 = 书文件夹里**最早**的 R2 `uploaded`（index.html 会反复重发刷新时间戳，
   最早的文件基本不动，当创建时间最稳；同龄兜底按书名排保证稳定）。JSON 索引多了
   `createdAt`（epoch ms）字段；iOS/网页书架照单全收，零客户端排序逻辑。
-- **书架每本书封面右上角加 ⋯ 菜单（仿 VD 社区）**，目前一项「分享」：微信拿裸链接
-  `voicedrop.cn/books/<slug>/` 出富卡片（有 cover.jpg 时带上当缩略图），X/复制等拿
-  「《书名》— 作者 + 链接」整段文字——复用社区的 `SharePayload`/`ShareSheet` 通路。
-  ⋯ 覆盖在整格 Button **外面**（放 label 里会被整格点击吞掉）。`ShelfBook` 新增
-  `author: String?`（老 UserDefaults 缓存里没有，必须 optional 否则解码失败丢缓存）。
+- **读书页（BookReaderView）顶栏右上角加 ⋯ 菜单（仿 VD 社区文章页）**，目前一项
+  「分享」：微信拿裸链接 `voicedrop.cn/books/<slug>/` 出富卡片（有 cover.jpg 时带上
+  当缩略图），X/复制等拿「《书名》— 作者 + 链接」整段文字——复用社区的
+  `SharePayload`/`ShareSheet` 通路。（首版曾放书架封面右上角，按反馈挪进阅读页顶栏。）
+  `ShelfBook` 新增 `author: String?`（老 UserDefaults 缓存里没有，必须 optional
+  否则解码失败丢缓存）。
 
 ## 文章专属封面 cover.jpg：列表行图标按书本 2:3 竖版优先显示（2026-08-13）
 
