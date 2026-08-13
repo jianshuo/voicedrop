@@ -285,6 +285,13 @@ struct Recording: Identifiable, Hashable {
 
     var id: String { audioName }
     var stem: String { String(audioName.dropLast(4)) }          // strip .m4a
+
+    /// Candidate rel key of this article's dedicated cover (`photos/<ts>/cover.jpg`).
+    /// Existence is unknown here — the row icon probes it and falls back to the
+    /// first-photo icon when absent. nil when the stem doesn't parse.
+    var coverJpgKey: String? {
+        RecordingName.parse(stem).map { RecordingName.coverKey(sessionTs: $0.sessionTs) }
+    }
     var articleKey: String { Recording.articleKey(forStem: stem) }
     var emptyKey: String { Recording.emptyKey(forStem: stem) }
     var srtKey: String { Recording.srtKey(forStem: stem) }

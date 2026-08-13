@@ -520,10 +520,13 @@ struct LibraryView: View {
     private func rowCard(_ rec: Recording) -> some View {
         let empty = rec.isEmpty
         return HStack(spacing: 13) {
-            // The article's first photo as the row icon when it has one; otherwise
-            // the waveform tile (also the fallback while the photo loads / on fail).
-            if let cover = rec.coverPhotoKey {
-                RowCoverIcon(store: store, relKey: cover)
+            // The dedicated cover.jpg (2:3 book ratio) when the article has one,
+            // else the article's first photo as a square icon; otherwise the
+            // waveform tile (also the fallback while images load / on fail).
+            if rec.hasArticles || rec.coverPhotoKey != nil {
+                RowCoverIcon(store: store,
+                             coverKey: rec.hasArticles ? rec.coverJpgKey : nil,
+                             relKey: rec.coverPhotoKey)
             } else {
                 waveTile(empty: empty)
             }
@@ -734,42 +737,72 @@ struct LibraryView: View {
     }
 }
 
-/// A 42×42 row icon showing the article's first photo. Loads it once (own scope +
-/// rel key, same public `/photo/<key>` path as PhotoTile); shows the waveform tile
-/// until the image lands and if it can't load — so a row never looks broken.
+/// The article's row icon. Prefers the dedicated cover (`photos/<ts>/cover.jpg`,
+/// shown as a 2:3 book-shaped thumbnail — the standard book-cover ratio); falls
+/// back to the first photo as a 42×42 square, then to the waveform tile — so a
+/// row never looks broken. cover.jpg misses are remembered for the session so
+/// scrolling doesn't re-probe a 404.
 private struct RowCoverIcon: View {
     let store: LibraryStore
-    let relKey: String
+    let coverKey: String?       // photos/<ts>/cover.jpg candidate (nil = don't probe)
+    let relKey: String?         // first-photo fallback (nil = waveform fallback)
     @State private var image: UIImage?
+    @State private var isBookCover = false
 
     /// Process-wide decoded-image cache, shared across every row. Keyed by rel key
     /// (unique per photo). NSCache evicts under memory pressure on its own. This is
     /// what stops a re-download every time a row scrolls back into view.
     private static let cache = NSCache<NSString, UIImage>()
+    /// Session-lifetime negative cache: cover.jpg keys that 404'd. In-memory only —
+    /// a cover generated later shows up on next app launch (never pinned on disk,
+    /// the lesson of the "正在制作中卡死" URL-level negative cache).
+    @MainActor private static var coverMissing = Set<String>()
 
     var body: some View {
-        RoundedRectangle(cornerRadius: Theme.R.card)
-            .fill(Theme.recordRedSoft)
-            .frame(width: 42, height: 42)
-            .overlay {
-                if let image {
-                    Image(uiImage: image).resizable().scaledToFill()
-                } else {
-                    WaveformBars(color: Theme.recordRed, heights: [11, 19, 14], barWidth: 3, spacing: 2.5)
-                }
+        Group {
+            if let image, isBookCover {
+                // Book cover: 2:3 portrait (the common trade-book jacket ratio).
+                Image(uiImage: image).resizable().scaledToFill()
+                    .frame(width: 40, height: 60)
+                    .clipShape(RoundedRectangle(cornerRadius: 5))
+                    .overlay(RoundedRectangle(cornerRadius: 5).stroke(Theme.borderChrome, lineWidth: 1))
+            } else {
+                RoundedRectangle(cornerRadius: Theme.R.card)
+                    .fill(Theme.recordRedSoft)
+                    .frame(width: 42, height: 42)
+                    .overlay {
+                        if let image {
+                            Image(uiImage: image).resizable().scaledToFill()
+                        } else {
+                            WaveformBars(color: Theme.recordRed, heights: [11, 19, 14], barWidth: 3, spacing: 2.5)
+                        }
+                    }
+                    .frame(width: 42, height: 42)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.R.card))
             }
-            .frame(width: 42, height: 42)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.R.card))
-            .task(id: relKey) { await load() }
+        }
+        .task(id: "\(coverKey ?? "")|\(relKey ?? "")") { await load() }
     }
 
     private func load() async {
-        // Cache hit → show instantly, no network, no waveform flash. (Set to the
-        // cached image for THIS key — or nil if absent — so a recycled row never
-        // shows the previous photo.)
-        let cached = Self.cache.object(forKey: relKey as NSString)
-        image = cached
-        if cached != nil { return }
+        // Cache hits → show instantly, no network, no waveform flash. (Set for THIS
+        // row's keys — or nil if absent — so a recycled row never shows the previous
+        // photo.) The dedicated cover always wins over the first photo.
+        if let coverKey, let cached = Self.cache.object(forKey: coverKey as NSString) {
+            image = cached; isBookCover = true; return
+        }
+        isBookCover = false
+        image = relKey.flatMap { Self.cache.object(forKey: $0 as NSString) }
+        if let coverKey, !Self.coverMissing.contains(coverKey) {
+            guard let scope = await store.ownerScope() else { return }
+            if let ui = await store.photoImage(fullKey: scope + coverKey, preferThumb: true) {
+                Self.cache.setObject(ui, forKey: coverKey as NSString)
+                if !Task.isCancelled { image = ui; isBookCover = true }
+                return
+            }
+            Self.coverMissing.insert(coverKey)
+        }
+        guard image == nil, let relKey else { return }
         guard let scope = await store.ownerScope() else { return }
         if let ui = await store.photoImage(fullKey: scope + relKey, preferThumb: true) {
             Self.cache.setObject(ui, forKey: relKey as NSString)

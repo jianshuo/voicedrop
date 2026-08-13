@@ -78,6 +78,13 @@ enum RecordingName {
         "photos/\(sessionTs)/\(max(0, offset))-\(randomTag()).jpg"
     }
 
+    /// The R2 relative key for an article's dedicated cover image:
+    /// `photos/<sessionTs>/cover.jpg`. Lives next to the recording's scene photos so
+    /// the existing public `/photo/<key>` endpoint serves it with no server change.
+    /// Write-once by convention — PhotoService trusts cached bytes forever per key,
+    /// so regenerating a cover must NOT overwrite this key silently.
+    static func coverKey(sessionTs: String) -> String { "photos/\(sessionTs)/cover.jpg" }
+
     /// `count` random base36 chars (0-9a-z). 3 → 46,656 combos: even 9 photos sharing
     /// one offset-second collide with ~0.08% probability — comfortably safe, still tiny.
     static func randomTag(_ count: Int = 3) -> String {

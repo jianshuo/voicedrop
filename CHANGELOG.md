@@ -2,6 +2,26 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 文章专属封面 cover.jpg：列表行图标按书本 2:3 竖版优先显示（2026-08-13）
+
+新约定：`users/<sub>/photos/<sessionTs>/cover.jpg` = 该文章的专属封面。与场景照片
+同目录——公开 `/photo/<key>` 端点、PUT 上传路径、删录音连带清理全部零服务端改动。
+key 真源 `RecordingName.coverKey(sessionTs:)`（挨着 photoKey）；`Recording.coverJpgKey`
+从 stem 解析。显示侧只动了「文章」tab 的行图标（`RowCoverIcon`）：
+
+- 优先探测 cover.jpg，存在 → **40×60（2:3 书本比例）**竖版缩略图；不存在 → 回退
+  原有首图 42×42 方块 → 波形图标。已成文但无照片的行现在也会探测（原先直接波形）。
+- 探测 miss 记**会话级内存负缓存**（不落盘，吸取「正在制作中卡死」URL 负缓存教训）——
+  晚生成的封面下次冷启动自愈显示。PhotoService 的 thumbMissed 是按单 key 记的，
+  cover.jpg 404 不会误伤全局缩图；失败响应本来就不落盘。
+- ⚠️ **cover.jpg 按约定视为一次性写入**：PhotoService 磁盘缓存按 key 信一辈子，
+  覆盖重写同 key 不会刷新已缓存设备。将来要换封面需换 key 或引入版本化。
+- 生成侧还没有：谁来产出 cover.jpg（后处理流水线/手动上传）待定，显示侧已就绪。
+- 社区卡片（cover_photo_key）与公开网页未动——它们仍用首图；要吃上 cover.jpg 需
+  动 D1 索引 upsert（cardExtras），留作后续。
+- 测试：`VoiceDropTests/RecordingCoverTests.swift`（4 条，XCTest——本仓测试统一
+  XCTest，别用 swift-testing，`-only-testing` 会静默匹配不到）。
+
 ## 1.10 提交 App Store 审核（2026-08-12）
 
 垫 MARKETING_VERSION 1.9→1.10（主 target 与 VoiceDropShare 扩展对齐，扩展此前一直落在 1.8），
