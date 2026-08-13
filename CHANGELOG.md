@@ -2,6 +2,17 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 网页书架与 iOS 写书 tab 完全同款（2026-08-13）
+
+`voicedrop.cn/books/` 的 HTML 书架重写成和 `BooksShelfView.swift` 一比一：暖纸底、
+两本一排 + 木搁板、第一格写书入口（网页上链到 voicedrop.cn 落地页）、cover.jpg
+铺图 / 布面缺省封面、书脊页口投影全套。代码在 jianshuo.dev
+`functions/voicedrop/books/[[path]].js`（1bee57b），**两边样式改任何一边记得同步**。
+数据侧 cover/chapters 并进 collectBooks 的同一次全量列举（原 indexJSON 的 head+
+delimited list enrich 删了，R2 调用减半）。踩坑：grid 列必须 `minmax(0,1fr)`——
+`1fr` 隐式 min-content 下限会被 nowrap 长书名撑破列宽，封面按 0.7 比例跟着变高，
+同排两本高矮不一。
+
 ## 写书书架：时间倒序 + 每本书 ⋯ 分享菜单（2026-08-13）
 
 - **书架顺序改为时间倒序，最新的书在最前**。排序在服务端
