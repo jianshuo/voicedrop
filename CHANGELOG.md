@@ -2,6 +2,19 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 写书书架：时间倒序 + 每本书 ⋯ 分享菜单（2026-08-13）
+
+- **书架顺序改为时间倒序，最新的书在最前**。排序在服务端
+  （jianshuo.dev `functions/voicedrop/books/[[path]].js` 的 `collectBooks`）：每本书
+  的诞生时间 = 书文件夹里**最早**的 R2 `uploaded`（index.html 会反复重发刷新时间戳，
+  最早的文件基本不动，当创建时间最稳；同龄兜底按书名排保证稳定）。JSON 索引多了
+  `createdAt`（epoch ms）字段；iOS/网页书架照单全收，零客户端排序逻辑。
+- **书架每本书封面右上角加 ⋯ 菜单（仿 VD 社区）**，目前一项「分享」：微信拿裸链接
+  `voicedrop.cn/books/<slug>/` 出富卡片（有 cover.jpg 时带上当缩略图），X/复制等拿
+  「《书名》— 作者 + 链接」整段文字——复用社区的 `SharePayload`/`ShareSheet` 通路。
+  ⋯ 覆盖在整格 Button **外面**（放 label 里会被整格点击吞掉）。`ShelfBook` 新增
+  `author: String?`（老 UserDefaults 缓存里没有，必须 optional 否则解码失败丢缓存）。
+
 ## 文章专属封面 cover.jpg：列表行图标按书本 2:3 竖版优先显示（2026-08-13）
 
 新约定：`users/<sub>/photos/<sessionTs>/cover.jpg` = 该文章的专属封面。与场景照片
