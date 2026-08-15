@@ -296,6 +296,7 @@ struct BookReaderView: View {
     @Environment(\.dismiss) private var dismiss
     let book: ShelfBook
     @State private var sharePayload: SharePayload?
+    @State private var toast: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -317,24 +318,69 @@ struct BookReaderView: View {
         .toolbar(.hidden, for: .navigationBar)
         .onAppear { Analytics.screen("读书") }
         .sheet(item: $sharePayload) { ShareSheet(items: $0.activityItems) }
+        .overlay(alignment: .bottom) { toastView }
+        .animation(.easeInOut(duration: 0.2), value: toast)
     }
 
-    /// 顶栏右上角的 ⋯（仿 VD 社区文章页）：深色方块 + 白色三点，展开分享。
+    /// 顶栏右上角的 ⋯（与文章页 moreMenu 同款）：白底灰点 + 描边，展开分享。
     private var moreMenu: some View {
         Menu {
+            Button { Task { await shareToWechat(timeline: false) } } label: {
+                Label("分享给微信好友", systemImage: "message")
+            }
+            Button { Task { await shareToWechat(timeline: true) } } label: {
+                Label("分享到朋友圈", systemImage: "person.2")
+            }
             Button { Task { await shareBook() } } label: {
                 Label("分享", systemImage: "square.and.arrow.up")
             }
         } label: {
             RoundedRectangle(cornerRadius: Theme.R.nav)
-                .fill(Theme.ink)
+                .fill(Theme.card)
                 .frame(width: 38, height: 38)
                 .overlay {
-                    Image(systemName: "ellipsis").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                    Image(systemName: "ellipsis").font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.secondary)
                 }
+                .overlay(RoundedRectangle(cornerRadius: Theme.R.nav).stroke(Theme.borderRead, lineWidth: 1))
                 .navButtonShadow()
         }
         .accessibilityLabel("更多")
+    }
+
+    /// 微信好友 / 朋友圈：App 未接微信 SDK，走小红书同款「剪贴板直达」——
+    /// 把《书名》+ 链接复制进剪贴板，直接唤起微信，用户粘贴即发。
+    private func shareToWechat(timeline: Bool) async {
+        guard let url = book.pageURL else { return }
+        let byline = (book.author?.isEmpty == false) ? " — \(book.author!)" : ""
+        UIPasteboard.general.string = "《\(book.title)》\(byline)\n\(url.absoluteString)"
+        Analytics.capture(timeline ? "分享书到朋友圈" : "分享书给微信好友", ["书": book.slug])
+        showToast(timeline ? String(localized: "链接已复制，去朋友圈粘贴发布")
+                           : String(localized: "链接已复制，粘贴给微信好友"))
+        if let wx = URL(string: "weixin://") {
+            UIApplication.shared.open(wx) { ok in
+                if !ok { Task { @MainActor in showToast(String(localized: "没检测到微信，链接在剪贴板里")) } }
+            }
+        }
+    }
+
+    private func showToast(_ msg: String) {
+        toast = msg
+        Task {
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            if toast == msg { toast = nil }
+        }
+    }
+
+    @ViewBuilder private var toastView: some View {
+        if let toast {
+            Text(toast)
+                .font(.system(size: 15)).foregroundStyle(Theme.inkRead)
+                .padding(.horizontal, 18).padding(.vertical, 12)
+                .background(.ultraThinMaterial, in: Capsule())
+                .overlay(Capsule().stroke(Theme.borderRead, lineWidth: 1))
+                .padding(.bottom, 32)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+        }
     }
 
     /// 分享这本书：微信拿裸链接 voicedrop.cn/books/<slug>/ 出富卡片（有 cover.jpg
