@@ -297,6 +297,8 @@ struct BookReaderView: View {
     let book: ShelfBook
     @State private var sharePayload: SharePayload?
     @State private var toast: String?
+    @State private var showRevise = false
+    @State private var reloadStamp = 0   // 修改 sheet 关掉后 +1，强制 WebView 重载看最新版
 
     var body: some View {
         VStack(spacing: 0) {
@@ -311,6 +313,7 @@ struct BookReaderView: View {
             .padding(.horizontal, 20).padding(.top, 6).padding(.bottom, 10)
             if let url = book.pageURL {
                 BookWebView(url: url)
+                    .id(reloadStamp)   // 修改 sheet 关掉后换实例重载，立刻看到新版
                     .ignoresSafeArea(edges: .bottom)
             }
         }
@@ -318,6 +321,7 @@ struct BookReaderView: View {
         .toolbar(.hidden, for: .navigationBar)
         .onAppear { Analytics.screen("读书") }
         .sheet(item: $sharePayload) { ShareSheet(items: $0.activityItems) }
+        .sheet(isPresented: $showRevise, onDismiss: { reloadStamp += 1 }) { BookReviseSheet(book: book) }
         .overlay(alignment: .bottom) { toastView }
         .animation(.easeInOut(duration: 0.2), value: toast)
     }
@@ -325,6 +329,9 @@ struct BookReaderView: View {
     /// 顶栏右上角的 ⋯（与文章页 moreMenu 同款）：白底灰点 + 描边，展开分享。
     private var moreMenu: some View {
         Menu {
+            Button { showRevise = true } label: {
+                Label("修改这本书", systemImage: "pencil.line")
+            }
             Button { Task { await shareToWechat(timeline: false) } } label: {
                 Label("分享给微信好友", systemImage: "message")
             }

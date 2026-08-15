@@ -2,6 +2,37 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 修书：写好的书在 App 里持续修改 + 每本书一条永久对话线（2026-08-15，全链已部署）
+
+写书从「一锤子」变成「可持续对话」：读书页 ⋯ 菜单 → **「修改这本书」**，聊天式界面
+——上面是这本书的永久历史（开书种子 + 每次修改指令 + agent 改完写的「修改说明」），
+底部输入框提新指令，**每次 40 算力**。fire-and-forget（202 后可关 App），运行中每 6s
+轮询；sheet 关掉后 WebView 换实例重载看新版。
+
+- **服务端登记簿（谁能修 = 主人）**：lab VPS `bookmeta/<slug>.json` =
+  `{slug,scope,author,createdAt,thread:[{ts,kind:create|revise,instruction,sessionId,
+  status:running|done|failed,reply}]}`。创建时登记：`runBookJob` 把随机 jobId 塞进
+  prompt 让 agent 写进 book.json，job 收尾拿 jobId 反查 slug 落盘（找不到落
+  `_unmatched-` 供人工对号）；同时捕获 SDK session_id——完整过程 jsonl 永远可在
+  lab 网页（密码门）`/api/sessions/<id>` 回看。存量 48 本书中署名「王建硕」的 9 本
+  已手工登记到建硕 scope；无署名老书无法安全断定归属，**未登记 = 404 不能在线修**。
+- **lab 新端点**：`POST /api/book/revise {slug,instruction}`（主人校验在扣费**前**：
+  先 dry 探路拿 scope 比对，403 一分不扣；同书单飞 409）；`GET /api/book/history
+  ?slug=`（主人可见对话线）。Caddy 豁免改成 `/api/book /api/book/*`。
+- **修书 = fresh session + 文件真源，不 resume 写书旧 session**（子 agent 的正文
+  本来就不在主对话里，背整段历史只多花钱）。skill 新增「修书模式」：工作目录
+  `workspace/book-<slug>`（**写书约定同步从 /tmp 挪到 workspace**——PrivateTmp 重启
+  即失）；缺目录用 `build.mjs pull` 从线上 `_src/` 源稿镜像重建（build.mjs 每次发布
+  顺手镜像 book.json/章节片段/导读到 `books/<slug>/_src/`，书架统计只看顶层不受
+  影响）；`_src` 之前的老书走「抓渲染页提取 `<article>`」手工重建。修完只发动过的
+  章节，收尾输出 200 字内「修改说明」→ 即 thread 里的 reply。
+- **worker**：book-charge 接受 `kind:"revise"` → 40 算力（`BOOK_REVISE_SUANLI`，
+  usage.js），ledger reason `book-revise`（「修书」）带 slug。测试 +1 例（1372 绿）。
+- **iOS**：`BookReviseSheet.swift`（对话线 + 输入框 + 402/403/404/409 文案），
+  `BookThread/BookThreadEntry` 解码模型；`BookReviseThreadTests` +3 例（183 绿）。
+  埋点「修书发起 / 修书已受理」、screen「修改书」。
+- 上线自测：真实修书《散场之后》(entropy) 走「老书无 _src 手工重建」最难路径。
+
 ## 网页书架与 iOS 写书 tab 完全同款（2026-08-13）
 
 `voicedrop.cn/books/` 的 HTML 书架重写成和 `BooksShelfView.swift` 一比一：暖纸底、
