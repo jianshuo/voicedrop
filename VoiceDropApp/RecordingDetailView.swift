@@ -577,6 +577,12 @@ struct RecordingDetailView: View {
                 Label("分享到小红书", systemImage: "book.closed")
             }
             .disabled(xhsWorking)
+            Button { Task { await shareToWechat(timeline: false) } } label: {
+                Label("分享给微信好友", systemImage: "message")
+            }
+            Button { Task { await shareToWechat(timeline: true) } } label: {
+                Label("分享到朋友圈", systemImage: "person.2")
+            }
             Button { Task { await share() } } label: {
                 Label("分享", systemImage: "square.and.arrow.up")
             }
@@ -617,6 +623,25 @@ struct RecordingDetailView: View {
         let image = await firstPhotoImage()                  // best-effort card thumbnail
         sharePayload = SharePayload(text: allText + "\n\n" + u.absoluteString,
                                     url: u, title: title, image: image)
+    }
+
+    /// 微信好友 / 朋友圈：OpenSDK 网页卡片，同 share() 的公开短链。文案 = 文章
+    /// 标题 + 正文开头 44 字当描述（朋友圈只显示标题行），缩略图 = 第一张照片。
+    private func shareToWechat(timeline: Bool) async {
+        Analytics.capture(timeline ? "分享文章到朋友圈" : "分享文章给微信好友")
+        guard let u = await store.shareURL(recording, section: articleIndex) else {
+            showToast(String(localized: "文章还没挖好，稍后再试")); return
+        }
+        let article = articles[safe: articleIndex]
+        let title = article?.title ?? "VoiceDrop"
+        guard WeChatShare.isInstalled else {
+            UIPasteboard.general.string = "\(title)\n\(u.absoluteString)"
+            showToast(String(localized: "没检测到微信，链接在剪贴板里")); return
+        }
+        WeChatShare.shareWebpage(url: u, title: title,
+                                 description: WeChatShare.excerpt(article?.body,
+                                                                  fallback: String(localized: "一篇口述而成的文章")),
+                                 thumb: await firstPhotoImage(), timeline: timeline)
     }
 
     /// The first photo of the currently-shown article, used as the WeChat link-card

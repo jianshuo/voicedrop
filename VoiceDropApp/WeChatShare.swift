@@ -49,6 +49,18 @@ final class WeChatShare: NSObject, WXApiDelegate, @unchecked Sendable {   // 无
         WXApi.send(req)
     }
 
+    /// 文章卡片的描述行：正文开头自然截 44 字——真实内容当钩子，好过任何口号；
+    /// 微信好友卡片描述约显示一行半，44 字刚好占满又不被拦腰截断。
+    static func excerpt(_ body: String?, fallback: String) -> String {
+        guard let body else { return fallback }
+        let plain = ArticleBody.stripMarkers(body)
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        guard !plain.isEmpty else { return fallback }
+        return plain.count <= 44 ? plain : String(plain.prefix(44)) + "……"
+    }
+
     /// 缩略图 ≤ 32KB：先等比缩到长边 300px，再从 0.8 逐级降 JPEG 质量。
     private static func thumbData(_ image: UIImage) -> Data? {
         let maxSide: CGFloat = 300

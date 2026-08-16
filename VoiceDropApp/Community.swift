@@ -646,6 +646,12 @@ struct CommunityPostView: View {
                 Button { Task { await startResponse() } } label: {
                     Label("写回应", systemImage: "mic")
                 }
+                Button { Task { await sharePostToWechat(timeline: false) } } label: {
+                    Label("分享给微信好友", systemImage: "message")
+                }
+                Button { Task { await sharePostToWechat(timeline: true) } } label: {
+                    Label("分享到朋友圈", systemImage: "person.2")
+                }
                 Button { Task { await sharePost() } } label: {
                     Label("分享", systemImage: "square.and.arrow.up")
                 }
@@ -1040,6 +1046,27 @@ struct CommunityPostView: View {
         let image = await firstPhotoImage()                  // best-effort card thumbnail
         sharePayload = SharePayload(text: allText + "\n\n" + url.absoluteString,
                                     url: url, title: title, image: image)
+    }
+
+    /// 微信好友 / 朋友圈：OpenSDK 网页卡片，与 sharePost 同一条 /voicedrop/<shareId>
+    /// 公链。文案 = 文章标题 + 「作者 · 正文开头」当描述（替作者署名——分享的是
+    /// 别人的文章），缩略图 = 第一张照片。
+    private func sharePostToWechat(timeline: Bool) async {
+        Analytics.capture(timeline ? "分享社区帖到朋友圈" : "分享社区帖给微信好友", ["帖": post.shareId])
+        let article = full?.articles?[safe: articleIndex]
+        let title = article?.title ?? post.title ?? String(localized: "VoiceDrop 分享")
+        let author = full?.author ?? post.author ?? String(localized: "匿名")
+        guard var comps = URLComponents(url: API.sharePage(post.shareId), resolvingAgainstBaseURL: false) else { return }
+        comps.queryItems = [URLQueryItem(name: "s", value: String(articleIndex))]
+        guard let url = comps.url else { return }
+        guard WeChatShare.isInstalled else {
+            UIPasteboard.general.string = "\(title)\n\(url.absoluteString)"
+            showToast(String(localized: "没检测到微信，链接在剪贴板里")); return
+        }
+        WeChatShare.shareWebpage(url: url, title: title,
+                                 description: author + " · " + WeChatShare.excerpt(article?.body,
+                                                                                   fallback: String(localized: "来自 VD 社区")),
+                                 thumb: await firstPhotoImage(), timeline: timeline)
     }
 
     /// First photo of the currently-shown article — the WeChat link-card thumbnail.

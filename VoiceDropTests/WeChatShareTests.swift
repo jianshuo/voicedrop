@@ -7,6 +7,15 @@ import UIKit
 // 运行时报 unrecognized selector 直接崩——这个测试就是抓这种崩的。
 final class WeChatShareTests: XCTestCase {
 
+    func testExcerptTruncatesAndCollapsesWhitespace() {
+        XCTAssertEqual(WeChatShare.excerpt(nil, fallback: "兜底"), "兜底")
+        XCTAssertEqual(WeChatShare.excerpt("  \n ", fallback: "兜底"), "兜底")
+        XCTAssertEqual(WeChatShare.excerpt("短句。", fallback: "兜底"), "短句。")
+        let long = String(repeating: "字", count: 60) + "\n\n第二段"
+        let out = WeChatShare.excerpt(long, fallback: "兜底")
+        XCTAssertEqual(out, String(repeating: "字", count: 44) + "……")
+    }
+
     @MainActor
     func testShareWebpagePathDoesNotCrash() {
         WeChatShare.register()
