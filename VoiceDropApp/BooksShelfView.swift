@@ -299,6 +299,8 @@ struct BookReaderView: View {
     @State private var toast: String?
     @State private var showRevise = false
     @State private var reloadStamp = 0   // 修改 sheet 关掉后 +1，强制 WebView 重载看最新版
+    @State private var pageURL: URL?     // WebView 当前页（章节跳转跟着变）
+    @State private var pageTitle: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -312,7 +314,7 @@ struct BookReaderView: View {
             }
             .padding(.horizontal, 20).padding(.top, 6).padding(.bottom, 10)
             if let url = book.pageURL {
-                BookWebView(url: url)
+                BookWebView(url: url, pageURL: $pageURL, pageTitle: $pageTitle)
                     .id(reloadStamp)   // 修改 sheet 关掉后换实例重载，立刻看到新版
                     .ignoresSafeArea(edges: .bottom)
             }
@@ -354,14 +356,28 @@ struct BookReaderView: View {
         .accessibilityLabel("更多")
     }
 
+    /// 分享目标 = WebView 当前浏览的页面（章节跳转跟着变）。只认 /books/ 域内的
+    /// 页面（防外链），拿不到就退回书根页。章节页标题用网页 <title>，书根页
+    /// （或标题还没加载出来）用《书名》— 作者。
+    private var currentShare: (url: URL, title: String, isChapter: Bool)? {
+        guard let root = book.pageURL else { return nil }
+        let byline = (book.author?.isEmpty == false) ? " — \(book.author!)" : ""
+        let bookTitle = "《\(book.title)》\(byline)"
+        guard let u = pageURL, u.path.hasPrefix("/books/"), u.path != root.path else {
+            return (root, bookTitle, false)
+        }
+        let t = (pageTitle?.isEmpty == false) ? pageTitle! : bookTitle
+        return (u, t, true)
+    }
+
     /// 微信好友 / 朋友圈：OpenSDK 正规分享——弹微信原生确认页，链接卡片带封面
     /// 缩略图。没装微信才退回旧的「剪贴板直达」。
     private func shareToWechat(timeline: Bool) async {
-        guard let url = book.pageURL else { return }
-        let byline = (book.author?.isEmpty == false) ? " — \(book.author!)" : ""
-        Analytics.capture(timeline ? "分享书到朋友圈" : "分享书给微信好友", ["书": book.slug])
+        guard let target = currentShare else { return }
+        Analytics.capture(timeline ? "分享书到朋友圈" : "分享书给微信好友",
+                          ["书": book.slug, "章节页": target.isChapter])
         guard WeChatShare.isInstalled else {
-            UIPasteboard.general.string = "《\(book.title)》\(byline)\n\(url.absoluteString)"
+            UIPasteboard.general.string = "\(target.title)\n\(target.url.absoluteString)"
             showToast(String(localized: "没检测到微信，链接在剪贴板里"))
             return
         }
@@ -370,9 +386,11 @@ struct BookReaderView: View {
            let (data, resp) = try? await URLSession.shared.data(from: coverURL), resp.isOK {
             thumb = UIImage(data: data)
         }
-        WeChatShare.shareWebpage(url: url,
-                                 title: "《\(book.title)》\(byline)",
-                                 description: String(localized: "VoiceDrop 图书馆 · 点开即读"),
+        let byline = (book.author?.isEmpty == false) ? " — \(book.author!)" : ""
+        WeChatShare.shareWebpage(url: target.url,
+                                 title: target.title,
+                                 description: target.isChapter ? "《\(book.title)》\(byline)"
+                                                               : String(localized: "VoiceDrop 图书馆 · 点开即读"),
                                  thumb: thumb, timeline: timeline)
     }
 
@@ -396,25 +414,28 @@ struct BookReaderView: View {
         }
     }
 
-    /// 分享这本书：微信拿裸链接 voicedrop.cn/books/<slug>/ 出富卡片（有 cover.jpg
-    /// 就带上当缩略图），X / 复制等拿「《书名》— 作者 + 链接」的整段文字。
+    /// 分享（系统面板）：同样跟着 WebView 当前页走——微信拿裸链接出富卡片（有
+    /// cover.jpg 就带上当缩略图），X / 复制等拿「标题 + 链接」的整段文字。
     /// 同社区的 SharePayload 通路。
     private func shareBook() async {
-        guard let url = book.pageURL else { return }
-        let byline = (book.author?.isEmpty == false) ? " — \(book.author!)" : ""
-        let text = "《\(book.title)》\(byline)\n\(url.absoluteString)"
+        guard let target = currentShare else { return }
+        let text = "\(target.title)\n\(target.url.absoluteString)"
         var image: UIImage?
         if book.cover, let coverURL = book.coverURL,
            let (data, resp) = try? await URLSession.shared.data(from: coverURL), resp.isOK {
             image = UIImage(data: data)
         }
-        Analytics.capture("分享书", ["书": book.slug])
-        sharePayload = SharePayload(text: text, url: url, title: book.title, image: image)
+        Analytics.capture("分享书", ["书": book.slug, "章节页": target.isChapter])
+        sharePayload = SharePayload(text: text, url: target.url, title: target.title, image: image)
     }
 }
 
 private struct BookWebView: UIViewRepresentable {
     let url: URL
+    @Binding var pageURL: URL?     // 当前浏览到的页面（章节跳转跟着变）——分享分享的是它
+    @Binding var pageTitle: String?
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeUIView(context: Context) -> WKWebView {
         let wv = WKWebView()
@@ -422,9 +443,23 @@ private struct BookWebView: UIViewRepresentable {
         wv.isOpaque = false
         wv.backgroundColor = UIColor(Theme.appBG)   // 加载间隙透出暖纸色，不闪白
         wv.scrollView.backgroundColor = UIColor(Theme.appBG)
+        // KVO 跟踪 url/title（WebKit 在主线程发）；SPA 内跳转、前进后退都会触发。
+        context.coordinator.urlObs = wv.observe(\.url, options: [.initial, .new]) { wv, _ in
+            let u = wv.url
+            Task { @MainActor in pageURL = u }
+        }
+        context.coordinator.titleObs = wv.observe(\.title, options: [.initial, .new]) { wv, _ in
+            let t = wv.title
+            Task { @MainActor in pageTitle = t }
+        }
         wv.load(URLRequest(url: url))
         return wv
     }
 
     func updateUIView(_ wv: WKWebView, context: Context) {}
+
+    final class Coordinator {
+        var urlObs: NSKeyValueObservation?
+        var titleObs: NSKeyValueObservation?
+    }
 }
