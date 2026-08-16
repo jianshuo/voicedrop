@@ -1,4 +1,4 @@
 What's new:
-• New "Write a Book" tab: turn your recordings and articles into a real book. A library-style bookshelf — tap a book to read it right in the app; book writing keeps going even after you close the app
-• Richer article formatting: headings, lists, quotes, and dividers
+• WeChat sharing built in: share your articles, VD community articles, and books to WeChat friends or Moments in one tap — native WeChat share sheet, with cover image and a content preview on the card
+• While reading a book, sharing now shares the exact chapter you're on
 • Various polish and bug fixes
