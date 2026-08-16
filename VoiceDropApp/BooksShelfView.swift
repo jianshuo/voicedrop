@@ -354,20 +354,26 @@ struct BookReaderView: View {
         .accessibilityLabel("更多")
     }
 
-    /// 微信好友 / 朋友圈：App 未接微信 SDK，走小红书同款「剪贴板直达」——
-    /// 把《书名》+ 链接复制进剪贴板，直接唤起微信，用户粘贴即发。
+    /// 微信好友 / 朋友圈：OpenSDK 正规分享——弹微信原生确认页，链接卡片带封面
+    /// 缩略图。没装微信才退回旧的「剪贴板直达」。
     private func shareToWechat(timeline: Bool) async {
         guard let url = book.pageURL else { return }
         let byline = (book.author?.isEmpty == false) ? " — \(book.author!)" : ""
-        UIPasteboard.general.string = "《\(book.title)》\(byline)\n\(url.absoluteString)"
         Analytics.capture(timeline ? "分享书到朋友圈" : "分享书给微信好友", ["书": book.slug])
-        showToast(timeline ? String(localized: "链接已复制，去朋友圈粘贴发布")
-                           : String(localized: "链接已复制，粘贴给微信好友"))
-        if let wx = URL(string: "weixin://") {
-            UIApplication.shared.open(wx) { ok in
-                if !ok { Task { @MainActor in showToast(String(localized: "没检测到微信，链接在剪贴板里")) } }
-            }
+        guard WeChatShare.isInstalled else {
+            UIPasteboard.general.string = "《\(book.title)》\(byline)\n\(url.absoluteString)"
+            showToast(String(localized: "没检测到微信，链接在剪贴板里"))
+            return
         }
+        var thumb: UIImage?
+        if book.cover, let coverURL = book.coverURL,
+           let (data, resp) = try? await URLSession.shared.data(from: coverURL), resp.isOK {
+            thumb = UIImage(data: data)
+        }
+        WeChatShare.shareWebpage(url: url,
+                                 title: "《\(book.title)》\(byline)",
+                                 description: String(localized: "VoiceDrop 图书馆 · 点开即读"),
+                                 thumb: thumb, timeline: timeline)
     }
 
     private func showToast(_ msg: String) {

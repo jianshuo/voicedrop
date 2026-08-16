@@ -28,9 +28,23 @@
 				<string>voicedrop</string>
 			</array>
 		</dict>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>weixin</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>wx1573f936967f5420</string>
+			</array>
+		</dict>
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>weixin</string>
+		<string>weixinULAPI</string>
+		<string>weixinURLParamsAPI</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>VoiceDrop 可在录音过程中拍摄场景照片，随录音一起保存。</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

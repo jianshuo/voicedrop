@@ -8,6 +8,7 @@ struct VoiceDropApp: App {
 
     init() {
         Analytics.setup()
+        WeChatShare.register()   // 微信 OpenSDK：分享书到好友/朋友圈
         // 后台上传通道尽早就位：上一条命没送完的录音任务由系统接管着，
         // delegate 建好才收得到它们的完成事件（删本地文件/埋点收尾）。
         BackgroundTransfer.shared.activate()
@@ -20,7 +21,11 @@ struct VoiceDropApp: App {
                 // 订阅：挂 Transaction.updates 监听 + 把当前有效订阅逐笔 claim
                 // （服务端幂等）——续费到账不依赖用户打开算力页。
                 .task { StoreService.shared.start() }
-                .onOpenURL { router.handle($0) }   // voicedrop://<page> + universal links — see AppRouter/DeepLink
+                .onOpenURL { url in
+                    // 微信 SDK 回调（wx…:// 兜底通道）优先；不是微信的才走深链路由
+                    if WeChatShare.handle(url) { return }
+                    router.handle(url)   // voicedrop://<page> + universal links — see AppRouter/DeepLink
+                }
                 #if DEBUG
                 // Simulator screenshot rig: SIMCTL_CHILD_VD_OPEN_URL=voicedrop://…
                 // navigates in-app on launch, skipping the SpringBoard openurl
@@ -36,6 +41,8 @@ struct VoiceDropApp: App {
                 // Universal links (https://voicedrop.cn/…) arrive as an NSUserActivity;
                 // some iOS versions deliver ONLY here, not via onOpenURL. Same handler.
                 .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { activity in
+                    // 微信分享回执经 universal link 回跳（主通道），SDK 认领就不进路由
+                    if WeChatShare.handle(activity) { return }
                     if let url = activity.webpageURL { router.handle(url) }
                 }
         }
