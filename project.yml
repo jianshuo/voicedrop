@@ -99,8 +99,10 @@ targets:
         DEVELOPMENT_TEAM: 97XBW2A43H
         TARGETED_DEVICE_FAMILY: "1"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
-        # -lsqlite3.0 / -lc++ 是微信 OpenSDK 静态库的链接依赖
-        OTHER_LDFLAGS: "$(inherited) -lz -lsqlite3.0 -lc++"
+        # -ObjC/-lsqlite3.0/-lc++ 是微信 OpenSDK 静态库的链接要求；缺 -ObjC 时
+        # SDK 内部 category 方法（如 +[WXApi genExtraUrlByReq:]）不进二进制，
+        # 一点分享就 unrecognized selector 崩（WeChatShareTests 抓这个）
+        OTHER_LDFLAGS: "$(inherited) -ObjC -lz -lsqlite3.0 -lc++"
         SWIFT_EMIT_LOC_STRINGS: YES
       configs:
         # Debug = AUTOMATIC signing → local device install uses an Apple *Development*
