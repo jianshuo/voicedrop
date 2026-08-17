@@ -188,9 +188,9 @@ struct BooksShelfView: View {
     @ViewBuilder private func bookCover(_ book: ShelfBook) -> some View {
         ZStack {
             clothCover(book)
-            if book.cover, let url = book.coverURL {
-                // 有 cover.jpg：直接铺封面图，出图前布面封面当占位。
-                CoverImage(url: url)
+            if book.cover {
+                // 有 cover.jpg：直接铺封面图，出图前布面封面（带书名）当占位。
+                CoverImage(book: book)
             }
         }
         .aspectRatio(0.7, contentMode: .fit)
@@ -202,28 +202,40 @@ struct BooksShelfView: View {
         .shadow(color: Color(.sRGB, red: 60/255, green: 45/255, blue: 30/255, opacity: 0.20), radius: 2, y: 2)
     }
 
-    /// 封面图：AsyncImage 失败后自动重试两次（隔 2s）——国内网络对边缘回源一次
-    /// 抖动，不该让这本书整个会话都退回布面封面（AsyncImage 自己失败即终态）。
+    /// 封面图：弃 AsyncImage（无持久缓存、失败即终态，弱网下随机哪本就空白了），
+    /// 改 DiskCache 持久缓存 + 指数退避重试。命中磁盘 = 零网络秒出；未命中才拉网，
+    /// 成功落盘，下次冷启动也不再依赖网络。key 带 coverAt，修书换封面自动失效。
     private struct CoverImage: View {
-        let url: URL
-        @State private var attempt = 0
+        let book: ShelfBook
+        @State private var image: UIImage?
 
         var body: some View {
-            AsyncImage(url: url) { phase in
-                switch phase {
-                case .success(let image):
-                    Color.clear.overlay(image.resizable().scaledToFill())
-                case .failure:
-                    Color.clear.task {
-                        guard attempt < 2 else { return }
-                        try? await Task.sleep(for: .seconds(2))
-                        attempt += 1   // 换 id 重建 AsyncImage = 重新发请求
-                    }
-                default:
-                    Color.clear
+            ZStack {
+                if let image {
+                    Color.clear.overlay(Image(uiImage: image).resizable().scaledToFill())
                 }
             }
-            .id(attempt)
+            .task(id: book.coverURL) { image = await Self.load(book) }
+        }
+
+        static func load(_ book: ShelfBook) async -> UIImage? {
+            let name = "cover-\(book.slug)-\(Int64(book.coverAt ?? 0)).jpg"
+            if let d = DiskCache.loadData(name), let img = UIImage(data: d) { return img }
+            guard let url = book.coverURL else { return nil }
+            for attempt in 0..<4 {
+                if Task.isCancelled { return nil }   // 划走的格子别白费流量
+                if attempt > 0 { try? await Task.sleep(for: .seconds(Double(1 << attempt))) }
+                var req = URLRequest(url: url)
+                // 头两次走正常缓存；再失败就怀疑 URLCache 钉了坏响应，穿透重拉
+                if attempt >= 2 { req.cachePolicy = .reloadIgnoringLocalCacheData }
+                if let (data, resp) = try? await URLSession.shared.data(for: req),
+                   (resp as? HTTPURLResponse)?.statusCode == 200,
+                   let img = UIImage(data: data) {
+                    DiskCache.saveData(data, name)
+                    return img
+                }
+            }
+            return nil
         }
     }
 
@@ -234,8 +246,9 @@ struct BooksShelfView: View {
                            startPoint: .topLeading, endPoint: .bottomTrailing)
             RadialGradient(colors: [.white.opacity(0.10), .clear],
                            center: UnitPoint(x: 0.25, y: 0.15), startRadius: 0, endRadius: 190)
-            if !book.cover {
-                VStack(alignment: .leading, spacing: 9) {
+            // 书名常驻布面：有封面图时它是加载占位/失败兜底（图是不透明 JPEG，
+            // 载入后完全盖住），此前 `if !book.cover` 的门导致图挂了就剩纯色块。
+            VStack(alignment: .leading, spacing: 9) {
                     Text(book.main)
                         .font(.custom("Songti SC", size: 22).weight(.bold))
                         .tracking(3).lineSpacing(4)
@@ -249,8 +262,7 @@ struct BooksShelfView: View {
                             .lineSpacing(3)
                     }
                 }
-                .padding(.top, 26).padding(.leading, 24).padding(.trailing, 16)
-            }
+            .padding(.top, 26).padding(.leading, 24).padding(.trailing, 16)
         }
     }
 
