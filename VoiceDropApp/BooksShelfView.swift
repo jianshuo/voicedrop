@@ -23,11 +23,14 @@ struct ShelfBook: Decodable, Identifiable, Equatable, Hashable {
     let c: String        // 封面色（深）
     let c2: String       // 封面色（更深，渐变尾）
     let cover: Bool      // <slug>/cover.jpg 存在 → 直接铺图
+    let coverAt: Double? // cover.jpg 上传时间戳（ms）；老缓存里没有 → optional
     let chapters: Int    // 顶层章节 html 数；单页书为 0
     let author: String?  // <meta name="author">；老缓存里没有 → optional
     var id: String { slug }
 
-    var coverURL: URL? { URL(string: "https://voicedrop.cn/books/\(slug)/cover.jpg") }
+    /// ?v=coverAt 与网页书架同款破缓存：修书换封面 → 时间戳变 → URL 变，
+    /// 绕开 EdgeOne 边缘 + URLCache 的旧图（否则 App 只能干等缓存过期）。
+    var coverURL: URL? { URL(string: "https://voicedrop.cn/books/\(slug)/cover.jpg?v=\(Int64(coverAt ?? 0))") }
     var pageURL: URL? { URL(string: "https://voicedrop.cn/books/\(slug)/") }
 }
 
@@ -187,11 +190,7 @@ struct BooksShelfView: View {
             clothCover(book)
             if book.cover, let url = book.coverURL {
                 // 有 cover.jpg：直接铺封面图，出图前布面封面当占位。
-                AsyncImage(url: url) { phase in
-                    if case .success(let image) = phase {
-                        Color.clear.overlay(image.resizable().scaledToFill())
-                    }
-                }
+                CoverImage(url: url)
             }
         }
         .aspectRatio(0.7, contentMode: .fit)
@@ -201,6 +200,31 @@ struct BooksShelfView: View {
         .clipShape(coverShape)
         .shadow(color: Color(.sRGB, red: 60/255, green: 45/255, blue: 30/255, opacity: 0.35), radius: 8, y: 7)
         .shadow(color: Color(.sRGB, red: 60/255, green: 45/255, blue: 30/255, opacity: 0.20), radius: 2, y: 2)
+    }
+
+    /// 封面图：AsyncImage 失败后自动重试两次（隔 2s）——国内网络对边缘回源一次
+    /// 抖动，不该让这本书整个会话都退回布面封面（AsyncImage 自己失败即终态）。
+    private struct CoverImage: View {
+        let url: URL
+        @State private var attempt = 0
+
+        var body: some View {
+            AsyncImage(url: url) { phase in
+                switch phase {
+                case .success(let image):
+                    Color.clear.overlay(image.resizable().scaledToFill())
+                case .failure:
+                    Color.clear.task {
+                        guard attempt < 2 else { return }
+                        try? await Task.sleep(for: .seconds(2))
+                        attempt += 1   // 换 id 重建 AsyncImage = 重新发请求
+                    }
+                default:
+                    Color.clear
+                }
+            }
+            .id(attempt)
+        }
     }
 
     /// 布面缺省封面：深色渐变 + 左上高光 + 书名／细线／副题（竖版书封的横排版）。
