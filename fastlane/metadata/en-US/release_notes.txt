@@ -1,4 +1,4 @@
 What's new:
-• WeChat sharing built in: share your articles, VD community articles, and books to WeChat friends or Moments in one tap — native WeChat share sheet, with cover image and a content preview on the card
-• While reading a book, sharing now shares the exact chapter you're on
+• Monthly Credits subscription: 200 credits added automatically each month; unused credits reset at month end; cancel anytime in system Subscriptions settings
+• Book covers now load reliably on slow networks: persistent cover cache with automatic retry
 • Various polish and bug fixes
