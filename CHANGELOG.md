@@ -2,6 +2,38 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 包月算力订阅开闸：售卖开关打开 + ASC 商品从空壳建全 + 1.12 提审（2026-08-18）
+
+用户要求「打开付费开关让用户能买 ¥19.9/月 200 算力」。开关本身一分钟（R2 写
+`config/iap.json` = `{"enabled":true}`，零部署即时生效，iOS 订阅卡随即显示——模拟器
+实拍已验证）；但查 ASC 发现订阅商品 `monthly_19_9`（id 6791993826）还是 7-19 留下的
+**空壳**（MISSING_METADATA：0 本地化/0 价格/无截图/无可用地区），光开开关用户根本
+买不了。当天用 ASC API 全部补齐：
+
+- **本地化**：zh-Hans「包月算力」+ en-US「Monthly Credits」（描述上限 55 字符，超长 409）。
+- **价格**：CHN 有精确 ¥19.9 价格点；先建 `subscriptionAvailability`（全部 175 地区 +
+  未来新地区），**再**建价格（顺序反了 subscriptionPrices 会 409 ENTITY_ERROR）；其余
+  174 地区用该价格点的 `equalizations` 逐个 POST `subscriptionPrices`（API 无一键等价，
+  ASC UI 的「自动等价」就是这 175 个 per-territory 价格）。
+- **审核截图**：临时快照单测（app-hosted VoiceDropTests 里把 UsageView 挂窗口、等 8s
+  真网络加载、drawHierarchy 渲染 PNG 直接写主机路径）实拍算力页付费墙，三步上传
+  （POST 占位 → PUT 二进制 → PATCH checksum）。拍完测试文件即删。
+- **审核备注** + 状态确认 **READY_TO_SUBMIT**（175/175 价格）。
+- **1.12 提审**：首个订阅必须搭新版本（1.11 已 READY_FOR_SALE）。project.yml 垫到
+  1.12、双语 release notes（订阅 + books 封面修复）、185 单测绿、push main 自动
+  TestFlight（build 318 秒 VALID），dispatch `appstore` workflow 提审成功。
+- **坑：deliver 提的审不带订阅**——提审单里只有版本条目，订阅停在 READY_TO_SUBMIT
+  没进审；单发 `POST subscriptionSubmissions` 又被 409 FIRST_SUBSCRIPTION_MUST_BE_
+  SUBMITTED_ON_VERSION 挡（首订阅必须与版本同单）。**解法（全 API，UI 免动手）**：
+  cancel 提审 → 新建 reviewSubmission 草稿 → 挂 appStoreVersion 条目 →
+  `POST /v1/subscriptionVersions` 给订阅拍送审快照（已存在则 409 里带现成 id）→
+  再挂 `subscriptionGroupVersion` + `subscriptionVersion` 两个条目（2025+ 新增的
+  item 类型，fastlane Spaceship 模型里没有）→ PATCH submitted:true。终态：订阅/
+  订阅组/1.12 三者同单 WAITING_FOR_REVIEW。
+- **仍需手工**（API 做不了）：ASC → App 信息 → App Store 服务器通知 V2 生产+沙盒 URL
+  填 `https://jianshuo.dev/agent/iap/notifications`（没配的话续费发放走 App 启动时
+  claim currentEntitlements 的兜底路径，功能不缺失但不实时）。
+
 ## 修书：写好的书在 App 里持续修改 + 每本书一条永久对话线（2026-08-15，全链已部署）
 
 写书从「一锤子」变成「可持续对话」：读书页 ⋯ 菜单 → **「修改这本书」**，聊天式界面
