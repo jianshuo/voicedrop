@@ -21,6 +21,16 @@
   /cdn-cgi/image/ 缩略图恒 jianshuo.dev（原状）。
 - 全量 191 条单测通过（xcodebuild test，iPhone 17 Pro 模拟器）。
 
+## 1.12 首审被拒→补 EULA 链接重提（2026-08-19）
+
+自动审核拒了：订阅类 App 的**元数据必须带用户协议（EULA）链接**。App 内订阅卡早就
+链了 Apple 标准 EULA（stdeula），但 App 描述里没有。修法：两语言 description 末尾
+追加订阅说明 + 标准 EULA 链接 + 隐私政策链接（本地 fastlane/metadata 与 ASC API
+PATCH 双写，防 deliver 覆盖）。**重提坑**：元数据改完后版本卡在 REJECTED，直接
+PATCH submitted 报「Version is not ready」且 20 分钟不自愈——解法照旧：cancel 提审
+单 → 新建草稿 → 重挂三条目（appStoreVersion + subscriptionGroupVersion +
+subscriptionVersion，id 都复用）→ submitted:true，即回 WAITING_FOR_REVIEW。
+
 ## 包月算力订阅开闸：售卖开关打开 + ASC 商品从空壳建全 + 1.12 提审（2026-08-18）
 
 用户要求「打开付费开关让用户能买 ¥19.9/月 200 算力」。开关本身一分钟（R2 写
