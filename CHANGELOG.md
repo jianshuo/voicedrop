@@ -2,6 +2,25 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 国内/海外线路自动切换：voicedrop.cn(EO) vs jianshuo.dev(CF) 竞速选线（2026-08-19）
+
+用户要求：国内资源走 voicedrop.cn（腾讯 EdgeOne），海外直连 jianshuo.dev（Cloudflare），
+不再让海外用户绕道中国。落地 = `Networking.swift` 新增 **`APIRoute`**：
+
+- `API.host/photoHost` 变计算属性，读 `APIRoute.currentHost`；`filesBase/photoBase/
+  agentBase/recoBase/agentLink` 全部随之动态。新增 `API.publicWebBase`
+  （`voicedrop.cn/<path>` ≡ `jianshuo.dev/voicedrop/<path>` 的去前缀映射），书架
+  JSON/封面/书页 WKWebView（`BooksShelfView`）与隐私政策链接（`UsageView`）改走它。
+- 判定 = 并发 HEAD 两入口落地页竞速，快者胜；150ms 迟滞防抖；单边失败用活边、
+  双边失败守现状（纯函数 `APIRoute.pick`，新测试 `APIRouteTests.swift` 6 例）。
+- 时机 = App 冷启动必测 + 回前台 30 分钟节流（`VoiceDropApp.swift` `probeRoute`），
+  PostHog 埋「线路探测」`{线路,切换,cn毫秒,cf毫秒}`。结果存 App Group
+  UserDefaults `api.route.host`，Share Extension 免探测沿用；默认（从未探测）仍
+  voicedrop.cn。`AppGroup.uploadBase` let→计算属性（防冻结）。
+- 不切换的：分享页/邀请链接/微信 universalLink 恒 .cn（外发）；WS 与
+  /cdn-cgi/image/ 缩略图恒 jianshuo.dev（原状）。
+- 全量 191 条单测通过（xcodebuild test，iPhone 17 Pro 模拟器）。
+
 ## 包月算力订阅开闸：售卖开关打开 + ASC 商品从空壳建全 + 1.12 提审（2026-08-18）
 
 用户要求「打开付费开关让用户能买 ¥19.9/月 200 算力」。开关本身一分钟（R2 写

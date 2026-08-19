@@ -55,6 +55,30 @@ session's scope is itself `users/anon-<hash>/` — anon and session resolve to t
 scope/user_sub.** Server admin token = `FILES_TOKEN` (sees all `users/*`). Files API
 scopes every request to `users/<sub>/`.
 
+## 网络线路 — 国内/海外入口自动切换（2026-08-19）
+
+iOS 的全部 HTTP API/资源主机不再写死 voicedrop.cn，由 **`APIRoute`**（`Networking.swift`）
+运行时决定：**国内 = `voicedrop.cn`（腾讯 EdgeOne 境内边缘，2026-07-24 接入）；海外 =
+`jianshuo.dev`（Cloudflare 直连，不绕道中国）**。
+
+- **判定 = 竞速探测**：并发 HEAD `voicedrop.cn/` 与 `jianshuo.dev/voicedrop/`（ephemeral
+  session、禁缓存、6s 超时），谁快用谁；**挑战方须快 150ms 以上才换线**（迟滞防抖）；单边
+  失败直接用活边，双边失败守现状。纯判定函数 `APIRoute.pick` 单测在
+  `VoiceDropTests/APIRouteTests.swift`。
+- **时机**：主 App 冷启动必测一次 + 回前台 ≥30 分钟节流复测（`VoiceDropApp.swift`
+  `probeRoute`，PostHog 埋「线路探测」`{线路,切换,cn毫秒,cf毫秒}`）。结果持久化 App Group
+  UserDefaults（`api.route.host`）——**Share Extension 不探测**，直接沿用主 App 判定；从未
+  探测过默认 voicedrop.cn（老行为）。进程内 `OSAllocatedUnfairLock` 缓存，URL 构建高频路径
+  不反复开 UserDefaults。
+- **随线路走**：`API.filesBase/photoBase/agentBase/recoBase/agentLink`（两主机同路径，只换
+  host）、`API.publicWebBase`（书架 JSON/封面/书页 WKWebView、隐私政策页；映射
+  `voicedrop.cn/<path>` ≡ `jianshuo.dev/voicedrop/<path>`，EO 去前缀规则）。`AppGroup.uploadBase`
+  是计算属性（勿改回 let，会把首次访问的 host 冻住）。
+- **恒不切换**：`sharePage`/邀请链接/微信 universalLink **写死 voicedrop.cn**（发给别人的，
+  微信内打开不弹提示）；`agentWS` WebSocket 与 `/cdn-cgi/image/` 缩略图**恒 cfHost**（EO 的
+  WS 透传未验证；图片缩放是 CF 专有）。
+- 切换只影响之后新建的请求；已入队的 background URLSession 上传按入队时 URL 跑完，无碍。
+
 ## R2 layout & marker conventions (the contract everyone shares)
 
 - `users/<sub>/VoiceDrop-<ts>-<dur>-<weekday>-<period>[-<city>-<district>].m4a` — audio (ASCII names).

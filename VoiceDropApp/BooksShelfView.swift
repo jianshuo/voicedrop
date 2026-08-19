@@ -30,8 +30,10 @@ struct ShelfBook: Decodable, Identifiable, Equatable, Hashable {
 
     /// ?v=coverAt 与网页书架同款破缓存：修书换封面 → 时间戳变 → URL 变，
     /// 绕开 EdgeOne 边缘 + URLCache 的旧图（否则 App 只能干等缓存过期）。
-    var coverURL: URL? { URL(string: "https://voicedrop.cn/books/\(slug)/cover.jpg?v=\(Int64(coverAt ?? 0))") }
-    var pageURL: URL? { URL(string: "https://voicedrop.cn/books/\(slug)/") }
+    // 书架资源随 APIRoute 线路走：国内 voicedrop.cn（EO 边缘缓存）、海外
+    // jianshuo.dev/voicedrop（CF 直连），两边路径由 publicWebBase 归一。
+    var coverURL: URL? { URL(string: "\(API.publicWebBase)/books/\(slug)/cover.jpg?v=\(Int64(coverAt ?? 0))") }
+    var pageURL: URL? { URL(string: "\(API.publicWebBase)/books/\(slug)/") }
 }
 
 @MainActor
@@ -41,7 +43,7 @@ final class BooksShelfStore {
     var loading = false
     var error: String?
 
-    private static let indexURL = URL(string: "https://voicedrop.cn/books/?format=json")!
+    private static var indexURL: URL { URL(string: "\(API.publicWebBase)/books/?format=json")! }
     private static let cacheKey = "books.shelf.cache"
     private struct Index: Decodable { let books: [ShelfBook] }
 
