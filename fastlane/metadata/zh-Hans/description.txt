@@ -9,3 +9,8 @@ VoiceDrop 把你的口述变成文章。
 • 极简界面，没有广告，没有第三方追踪
 
 说出来，就有了。VoiceDrop 帮你把每一个一闪而过的念头接住、整理好。
+
+—
+包月算力订阅（可选）：¥19.9/月，每月自动充入 200 算力，按月自动续费，可随时在系统「订阅」设置中取消。
+用户协议（Terms of Use / EULA）：https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
+隐私政策：https://jianshuo.dev/voicedrop/privacy/

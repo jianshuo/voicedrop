@@ -9,3 +9,8 @@ Open it and it records; tap stop and it's saved. The rest is automatic:
 • Minimal interface, no ads, no third-party tracking
 
 Say it, and it's done. VoiceDrop catches every passing thought and writes it up.
+
+—
+Optional Monthly Credits subscription: 200 credits added automatically each month, auto-renews monthly, cancel anytime in system Subscriptions settings.
+Terms of Use (EULA): https://www.apple.com/legal/internet-services/itunes/dev/stdeula/
+Privacy Policy: https://jianshuo.dev/voicedrop/privacy/
