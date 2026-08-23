@@ -26,6 +26,7 @@ struct ShelfBook: Decodable, Identifiable, Equatable, Hashable {
     let coverAt: Double? // cover.jpg 上传时间戳（ms）；老缓存里没有 → optional
     let chapters: Int    // 顶层章节 html 数；单页书为 0
     let author: String?  // <meta name="author">；老缓存里没有 → optional
+    let hidden: Bool?    // 自己的隐藏书（登录态下服务端才会给）；公开条目无此字段
     var id: String { slug }
 
     /// ?v=coverAt 与网页书架同款破缓存：修书换封面 → 时间戳变 → URL 变，
@@ -58,7 +59,12 @@ final class BooksShelfStore {
         loading = true
         defer { loading = false }
         do {
-            let (data, resp) = try await URLSession.shared.data(from: Self.indexURL)
+            // 带登录态：服务端把「自己的 hidden 书」也列进来（条目带 hidden:true），
+            // 书架给它们贴「隐藏」角标；未登录/别人的隐藏书照旧不可见。
+            var req = URLRequest(url: Self.indexURL)
+            let bearer = AuthStore.shared.bearer
+            if !bearer.isEmpty { req.setBearer(bearer) }
+            let (data, resp) = try await URLSession.shared.data(for: req)
             guard resp.isOK else { throw URLError(.badServerResponse) }
             books = try JSONDecoder().decode(Index.self, from: data).books
             error = nil
@@ -199,6 +205,16 @@ struct BooksShelfView: View {
         .frame(maxWidth: .infinity)
         .overlay(alignment: .leading) { spine }
         .overlay(alignment: .trailing) { pageEdge }
+        .overlay(alignment: .topTrailing) {
+            if book.hidden == true {
+                Text("隐藏")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 7).padding(.vertical, 3)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .padding(6)
+            }
+        }
         .clipShape(coverShape)
         .shadow(color: Color(.sRGB, red: 60/255, green: 45/255, blue: 30/255, opacity: 0.35), radius: 8, y: 7)
         .shadow(color: Color(.sRGB, red: 60/255, green: 45/255, blue: 30/255, opacity: 0.20), radius: 2, y: 2)
