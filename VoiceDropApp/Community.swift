@@ -1063,10 +1063,17 @@ struct CommunityPostView: View {
             UIPasteboard.general.string = "\(title)\n\(url.absoluteString)"
             showToast(String(localized: "没检测到微信，链接在剪贴板里")); return
         }
-        WeChatShare.shareWebpage(url: url, title: title,
-                                 description: author + " · " + WeChatShare.excerpt(article?.body,
-                                                                                   fallback: String(localized: "来自 VD 社区")),
-                                 thumb: await firstPhotoImage(), timeline: timeline)
+        let desc = author + " · " + WeChatShare.excerpt(article?.body,
+                                                        fallback: String(localized: "来自 VD 社区"))
+        let thumb = await firstPhotoImage()
+        // 好友出小程序卡（community-detail 页）；朋友圈仍走网页卡。
+        if !timeline {
+            WeChatShare.shareMiniProgram(webpageUrl: url,
+                                         path: WeChatShare.communityPath(shareId: post.shareId, section: articleIndex),
+                                         title: title, description: desc, thumb: thumb)
+        } else {
+            WeChatShare.shareWebpage(url: url, title: title, description: desc, thumb: thumb, timeline: timeline)
+        }
     }
 
     /// First photo of the currently-shown article — the WeChat link-card thumbnail.

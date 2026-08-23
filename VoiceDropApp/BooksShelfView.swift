@@ -425,11 +425,22 @@ struct BookReaderView: View {
             thumb = UIImage(data: data)
         }
         let byline = (book.author?.isEmpty == false) ? " — \(book.author!)" : ""
-        WeChatShare.shareWebpage(url: target.url,
-                                 title: target.title,
-                                 description: target.isChapter ? "《\(book.title)》\(byline)"
-                                                               : String(localized: "VoiceDrop 图书馆 · 点开即读"),
-                                 thumb: thumb, timeline: timeline)
+        let desc = target.isChapter ? "《\(book.title)》\(byline)"
+                                    : String(localized: "VoiceDrop 图书馆 · 点开即读")
+        // 好友出小程序卡（book-reader 页，章节分享带 &page= 直接翻到那一页）；
+        // 朋友圈仍走网页卡。
+        if !timeline {
+            WeChatShare.shareMiniProgram(
+                webpageUrl: target.url,
+                path: WeChatShare.bookReaderPath(slug: book.slug, title: book.title,
+                                                 main: book.main, author: book.author ?? "",
+                                                 cover: book.cover, coverAt: Int64(book.coverAt ?? 0),
+                                                 chapterURL: target.isChapter ? target.url : nil),
+                title: target.title, description: desc, thumb: thumb)
+        } else {
+            WeChatShare.shareWebpage(url: target.url, title: target.title,
+                                     description: desc, thumb: thumb, timeline: timeline)
+        }
     }
 
     private func showToast(_ msg: String) {

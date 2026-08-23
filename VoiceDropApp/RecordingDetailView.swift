@@ -638,10 +638,16 @@ struct RecordingDetailView: View {
             UIPasteboard.general.string = "\(title)\n\(u.absoluteString)"
             showToast(String(localized: "没检测到微信，链接在剪贴板里")); return
         }
-        WeChatShare.shareWebpage(url: u, title: title,
-                                 description: WeChatShare.excerpt(article?.body,
-                                                                  fallback: String(localized: "一篇口述而成的文章")),
-                                 thumb: await firstPhotoImage(), timeline: timeline)
+        let desc = WeChatShare.excerpt(article?.body, fallback: String(localized: "一篇口述而成的文章"))
+        let thumb = await firstPhotoImage()
+        // 好友出小程序大图卡（点开直接进小程序读文章）；朋友圈不支持小程序卡，仍走网页卡。
+        if !timeline, let shareId = WeChatShare.publicShareId(u) {
+            WeChatShare.shareMiniProgram(webpageUrl: u,
+                                         path: WeChatShare.sharedArticlePath(shareId: shareId, section: articleIndex),
+                                         title: title, description: desc, thumb: thumb)
+        } else {
+            WeChatShare.shareWebpage(url: u, title: title, description: desc, thumb: thumb, timeline: timeline)
+        }
     }
 
     /// The first photo of the currently-shown article, used as the WeChat link-card
