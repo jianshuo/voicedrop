@@ -52,6 +52,7 @@ struct RecordingDetailView: View {
     @State private var confirmDeleteFromDetail = false
     @State private var showingInsertPhoto = false
     @State private var showRestyle = false       // 换风格重写 sheet
+    @State private var showBookSheet = false     // 「扩展成一本书」写书 sheet（文章当种子）
     @State private var restyling = false         // /agent/restyle in flight
     @State private var lpMenu: LongpressPresentation?   // 长按操作菜单（自绘覆盖层）
 
@@ -199,6 +200,12 @@ struct RecordingDetailView: View {
         .sheet(isPresented: $showRestyle) {
             RestyleSheet(versions: settings.styleVersions, currentStyleV: currentStyleV) { v in applyStyle(v) }
                 .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $showBookSheet) {
+            // 文章当种子：正文去掉照片等标记再交给写书代理
+            let a = articles[safe: articleIndex]
+            BookWritingSheet(seedArticle: (title: a?.title ?? "无题",
+                                           body: ArticleBody.stripMarkers(a?.body ?? "")))
         }
         // id: recording —— 推送深链先用旧快照(hasArticles=false)打开详情页，随后
         // LibraryView 刷新列表换入新 Recording；id(audioName)相同所以视图不重建，
@@ -572,6 +579,9 @@ struct RecordingDetailView: View {
                 }
             )) {
                 Label("VD社区可见", systemImage: "person.2")
+            }
+            Button { showBookSheet = true } label: {
+                Label("扩展成一本书", systemImage: "books.vertical")
             }
             Button { Task { await shareToXHS() } } label: {
                 Label("分享到小红书", systemImage: "book.closed")

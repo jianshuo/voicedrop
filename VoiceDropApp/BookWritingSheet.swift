@@ -17,6 +17,11 @@ import SwiftUI
 /// 价签 hero + 实时余额；算力不够时给两条攒法（请朋友「加油」/ 邀请安装）——
 /// 数字来自 `GET /agent/referral/link` 的 suanliFeedAuthor / suanliInviter 现价。
 struct BookWritingSheet: View {
+    /// 「扩展成一本书」入口（文章详情 ⋯ 菜单）：带上一篇文章当种子。文章内容
+    /// 不进编辑框（防误删），编辑框变成「补充要求（可选）」；提交时 seed =
+    /// 要求 + 文章标题/正文（去掉照片等标记，服务端 20000 字上限内截断）。
+    var seedArticle: (title: String, body: String)? = nil
+
     @Environment(\.dismiss) private var dismiss
     @State private var seed = ""
     @State private var sending = false
@@ -39,7 +44,7 @@ struct BookWritingSheet: View {
         let gap = Double(Self.price) - b
         return gap > 0 ? Int(gap.rounded(.up)) : nil
     }
-    private var canStart: Bool { !trimmedSeed.isEmpty && !sending && !submitted && shortOf == nil }
+    private var canStart: Bool { (!trimmedSeed.isEmpty || seedArticle != nil) && !sending && !submitted && shortOf == nil }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -115,14 +120,33 @@ struct BookWritingSheet: View {
 
     private var seedSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("中心思想").font(.system(size: 12, weight: .bold)).tracking(2)
+            Text(seedArticle == nil ? "中心思想" : "补充要求（可选）")
+                .font(.system(size: 12, weight: .bold)).tracking(2)
                 .foregroundStyle(Theme.sectionLabel)
-            Text("一句话说清这本书要讲明白的那一个问题或主张。想法越聚焦，书越好看；也可以贴一整篇文章当种子。")
-                .font(.system(size: 13)).foregroundStyle(Theme.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if let a = seedArticle {
+                // 文章种子卡：标题 + 开头一行，提醒「内容已带上」
+                VStack(alignment: .leading, spacing: 5) {
+                    Label("《\(a.title)》已作为种子", systemImage: "doc.text")
+                        .font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.ink)
+                    Text(a.body.replacingOccurrences(of: "\n", with: " ").prefix(60) + "……")
+                        .font(.system(size: 12)).foregroundStyle(Theme.secondary).lineLimit(2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(Theme.amberSoft, in: RoundedRectangle(cornerRadius: Theme.R.primary))
+                Text("可以补充这本书往哪儿写：比如“写成给孩子的绘本”“扩成一本科普书”“沿着文中第三点展开”。不填就由写书代理自己定。")
+                    .font(.system(size: 13)).foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("一句话说清这本书要讲明白的那一个问题或主张。想法越聚焦，书越好看；也可以贴一整篇文章当种子。")
+                    .font(.system(size: 13)).foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             ZStack(alignment: .topLeading) {
                 if seed.isEmpty {
-                    Text("比如：为什么一切都在变乱？\n或：钱不脏，是我一直躲着它。")
+                    Text(seedArticle == nil
+                         ? "比如：为什么一切都在变乱？\n或：钱不脏，是我一直躲着它。"
+                         : "比如：写成给孩子的绘本。（可留空）")
                         .font(.system(size: 16)).foregroundStyle(Theme.faint)
                         .padding(.top, 22).padding(.leading, 20)
                 }
@@ -308,7 +332,11 @@ struct BookWritingSheet: View {
         seedFocused = false
         sending = true; errorText = nil
         Analytics.capture("写书发起")
-        let seedText = trimmedSeed
+        var seedText = trimmedSeed
+        if let a = seedArticle {
+            let ask = seedText.isEmpty ? "" : "写书要求：\(seedText)\n\n"
+            seedText = ask + "以下这篇文章是种子素材，把它扩展成一本完整的书：\n\n《\(a.title)》\n\n" + String(a.body.prefix(18000))
+        }
         Task {
             defer { sending = false }
             var req = URLRequest(url: Self.bookAPI)
