@@ -26,14 +26,9 @@ struct VoiceDropApp: App {
                 // staging 残片兜底：完好的（promote 窗口内被杀）救回上传队列，
                 // 半截的（录音中被杀，无 moov）删掉。见 AudioRecorder.recoverStaleStaging。
                 .task { await AudioRecorder.recoverStaleStaging() }
-                // 国内/海外线路自动切换：启动竞速探测一次（voicedrop.cn/EO vs
-                // jianshuo.dev/CF 谁快用谁），回前台每 ≥30 分钟复测一次。
-                // 判定与持久化在 APIRoute（Networking.swift）。
-                .task { await Self.probeRoute(force: true) }
-                .onChange(of: scenePhase) { _, phase in
-                    guard phase == .active else { return }
-                    Task { await Self.probeRoute(force: false) }
-                }
+                // 线路 = App Store 商店区域：中国区 → voicedrop.cn（EO），
+                // 其他区 → 直连 CF。启动取一次 Storefront 即可（区域几乎不变）。
+                .task { await Self.noteStorefront() }
                 .onOpenURL { url in
                     // 微信 SDK 回调（wx…:// 兜底通道）优先；不是微信的才走深链路由
                     if WeChatShare.handle(url) { return }
@@ -61,21 +56,12 @@ struct VoiceDropApp: App {
         }
     }
 
-    /// 线路探测入口：force = 启动（必测），否则 30 分钟节流（回前台）。
-    /// 埋点只送元数据（线路名/时延/是否切换），符合隐私红线。
-    private static func probeRoute(force: Bool) async {
-        // 顺手记录 App Store 商店区域（CHN/USA…）：冷启动未探测时按它定默认线路
-        // ——中国区默认 voicedrop.cn，其他区默认直连 CF（见 APIRoute.currentHost）。
-        if force, let sf = await Storefront.current {
-            APIRoute.noteStorefront(sf.countryCode)
-            Analytics.capture("商店区域", ["区域": sf.countryCode])
-        }
-        let result = force ? await APIRoute.probe() : await APIRoute.probeIfDue()
-        guard let result else { return }
-        var props: [String: Any] = ["线路": result.host == API.cnHost ? "cn" : "cf",
-                                    "切换": result.switched]
-        if let ms = result.cnMs { props["cn毫秒"] = ms }
-        if let ms = result.cfMs { props["cf毫秒"] = ms }
-        Analytics.capture("线路探测", props)
+    /// 商店区域上报（决定线路：中国区 voicedrop.cn，其他区直连 CF——见 APIRoute）。
+    /// 埋点只送区域码，符合隐私红线；顺手可统计各区用户分布。
+    private static func noteStorefront() async {
+        guard let sf = await Storefront.current else { return }
+        APIRoute.noteStorefront(sf.countryCode)
+        Analytics.capture("商店区域", ["区域": sf.countryCode,
+                                     "线路": APIRoute.currentHost == API.cnHost ? "cn" : "cf"])
     }
 }

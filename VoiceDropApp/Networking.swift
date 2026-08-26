@@ -39,14 +39,14 @@ enum API {
     /// 规则引擎改写源站到 jianshuo.dev 的 zone 级 worker 路由
     /// （见 jianshuo.dev repo: infra/voicedrop-cn-edgeone/README.md）。
     static let cnHost = "voicedrop.cn"
-    /// CF 直连主机——海外用户的 HTTP API 主机（2026-08-19 起自动切换，见 APIRoute；
-    /// 海外走 EO 是绕道中国，直连 CF 才是就近）。另两类用途不分线路恒走 CF：
+    /// CF 直连主机——非中国区用户的 HTTP API 主机（海外走 EO 是绕道中国，
+    /// 直连 CF 才是就近）。另两类用途不分线路恒走 CF：
     /// 1) WebSocket（/agent/edit、/status、/asr、/realtime）：EO 边缘函数的 WS
     ///    透传未验证，不赌；
     /// 2) /cdn-cgi/image/ 缩略图边缘缩放（PhotoService）：CF 专有，EO 无等价物。
     static let cfHost = "jianshuo.dev"
-    /// 当前 HTTP API 主机：国内 = voicedrop.cn（EO），海外 = jianshuo.dev（CF）。
-    /// 由 APIRoute 竞速探测决定，App 启动/回前台时更新（见下）。
+    /// 当前 HTTP API 主机：中国区 = voicedrop.cn（EO），其他区 = jianshuo.dev（CF）。
+    /// 由 App Store 商店区域决定（APIRoute，启动时取 Storefront，见下）。
     static var host: String { APIRoute.currentHost }
     /// 照片原图与 API 同线路：国内命中 EO 境内边缘缓存（源站对 200 发
     /// max-age=1y immutable，EO cache-rules 对 /files/api/photo/* FollowOrigin），
@@ -74,112 +74,31 @@ enum API {
     static let bookAPIBase = URL(string: "https://lab.jianshuo.dev/api/book")!
 }
 
-/// 国内/海外线路自动切换（2026-08-19）。国内用户走 voicedrop.cn（腾讯 EO 境内
-/// 边缘），海外用户直连 jianshuo.dev（Cloudflare），不再绕道中国。
-///
-/// 判定 = 竞速探测：并发 HEAD 两个入口的落地页，谁快用谁；挑战方须快 150ms
-/// 以上才换线（迟滞防抖，避免边界网络反复横跳）；单边失败直接用活的那边，
-/// 双边失败维持现状。结果持久化在 App Group UserDefaults——Share Extension
-/// 不探测，直接沿用主 App 的判定；未探测过的冷启动默认 voicedrop.cn（老行为）。
-///
-/// 探测时机（主 App，见 VoiceDropApp.swift）：每次冷启动 + 回前台（≥30 分钟
-/// 一次节流）。切换只影响之后新建的请求；已入队的 background URLSession 任务
-/// 按入队时的 URL 跑完，无碍。
+/// 线路选择（2026-08-25 起只按 App Store 商店区域，竞速探测已整体移除）：
+/// 中国区（CHN，或拿不到 storefront——模拟器/设备未登录商店账号）→ voicedrop.cn
+///（腾讯 EO 境内边缘）；其他区 → 直连 jianshuo.dev（CF）。TestFlight 和 Xcode
+/// 直装读到的都是设备当前登录的 App Store 账号的区域。判定简单、可预期、
+/// 不随网络波动横跳；storefront 持久化在 App Group，Share Extension 直接沿用。
 enum APIRoute {
-    static let hostKey = "api.route.host"
-    static let probedAtKey = "api.route.probedAt"
-    /// 挑战方须比现任快出这么多才换线（秒）。
-    static let hysteresis: TimeInterval = 0.15
-
+    static let storefrontKey = "api.route.storefront"
     private static var store: UserDefaults? { UserDefaults(suiteName: AppGroup.id) }
     /// 进程内缓存：URL 构建是高频路径（列表滚动逐张照片），别每次开 UserDefaults。
     private static let cache = OSAllocatedUnfairLock<String?>(initialState: nil)
 
-    static let storefrontKey = "api.route.storefront"
-
     static var currentHost: String {
         cache.withLock { h in
             if let h { return h }
-            let saved = store?.string(forKey: hostKey)
-            let v: String
-            if let saved {
-                v = saved == API.cfHost ? API.cfHost : API.cnHost
-            } else {
-                // 没探测过的冷启动：按 App Store 商店区域给默认（2026-08-25）——
-                // 中国区（或还没拿到 storefront）走 voicedrop.cn（EO 境内边缘，老行为），
-                // 其他区默认直连 CF，第一批请求不再绕道中国。之后竞速探测照常覆盖。
-                let sf = store?.string(forKey: storefrontKey)
-                v = (sf == nil || sf == "CHN") ? API.cnHost : API.cfHost
-            }
+            let sf = store?.string(forKey: storefrontKey)
+            let v = (sf == nil || sf == "CHN") ? API.cnHost : API.cfHost
             h = v
             return v
         }
     }
 
-    /// App 启动时上报 App Store 商店区域（StoreKit Storefront，三位码如 CHN/USA）。
-    /// 只在还没有竞速判定时影响默认线路；判定落盘后 storefront 仅作记录。
+    /// App 启动时记录商店区域（StoreKit Storefront.countryCode，如 CHN/USA）。
     static func noteStorefront(_ code: String) {
         store?.set(code, forKey: storefrontKey)
-        if store?.string(forKey: hostKey) == nil { cache.withLock { $0 = nil } }
-    }
-
-    struct ProbeResult {
-        let host: String        // 判定后的当前主机
-        let switched: Bool      // 本次探测是否换了线
-        let cnMs: Int?          // voicedrop.cn 时延（nil = 失败/超时）
-        let cfMs: Int?          // jianshuo.dev 时延
-    }
-
-    /// 竞速探测并落盘判定。主 App 专用（Extension 生命周期太短，不探测）。
-    @discardableResult
-    static func probe() async -> ProbeResult {
-        async let cnT = measure(URL(string: "https://\(API.cnHost)/")!)
-        async let cfT = measure(URL(string: "https://\(API.cfHost)/voicedrop/")!)
-        let (cn, cf) = await (cnT, cfT)
-        let incumbent = currentHost
-        let winner = pick(incumbent: incumbent, cn: cn, cf: cf)
-        store?.set(winner, forKey: hostKey)
-        store?.set(Date().timeIntervalSince1970, forKey: probedAtKey)
-        cache.withLock { $0 = winner }
-        return ProbeResult(host: winner, switched: winner != incumbent,
-                           cnMs: cn.map { Int($0 * 1000) }, cfMs: cf.map { Int($0 * 1000) })
-    }
-
-    /// 距上次探测超过 maxAge 才真探（回前台的节流入口）；没到点返回 nil。
-    @discardableResult
-    static func probeIfDue(maxAge: TimeInterval = 1800) async -> ProbeResult? {
-        let last = store?.double(forKey: probedAtKey) ?? 0
-        guard Date().timeIntervalSince1970 - last > maxAge else { return nil }
-        return await probe()
-    }
-
-    /// 纯判定函数（单测覆盖 APIRouteTests）：nil = 该线路探测失败。
-    static func pick(incumbent: String, cn: TimeInterval?, cf: TimeInterval?) -> String {
-        switch (cn, cf) {
-        case (nil, nil): return incumbent          // 全挂：别乱动，等下次
-        case (.some, nil): return API.cnHost       // 只有一边活：用活的
-        case (nil, .some): return API.cfHost
-        case let (.some(c), .some(f)):
-            let (incT, chT) = incumbent == API.cnHost ? (c, f) : (f, c)
-            guard chT + hysteresis < incT else { return incumbent }
-            return incumbent == API.cnHost ? API.cfHost : API.cnHost
-        }
-    }
-
-    /// HEAD 一次落地页，量到首个响应的耗时；非 2xx/超时/断网 → nil。
-    /// ephemeral + 禁缓存：量的是真实网络，不是 URLCache。
-    private static func measure(_ url: URL) async -> TimeInterval? {
-        let config = URLSessionConfiguration.ephemeral
-        config.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
-        config.timeoutIntervalForRequest = 6
-        config.timeoutIntervalForResource = 6
-        let session = URLSession(configuration: config)
-        defer { session.finishTasksAndInvalidate() }
-        var req = URLRequest(url: url)
-        req.httpMethod = "HEAD"
-        let start = Date()
-        guard let (_, resp) = try? await session.data(for: req), resp.isOK else { return nil }
-        return Date().timeIntervalSince(start)
+        cache.withLock { $0 = nil }   // 换商店账号后下次取值即生效
     }
 }
 

@@ -2,6 +2,15 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 线路改为只按 App Store 商店区域；竞速探测整体移除（2026-08-26）
+
+`APIRoute` 重写：`Storefront.current.countryCode`（启动取一次，App Group 持久化
+`api.route.storefront`）决定线路——CHN/取不到 → voicedrop.cn，其他区 → jianshuo.dev
+直连。probe/probeIfDue/pick/measure、`api.route.host`、回前台复测、「线路探测」埋点、
+APIRouteTests 全部删除（xcodegen 已重生成工程）；新埋点「商店区域」`{区域,线路}`。
+前情：08-25 曾把商店区域做成竞速的冷启动默认，同日用户拍板改为唯一判定。
+TestFlight/Xcode 直装均读设备登录商店账号的区域。185 单测全过。
+
 ## review 落地第一批：4.5 个 bug + 3 处收口（2026-08-26）
 
 先对 2026-08-25 review 逐条核实（三路并行 agent 复核，结论：定量断言基本全对；
