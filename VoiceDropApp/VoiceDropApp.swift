@@ -22,6 +22,9 @@ struct VoiceDropApp: App {
                 // 订阅：挂 Transaction.updates 监听 + 把当前有效订阅逐笔 claim
                 // （服务端幂等）——续费到账不依赖用户打开算力页。
                 .task { StoreService.shared.start() }
+                // staging 残片兜底：完好的（promote 窗口内被杀）救回上传队列，
+                // 半截的（录音中被杀，无 moov）删掉。见 AudioRecorder.recoverStaleStaging。
+                .task { await AudioRecorder.recoverStaleStaging() }
                 // 国内/海外线路自动切换：启动竞速探测一次（voicedrop.cn/EO vs
                 // jianshuo.dev/CF 谁快用谁），回前台每 ≥30 分钟复测一次。
                 // 判定与持久化在 APIRoute（Networking.swift）。

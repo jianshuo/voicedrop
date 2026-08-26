@@ -262,7 +262,7 @@ struct RecordSession: View {
             return
         }
         guard take.duration >= RecordingPromoter.minDuration else {
-            _ = await RecordingPromoter.promote(take, place: nil)   // deletes the too-short take
+            _ = await RecordingPromoter.promote(take, place: { nil })   // deletes the too-short take
             Analytics.capture("录音太短", ["时长秒": Int(take.duration)])
             phase = .tooShort
             return
@@ -280,7 +280,7 @@ struct RecordSession: View {
     /// mirror). No upload here — the list drains the queue. Place geocoding is
     /// best-effort and usually instant (location already resolved during the take).
     private func promote(_ take: AudioRecorder.Recording) async {
-        guard let url = await RecordingPromoter.promote(take, place: await location.placeTag()) else { return }
+        guard let url = await RecordingPromoter.promote(take, place: { await location.placeTag() }) else { return }
         if let tag = defaultTag { Uploader.writeTagsSidecar(for: url, tags: [tag]) }
     }
 

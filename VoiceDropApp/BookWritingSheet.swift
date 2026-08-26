@@ -35,7 +35,7 @@ struct BookWritingSheet: View {
     @State private var inviteSuanli = 0    // 邀请一人安装 ≈ 得多少算力
     @State private var inviteURL: URL?
 
-    private static let bookAPI = URL(string: "https://lab.jianshuo.dev/api/book")!
+    private static let bookAPI = API.bookAPIBase
     private static let price = 320   // 展示用价目；扣费真源在服务端（402 会带权威数字）
 
     private var trimmedSeed: String { seed.trimmingCharacters(in: .whitespacesAndNewlines) }

@@ -52,8 +52,17 @@ final class LibraryCommandSession: VoiceAgentSession {
     private let scopeKey = "default"
 
     func connect() {
-        // Restore any commands persisted before a previous kill (text-only).
-        queue = CommandQueueStore.load(scope: scopeKey).map { ArticleAgentSession.EditRequest(id: $0.id, text: $0.text) }
+        // Restore any commands persisted before a previous kill.
+        let persisted = CommandQueueStore.load(scope: scopeKey)
+        queue = persisted.map { ArticleAgentSession.EditRequest(id: $0.id, text: $0.text) }
+        // refs 也要回来（2026-08-26 review bug③）：persist() 一直存着 refsJSON，这里
+        // 却只取 id+text——冷启动重发的命令带 refs: []，「把第二篇和第三篇合并」失去
+        // 指代。只在本会话还没 setRefs 过时回填（内存里的最新编号表优先）。
+        if refs.isEmpty, let json = persisted.compactMap(\.refsJSON).last,
+           let data = json.data(using: .utf8),
+           let saved = try? JSONDecoder().decode([CommandRef].self, from: data) {
+            refs = saved
+        }
         guard !token.isEmpty else { state = .error; error = "未登录"; return }
         guard let url = URL(string: base) else { state = .error; return }
         socket.onMessage = { [weak self] in self?.handle($0) }

@@ -67,6 +67,12 @@ struct FeedResult: Decodable {
 @MainActor
 @Observable
 final class CommunityStore {
+    /// 全 App 一个实例（2026-08-26 review bug④根因）：以前 LibraryView 和
+    /// RecordingDetailView 各自 new 一个，详情页的 unshare 打在自己那个从没
+    /// load 过的空 store 上，feed 那个实例毫不知情——跨实例只靠磁盘缓存握手。
+    /// 测试仍可自建实例（init 保持可用，tokenProvider 注入点不变）。
+    static let shared = CommunityStore()
+
     var posts: [CommunityPost] = []
     /// 服务端原始返回顺序（纯 firstSharedAt 时间序）——「最新」tab 直接用这份，
     /// 不经 reco；posts 则会被 applyRanking 重排成「推荐」顺序。
@@ -105,6 +111,24 @@ final class CommunityStore {
         DiskCache.save(FeedCache(posts: posts, timeOrdered: timeOrdered,
                                  likeCounts: likeCounts, replyCounts: replyCounts,
                                  liked: Array(likedShareIds)), Self.feedCacheName)
+    }
+
+    /// 本地移除一帖（乐观更新的统一出口）：posts 和 timeOrdered 两个数组都要动——
+    /// 「最新」tab（默认 tab）的数据源是 timeOrdered——并落盘 feed 快照，否则冷启动
+    /// 缓存重放已删帖（2026-08-26 review bug④：unshare/report 曾只删 posts）。
+    func removePostLocally(_ shareId: String) {
+        posts.removeAll { $0.shareId == shareId }
+        timeOrdered.removeAll { $0.shareId == shareId }
+        persistFeedCache()
+    }
+
+    /// 屏蔽某作者后的本地清场：两个数组一起过滤 + 落盘（冷启动的 init 过滤只是
+    /// 兜底，活着的会话也要立即生效）。
+    func removeAuthorLocally(_ author: String?) {
+        guard let author, !author.isEmpty else { return }
+        posts.removeAll { ($0.author ?? "") == author }
+        timeOrdered.removeAll { ($0.author ?? "") == author }
+        persistFeedCache()
     }
 
     /// Community WRITES (share / unshare) need an Apple-verified identity — the server
@@ -298,7 +322,7 @@ final class CommunityStore {
     @discardableResult
     func unshare(_ shareId: String) async -> Bool {
         guard !token.isEmpty else { return false }
-        posts.removeAll { $0.shareId == shareId }                 // optimistic
+        removePostLocally(shareId)                                // optimistic
         let ok = await withAppleRetry({ await postUnshare(shareId) }, isSuccess: { $0 })
         if !ok { await load() }                                   // failed → resync the optimistic removal
         if ok { Analytics.capture("取消社区分享") }
@@ -439,7 +463,7 @@ final class CommunityStore {
     @discardableResult
     func report(_ shareId: String, reason: String = "") async -> Bool {
         guard !token.isEmpty else { return false }
-        posts.removeAll { $0.shareId == shareId }
+        removePostLocally(shareId)
         var req = URLRequest(url: base.appending(path: "community").appending(path: "report").appending(path: shareId))
         req.httpMethod = "POST"
         req.timeoutInterval = 5
@@ -580,7 +604,7 @@ struct CommunityPostView: View {
         .confirmationDialog("屏蔽此用户？", isPresented: $showBlockConfirm, titleVisibility: .visible) {
             Button("屏蔽", role: .destructive) {
                 BlockStore.block(full?.author ?? post.author)
-                store.posts.removeAll { ($0.author ?? "") == (full?.author ?? post.author ?? "") }
+                store.removeAuthorLocally(full?.author ?? post.author)
                 showToast(String(localized: "已屏蔽，TA 的内容将不再显示"))
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { dismiss() }
             }
@@ -1009,7 +1033,7 @@ struct CommunityPostView: View {
         guard let take = recorder.stop() else { withAnimation { recorderPhase = .idle }; return }
         withAnimation { recorderPhase = .idle }
         guard take.duration >= RecordingPromoter.minDuration else {
-            _ = await RecordingPromoter.promote(take, place: nil)   // deletes the too-short take
+            _ = await RecordingPromoter.promote(take, place: { nil })   // deletes the too-short take
             showToast(String(localized: "时间太短，不足以产生文章"))
             return
         }
@@ -1019,7 +1043,7 @@ struct CommunityPostView: View {
     }
 
     private func promote(_ take: AudioRecorder.Recording) async {
-        guard let finalURL = await RecordingPromoter.promote(take, place: await location.placeTag()) else { return }
+        guard let finalURL = await RecordingPromoter.promote(take, place: { await location.placeTag() }) else { return }
         // LibraryView.onChange picks this up when the article is mined and auto-shares with replyTo.
         UserDefaults.standard.set(post.shareId, forKey: "vd.pendingReply.\(finalURL.lastPathComponent)")
     }

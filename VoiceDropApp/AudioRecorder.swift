@@ -158,15 +158,30 @@ final class AudioRecorder: RecordingBackend {
         return documentsDir.appending(path: name)
     }
 
-    /// Discard any staging file left behind by an app kill mid-recording. Such a
-    /// file was never finalized (no moov atom → unplayable), so it's safe to drop
-    /// rather than promote it into the upload queue.
-    static func cleanupStaleStaging() {
+    /// 启动兜底：处理上次进程被杀留下的 staging 残片。⚠️ 不能无条件删——staging
+    /// 文件不一定是坏的：录音中被杀的确实没写 moov（不可播，删）；但 stop() 之后、
+    /// promote 完成前被杀的是**完好录音**（moov 已写完），历史版本里这种文件会永远
+    /// 留在盘上（上传队列/列表都只认 `VoiceDrop-` 前缀）——可播且时长达标的补升级
+    /// 成正式名进上传队列，把这些孤儿救回来（2026-08-26 review bug①）。
+    static func recoverStaleStaging() async {
         let dir = documentsDir
         let files = (try? FileManager.default.contentsOfDirectory(
             at: dir, includingPropertiesForKeys: nil)) ?? []
         for f in files where f.lastPathComponent.hasPrefix(stagingPrefix) {
-            try? FileManager.default.removeItem(at: f)
+            // 正在写的录音也叫 staging 名（App Shortcut 可能一启动就开录）——
+            // 5 分钟内还在被写的文件绝不能碰，只处理真正的隔世残片。
+            let mtime = (try? f.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
+            guard let mtime, Date().timeIntervalSince(mtime) > 300 else { continue }
+            let stamp = f.deletingPathExtension().lastPathComponent
+                .replacingOccurrences(of: stagingPrefix, with: "")
+            let seconds = (try? await AVURLAsset(url: f).load(.duration).seconds) ?? 0
+            guard seconds.isFinite, seconds >= RecordingPromoter.minDuration,
+                  let start = RecordingName.date(fromTimestamp: stamp) else {
+                try? FileManager.default.removeItem(at: f)
+                continue
+            }
+            _ = await RecordingPromoter.promote(
+                Recording(url: f, start: start, duration: seconds), place: { nil })
         }
     }
 

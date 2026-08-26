@@ -68,6 +68,10 @@ enum API {
     /// voicedrop.cn**（.cn 域名微信内打开不弹提示，接收者大概率在国内）——
     /// 不随 APIRoute 切换。邀请链接、微信 universal link 同理，各自写死 .cn。
     static func sharePage(_ id: String) -> URL { URL(string: "https://voicedrop.cn/\(id)")! }
+    /// 写书/修书服务（Tokyo VPS 上的 Agent 服务，lab.jianshuo.dev）。单一主机、无
+    /// 国内镜像，不参与线路切换——但常量必须收口在这（曾散在 BookWritingSheet /
+    /// BookReviseSheet 三处硬编码），换域名/迁服务只改这一行。
+    static let bookAPIBase = URL(string: "https://lab.jianshuo.dev/api/book")!
 }
 
 /// 国内/海外线路自动切换（2026-08-19）。国内用户走 voicedrop.cn（腾讯 EO 境内

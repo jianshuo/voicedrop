@@ -846,17 +846,28 @@ final class LibraryStore {
         } catch { return .failed(nil) }
     }
 
+    /// 微信 errcode → 精确中文提示的唯一真源（发布 + 凭据验证两条链路共用；此前
+    /// SettingsView 另有一份映射，40164 的文案已各说各话）。未知 code 返回 nil，
+    /// 调用方按自己的语境兜底（发布失败 / 验证失败）。
+    static func wechatKnownError(_ errcode: Int?) -> String? {
+        switch errcode {
+        case 45004?:                 return String(localized: "摘要太短，正文写长一点再发")
+        case 40007?:                 return String(localized: "草稿已失效，已重建一份")
+        case 45009?, 45011?, 45110?: return String(localized: "今天发布次数到上限了，明天再试")
+        case 40164?:                 return String(localized: "服务器 IP 还没生效：到公众号后台把服务器 IP 加入「IP 白名单」，保存后等一两分钟再试")
+        case 40013?:                 return String(localized: "AppID 无效，找不到这个公众号")
+        case 40125?:                 return String(localized: "AppSecret 无效")
+        case 41002?:                 return String(localized: "缺少 AppID")
+        case 41004?:                 return String(localized: "缺少 AppSecret")
+        default:                     return nil
+        }
+    }
+
     /// Map a WeChat errcode/errmsg to a friendly Chinese line. nil → use a generic toast.
     static func wechatMessage(_ errcode: Int?, _ errmsg: String?) -> String? {
-        switch errcode {
-        case 45004?:                     return String(localized: "摘要太短，正文写长一点再发")
-        case 40007?:                     return String(localized: "草稿已失效，已重建一份")
-        case 45009?, 45011?, 45110?:     return String(localized: "今天发布次数到上限了，明天再试")
-        case 40164?, 40125?, 40013?:     return String(localized: "公众号配置有误，检查 AppID/Secret 或 IP 白名单")
-        default:
-            if errcode == nil && errmsg == nil { return nil }
-            return errmsg.map { String(localized: "发布失败：\($0)") } ?? String(localized: "发布失败")
-        }
+        if let known = wechatKnownError(errcode) { return known }
+        if errcode == nil && errmsg == nil { return nil }
+        return errmsg.map { String(localized: "发布失败：\($0)") } ?? String(localized: "发布失败")
     }
 
     /// Re-mine this article with 文风 version `styleV` (POST /agent/restyle). Server writes

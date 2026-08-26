@@ -18,6 +18,13 @@ final class PushRegistrar: NSObject, UIApplicationDelegate, UNUserNotificationCe
                 .requestAuthorization(options: [.alert, .sound, .badge])) ?? false
             if ok { await MainActor.run { application.registerForRemoteNotifications() } }
         }
+        // 换身份（删号重开 / 设备配对 adoptToken）后新 scope 的 push-token.json 没人写，
+        // 「文章已生成」推送要断到下次冷启动（2026-08-26 review bug⑤）。监听身份切换、
+        // 重新注册——系统会立刻重发 didRegister 回调，upload 用的是回调瞬间的新 bearer。
+        // 观察者与 App 同寿命，不需要 remove。
+        NotificationCenter.default.addObserver(forName: .vdDidAdoptAccount, object: nil, queue: .main) { _ in
+            Task { @MainActor in UIApplication.shared.registerForRemoteNotifications() }
+        }
         return true
     }
 

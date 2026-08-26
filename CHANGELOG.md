@@ -2,6 +2,65 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## review 落地第一批：4.5 个 bug + 3 处收口（2026-08-26）
+
+先对 2026-08-25 review 逐条核实（三路并行 agent 复核，结论：定量断言基本全对；
+NotificationCenter「悬垂指针崩溃源」在现代 iOS 不成立（selector 版 zeroing weak）、
+`monthly_19_9` 商品 ID 非问题（界面价格走 StoreKit displayPrice）、`wechatThumbMediaId`
+不是死代码（往返保存字段，删了会抹服务端数据）——照 review 的死代码清单删码前先看这行）。
+随后修复：
+
+- **bug① 录音丢失窗口**：`RecordingPromoter.promote` 的 place 改闭包——文件先落
+  无地名正式名（任何 await 之前），拿到地理标注再改富名；stop→promote 窗口内被杀
+  只丢地名不丢录音。⚠️ review 说的「cleanupStaleStaging 启动误删」机制不成立——
+  该函数**全仓零调用**，真实后果是 staging 孤儿永久滞留（队列/列表只认 `VoiceDrop-`
+  前缀）。已把它改造成 `recoverStaleStaging`（启动调用，VoiceDropApp）：可播且
+  ≥4s 的残片补升级进上传队列（救回历史孤儿），坏的删；mtime 5 分钟内的不碰
+  （App Shortcut 可能一启动就在录）。
+- **bug② 编辑 socket 永久断线**：`RecordingDetailView.onDisappear` 复位 `connected`。
+  触发者是插图 `.fullScreenCover`（sheet 不触发 presenter 的 onDisappear），恰好
+  插图接下来就要用这条 socket。
+- **bug③ 库级命令冷启动丢 refs**：`LibraryCommandSession.connect()` 从 persisted
+  `refsJSON` 回填 refs（此前只写不读），「把第二篇…」杀进程后不再失去指代。
+- **bug④ unshare/report/屏蔽 只删 posts**：新增 `CommunityStore.removePostLocally/
+  removeAuthorLocally` 统一出口（posts + timeOrdered + persistFeedCache——「最新」
+  是默认 tab，其数据源是 timeOrdered）；**CommunityStore 单例化**（`CommunityStore.shared`，
+  LibraryView/RecordingDetailView 共用），根治双实例互不知情。
+- **bug⑤ 删号/换身份后推送断**：PushRegistrar 监听 `.vdDidAdoptAccount` →
+  重新 `registerForRemoteNotifications()`，系统回调用新 bearer 重传 push-token。
+- **commitEdit 失败回滚**：原位编辑保存失败时 `applyLocalArticles(oldArticles)` 回滚
+  本地 doc（对齐 toggleCommunity 的失败恢复语义），不再「屏上改了、服务端没改」。
+- **微信 errcode 文案单一真源**：`LibraryStore.wechatKnownError`（发布+凭据验证共用，
+  含 40164/40013/40125/41002/41004 等），SettingsView 那份删除；40164 文案统一成
+  白名单指引。
+- **lab.jianshuo.dev 收口**：`API.bookAPIBase`（Networking.swift），BookWritingSheet/
+  BookReviseSheet 三处硬编码改引用（该主机无国内镜像，不参与线路切换，但换域名只改一行）。
+
+全量 191 条单测改动前后各跑一遍，均 pass。review 其余大项（API 样板迁移 72→11、
+行号契约收敛、WS 会话合并、SuanliStore）未动，留待后续批次。
+
+## 全仓只读架构审查（2026-08-25，无代码改动）
+
+7 路并行模块 review（录音上传 / 详情编辑 / 社区 / 设置账户IAP / 提示词 / 会话WS / Share Ext+中继）
++ 全仓 grep 定量扫描，产出 [docs/review-2026-08-25.md](docs/review-2026-08-25.md)（所有结论带
+file:line 证据）。**无代码改动**，纯文档。
+
+核心结论（给未来 agent 的速记）：
+- **网络样板半迁移**：`API.authed/get/send`（Networking.swift:165-198）只用了 11 处，全仓 70 处
+  手写 `URLRequest+setBearer+JSONDecoder+isOK` 未迁（Library 16 / Community 13 / SettingsView 10 /
+  PromptStore 8）。**新代码一律走 helper，存量逐步搬**（这是 2026-07-26 审查后没做完的活）。
+- **正文行号/分段契约 4~5 份独立实现**（bodyRows / BodyDiff / MarkdownTextBlock / replacingLine /
+  ExportManager），第N行计数 3 份——改行号规则要同步 3 处 + 服务端 prompt（{{LINE}}）。
+- **WS 生命周期 4 套**（AgentSocket 收口了 Article/Library/Status；RealtimeSession / DeviceLink /
+  SpeechDictation 没迁）；WS 帧解析 5 处裸字典零测试；Article/LibraryCommand 会话 ~85% 同构。
+- **余额/邀请 5 处各自实现**（usage/balance ×3、referral/link ×2），无共享 store、无到账广播。
+- **5 个待修 bug**：① promote 先 await 定位后移动文件 → staging 文件可能被启动清理误删（录音丢失）；
+  ② RecordingDetailView `connected` 永不复位 → 盖 sheet 后编辑 socket 永久断线；③
+  LibraryCommandSession 重启恢复丢 refs；④ Community unshare/report 乐观更新只删 posts 不动
+  timeOrdered 且不持久化（双 CommunityStore 实例根因）；⑤ 删号换身份后 push-token 不补传。
+- 测试失衡：191 条里 PromptStore 系占 51%；Library/Community/Uploader/WS 帧/Share Ext(9 文件零测试)/
+  relay 主链 全无覆盖。
+
 ## 国内/海外线路自动切换：voicedrop.cn(EO) vs jianshuo.dev(CF) 竞速选线（2026-08-19）
 
 用户要求：国内资源走 voicedrop.cn（腾讯 EdgeOne），海外直连 jianshuo.dev（Cloudflare），

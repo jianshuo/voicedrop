@@ -24,8 +24,8 @@ struct BookReviseSheet: View {
     @FocusState private var inputFocused: Bool
 
     private static let price = 40   // 展示用价目；扣费真源在服务端（402 带权威数字）
-    private static let historyBase = URL(string: "https://lab.jianshuo.dev/api/book/history")!
-    private static let reviseAPI = URL(string: "https://lab.jianshuo.dev/api/book/revise")!
+    private static let historyBase = API.bookAPIBase.appending(path: "history")
+    private static let reviseAPI = API.bookAPIBase.appending(path: "revise")
 
     private var running: Bool { thread.contains { $0.status == "running" } }
     private var trimmedInput: String { input.trimmingCharacters(in: .whitespacesAndNewlines) }

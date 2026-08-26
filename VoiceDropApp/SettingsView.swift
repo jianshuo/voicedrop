@@ -281,17 +281,10 @@ final class SettingsStore {
                 return String(localized: "暂时连不上验证服务，请稍后再试（配置未保存）")
             }
             if obj["ok"] as? Bool == true { return nil }
-            switch obj["errcode"] as? Int ?? -1 {
-            case 40164:
-                return String(localized: "服务器 IP 还没生效：把下方 IP 加入公众号后台的「IP 白名单」，保存白名单后等一两分钟再点保存")
-            case 40013: return String(localized: "AppID 无效，找不到这个公众号")
-            case 40125: return String(localized: "AppSecret 无效")
-            case 41002: return String(localized: "缺少 AppID")
-            case 41004: return String(localized: "缺少 AppSecret")
-            default:
-                let msg = obj["errmsg"] as? String ?? String(localized: "未知错误")
-                return String(localized: "验证失败：\(msg)")
-            }
+            // errcode 文案唯一真源 = LibraryStore.wechatKnownError（发布链路同一份）。
+            if let known = LibraryStore.wechatKnownError(obj["errcode"] as? Int) { return known }
+            let msg = obj["errmsg"] as? String ?? String(localized: "未知错误")
+            return String(localized: "验证失败：\(msg)")
         } catch {
             return String(localized: "暂时连不上验证服务，请稍后再试（配置未保存）")
         }

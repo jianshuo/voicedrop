@@ -29,7 +29,7 @@ struct RecordingDetailView: View {
     @State private var toast: String?
     @State private var sharePayload: SharePayload?
     @State private var xhsWorking = false
-    @State private var community = CommunityStore()
+    private let community = CommunityStore.shared
     @State private var published = false            // already has a WeChat draft
     @State private var sharedToCommunity = false    // already shared to the community
     @State private var communityShareId: String?    // shareId when shared (needed for unshare)
@@ -252,7 +252,10 @@ struct RecordingDetailView: View {
                 Analytics.capture("文章打开", ["篇数": articles.count])
             }
         }
-        .onDisappear { player.stop(); dictation.stop(); agent.disconnect() }
+        // connected 必须复位（2026-08-26 review bug②）：插图的 fullScreenCover 会触发
+        // 本视图的 onDisappear→disconnect；关闭后 .task 重跑，若 connected 还挂着 true，
+        // connectIfNeeded 被 guard 挡住，编辑 socket 就永久断线（恰好插图接下来就要用它）。
+        .onDisappear { player.stop(); dictation.stop(); agent.disconnect(); connected = false }
         .sheet(isPresented: $showingWechatSettings, onDismiss: {
             if publishAfterSetup {
                 publishAfterSetup = false
@@ -984,6 +987,9 @@ struct RecordingDetailView: View {
             if ok {
                 await loadVersionHistory()
             } else {
+                // 保存失败必须回滚本地 doc——否则屏上是改过的、服务端是没改的，
+                // 下次拉取静默丢编辑（对齐 toggleCommunity 的失败恢复语义）。
+                applyLocalArticles(oldArticles)
                 showToast(String(localized: "保存失败，请重试"))
             }
         }
