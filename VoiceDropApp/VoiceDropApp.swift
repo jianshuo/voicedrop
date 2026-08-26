@@ -1,4 +1,5 @@
 import SwiftUI
+import StoreKit
 
 @main
 struct VoiceDropApp: App {
@@ -63,6 +64,12 @@ struct VoiceDropApp: App {
     /// 线路探测入口：force = 启动（必测），否则 30 分钟节流（回前台）。
     /// 埋点只送元数据（线路名/时延/是否切换），符合隐私红线。
     private static func probeRoute(force: Bool) async {
+        // 顺手记录 App Store 商店区域（CHN/USA…）：冷启动未探测时按它定默认线路
+        // ——中国区默认 voicedrop.cn，其他区默认直连 CF（见 APIRoute.currentHost）。
+        if force, let sf = await Storefront.current {
+            APIRoute.noteStorefront(sf.countryCode)
+            Analytics.capture("商店区域", ["区域": sf.countryCode])
+        }
         let result = force ? await APIRoute.probe() : await APIRoute.probeIfDue()
         guard let result else { return }
         var props: [String: Any] = ["线路": result.host == API.cnHost ? "cn" : "cf",

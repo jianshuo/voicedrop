@@ -95,13 +95,32 @@ enum APIRoute {
     /// 进程内缓存：URL 构建是高频路径（列表滚动逐张照片），别每次开 UserDefaults。
     private static let cache = OSAllocatedUnfairLock<String?>(initialState: nil)
 
+    static let storefrontKey = "api.route.storefront"
+
     static var currentHost: String {
         cache.withLock { h in
             if let h { return h }
-            let v = store?.string(forKey: hostKey) == API.cfHost ? API.cfHost : API.cnHost
+            let saved = store?.string(forKey: hostKey)
+            let v: String
+            if let saved {
+                v = saved == API.cfHost ? API.cfHost : API.cnHost
+            } else {
+                // 没探测过的冷启动：按 App Store 商店区域给默认（2026-08-25）——
+                // 中国区（或还没拿到 storefront）走 voicedrop.cn（EO 境内边缘，老行为），
+                // 其他区默认直连 CF，第一批请求不再绕道中国。之后竞速探测照常覆盖。
+                let sf = store?.string(forKey: storefrontKey)
+                v = (sf == nil || sf == "CHN") ? API.cnHost : API.cfHost
+            }
             h = v
             return v
         }
+    }
+
+    /// App 启动时上报 App Store 商店区域（StoreKit Storefront，三位码如 CHN/USA）。
+    /// 只在还没有竞速判定时影响默认线路；判定落盘后 storefront 仅作记录。
+    static func noteStorefront(_ code: String) {
+        store?.set(code, forKey: storefrontKey)
+        if store?.string(forKey: hostKey) == nil { cache.withLock { $0 = nil } }
     }
 
     struct ProbeResult {
