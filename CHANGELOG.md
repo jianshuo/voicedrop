@@ -8,8 +8,9 @@
 shareId "book-<slug>"、封面走 /photo/ 通道新放行的 `users/*/books/*/cover.jpg`），所有
 用户可见。书列表接口 `/voicedrop/books/?format=json` 一次 ~9s，走 SWR：feed 绝不同步
 等它，isolate 内存 + Cache API（同 colo 共享）双层缓存 10min——冷 colo 首刷无书、二刷
-即有。本仓改动只一处：社区瀑布流 onSelect 里书卡改开站内 Safari（webSheet）到
-`voicedrop.cn/books/<slug>/`，其余帖子路径不变。同日补通用版本头：`setBearer` 收口处
+即有。本仓：社区瀑布流 onSelect 里书卡由卡片字段拼 ShelfBook 推入书架同款
+BookReaderView（同一导航栈，back 回社区原位；首版曾用临时 SafariView sheet，同日
+按用户反馈改为推栈），其余帖子路径不变。同日补通用版本头：`setBearer` 收口处
 所有 API 请求统一带 `X-VD-Version` / `X-VD-Build`（ClientVersion，Networking.swift），
 服务端按 build 门槛开功能——reco 只对 build ≥ 330（书卡首发版）混书，旧版看不到书、
 不存在点开失败的过渡期；这套头以后任何按版本开闸的功能都复用。

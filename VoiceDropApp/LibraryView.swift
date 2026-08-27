@@ -30,6 +30,7 @@ struct LibraryView: View {
     @State private var showUsage = false   // 算力账单直达（「文章被投喂」推送深链）
     @State private var selectedRec: Recording?
     @State private var selectedPost: CommunityPost?
+    @State private var openFeedBook: ShelfBook?   // 社区书卡 → 推入书架同款 BookReaderView
     // Universal-link web fallback (/help/ 等无原生对应的页面) — in-app Safari.
     @State private var webSheet: WebSheetItem?
     private struct WebSheetItem: Identifiable {
@@ -200,6 +201,7 @@ struct LibraryView: View {
         .navigationDestination(item: $selectedPost) { post in
             CommunityPostView(store: community, post: post, onRecordFinished: responseRecorded)
         }
+        .navigationDestination(item: $openFeedBook) { book in BookReaderView(book: book) }
         .navigationDestination(item: $sharedArticle) { nav in
             SharedArticleView(store: community, shared: nav.shared, articleIndex: nav.index)
         }
@@ -512,12 +514,18 @@ struct LibraryView: View {
             // 双排瀑布流（CommunityFeedView，design handoff 方向 1a）。取消分享从
             // swipe 改长按 context menu——masonry 不在 List 里，没有 swipeActions。
             // 书卡（kind:"book"，服务端 reco feed 混入，shareId = "book-<slug>"）没有
-            // 分享快照可开——点开直接进现成的书架阅读页（站内 Safari，恒 voicedrop.cn）。
+            // 分享快照可开——由卡片字段拼一个 ShelfBook，推入书架同款 BookReaderView
+            // （同一导航栈，back 回到社区原位置；c/c2 只有书架封面用，这里随便给）。
             CommunityFeedView(store: community,
                               onSelect: { post in
-                                  if post.kind == "book", post.shareId.hasPrefix("book-"),
-                                     let u = URL(string: "https://voicedrop.cn/books/\(post.shareId.dropFirst(5))/") {
-                                      webSheet = WebSheetItem(url: u)
+                                  if post.kind == "book", post.shareId.hasPrefix("book-") {
+                                      let slug = String(post.shareId.dropFirst(5))
+                                      openFeedBook = ShelfBook(
+                                          slug: slug,
+                                          title: post.title ?? slug, main: post.title ?? slug,
+                                          sub: post.preview ?? "", c: "#8A7A5A", c2: "#6E5F44",
+                                          cover: post.coverPhotoKey != nil, coverAt: nil,
+                                          chapters: post.count ?? 0, author: post.author, hidden: nil)
                                   } else {
                                       selectedPost = post
                                   }
