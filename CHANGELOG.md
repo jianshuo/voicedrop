@@ -2,6 +2,14 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 书卡点击补 view 埋点（2026-08-27）
+
+书卡 onSelect 直接推 BookReaderView、不经帖子详情页，view/finish/like 三个埋点
+全绕过——书帖在推荐排序里是零信号。现在 onSelect 书分支补 engage(view)。
+服务端配套（jianshuo.dev commit ccbbf25）：reco engage 的 shareId 限长 32→64，
+9 本长 slug 书（如 book-embodied-intelligence-humanoid-robots，42 字符）的互动
+此前会被 400 拒。finish（读到底）与红心入口暂不做——红心是产品决策，等拍板。
+
 ## 书帖转正为一等社区帖 + 书卡不出「取消分享」（2026-08-27）
 
 服务端（jianshuo.dev 仓 commit 24ff269）：书不再由 reco 在 feed 读时混入书架

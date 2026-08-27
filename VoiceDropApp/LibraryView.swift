@@ -519,6 +519,9 @@ struct LibraryView: View {
             CommunityFeedView(store: community,
                               onSelect: { post in
                                   if post.kind == "book", post.shareId.hasPrefix("book-") {
+                                      // 书卡不走帖子详情页，view 埋点在这里补——书帖的
+                                      // 互动记录与普通帖同权（喂推荐排序）。红心暂不做。
+                                      Task { await community.engage(post.shareId, action: "view") }
                                       let slug = String(post.shareId.dropFirst(5))
                                       openFeedBook = ShelfBook(
                                           slug: slug,
