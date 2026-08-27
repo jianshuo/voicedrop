@@ -2,6 +2,14 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 写书页算力不够：第三条来路——订阅包月算力（2026-08-27）
+
+BookWritingSheet 的「算力不够？」攒法卡在原有两条（请朋友加油 / 邀请安装）之外加第三条：
+订阅包月算力（¥19.9/月 → 每月 200 算力，价格用 product.displayPrice 本地化），行内直接给
+一键订阅按钮（复用 StoreService.purchase()，购买后刷新余额）。显示条件 = 服务端售卖开关
+开着（store.enabled）且未订阅（!store.active）——开关关着或已订阅的人看到的仍是两条，
+文案「两条/三条来路」随之切换。进场 loadNumbers() 先 store.refresh() 拿开关/订阅态/价格。
+
 ## VD社区书架：feed 混入全部书 + 点书卡进书架阅读页（2026-08-27）
 
 服务端（jianshuo.dev 仓 reco worker）把公开书架 97 本书混进 `/reco/feed`（kind:"book"、

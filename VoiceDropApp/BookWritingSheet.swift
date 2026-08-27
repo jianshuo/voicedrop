@@ -34,6 +34,8 @@ struct BookWritingSheet: View {
     @State private var feedSuanli = 0      // 别人给我的文章加油一次 ≈ 得多少算力
     @State private var inviteSuanli = 0    // 邀请一人安装 ≈ 得多少算力
     @State private var inviteURL: URL?
+    // 第三条来路：包月订阅（售卖开关关着或已订阅就不出现）
+    @ObservedObject private var store = StoreService.shared
 
     private static let bookAPI = API.bookAPIBase
     private static let price = 320   // 展示用价目；扣费真源在服务端（402 会带权威数字）
@@ -195,7 +197,10 @@ struct BookWritingSheet: View {
         .padding(.horizontal, 15).padding(.vertical, 10)
     }
 
-    // MARK: 算力不够 — 两条攒法（数字 = 服务端现价）
+    // MARK: 算力不够 — 攒法（加油 / 邀请，数字 = 服务端现价；开着售卖开关再加第三条：包月订阅）
+
+    /// 订阅这条路显示条件：售卖开关开着且还没订（订着的人每月已在自动到账，再卖是骚扰）。
+    private var showSubscribePath: Bool { store.enabled && !store.active }
 
     private var earnSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -204,7 +209,7 @@ struct BookWritingSheet: View {
             SettingsCard {
                 VStack(alignment: .leading, spacing: 12) {
                     if let gap = shortOf {
-                        Text("还差 \(gap) 算力。两条来路：")
+                        Text(showSubscribePath ? "还差 \(gap) 算力。三条来路：" : "还差 \(gap) 算力。两条来路：")
                             .font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.ink)
                     }
                     earnRow(symbol: "hands.clap.fill",
@@ -217,6 +222,11 @@ struct BookWritingSheet: View {
                                 ? String(localized: "邀请朋友装 VoiceDrop——装一个约得 \(inviteSuanli) 算力\(inviteTimesHint)")
                                 : String(localized: "邀请朋友装 VoiceDrop——每装一个你都得算力"),
                             sub: String(localized: "朋友通过你的链接安装，双方都到账"))
+                    if showSubscribePath {
+                        earnRow(symbol: "arrow.triangle.2.circlepath",
+                                title: String(localized: "订阅包月算力——\(store.product?.displayPrice ?? "¥19.9")/月，每月自动充入 200 算力"),
+                                sub: String(localized: "当月没用完月底清零，随时可在系统「订阅」里取消"))
+                    }
                     if let url = inviteURL {
                         ShareLink(item: url, message: Text("我在用 VoiceDrop 口述成文，装这个我们都得算力：")) {
                             Text("把邀请链接发给朋友")
@@ -224,6 +234,17 @@ struct BookWritingSheet: View {
                                 .frame(maxWidth: .infinity).padding(.vertical, 11)
                                 .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.R.primary))
                         }
+                    }
+                    if showSubscribePath {
+                        Button {
+                            Task { await store.purchase(); await loadNumbers() }
+                        } label: {
+                            Text(store.purchasing ? String(localized: "购买中…") : String(localized: "订阅包月算力"))
+                                .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.accent)
+                                .frame(maxWidth: .infinity).padding(.vertical, 11)
+                                .background(Theme.accentSoft, in: RoundedRectangle(cornerRadius: Theme.R.primary))
+                        }
+                        .disabled(store.purchasing)
                     }
                 }
                 .padding(.horizontal, 15).padding(.vertical, 14)
@@ -309,6 +330,7 @@ struct BookWritingSheet: View {
     /// 余额 + 「加油/邀请值多少算力」现价。任何一路失败都静默——价签区退化成
     /// 只显示价目，CTA 不因此上锁（扣费真源永远在服务端）。
     private func loadNumbers() async {
+        await store.refresh()   // 售卖开关/订阅态/本地化价格——决定第三条来路显不显示
         let token = AuthStore.shared.bearer
         guard !token.isEmpty else { return }
         struct Balance: Decodable { let suanli: Double }
@@ -356,7 +378,7 @@ struct BookWritingSheet: View {
                     let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                     let have = (body?["suanli"] as? Double) ?? 0
                     balance = have
-                    errorText = String(localized: "算力不足：写一本书要 \(Self.price) 算力，你现在有 \(Int(have.rounded()))。往上看两条攒法。")
+                    errorText = String(localized: "算力不足：写一本书要 \(Self.price) 算力，你现在有 \(Int(have.rounded()))。往上看攒法。")
                 case 401:
                     errorText = String(localized: "身份校验没过，请稍后重试。")
                 case let code:
