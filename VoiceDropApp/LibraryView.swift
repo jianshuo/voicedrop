@@ -511,8 +511,17 @@ struct LibraryView: View {
         } else {
             // 双排瀑布流（CommunityFeedView，design handoff 方向 1a）。取消分享从
             // swipe 改长按 context menu——masonry 不在 List 里，没有 swipeActions。
+            // 书卡（kind:"book"，服务端 reco feed 混入，shareId = "book-<slug>"）没有
+            // 分享快照可开——点开直接进现成的书架阅读页（站内 Safari，恒 voicedrop.cn）。
             CommunityFeedView(store: community,
-                              onSelect: { selectedPost = $0 },
+                              onSelect: { post in
+                                  if post.kind == "book", post.shareId.hasPrefix("book-"),
+                                     let u = URL(string: "https://voicedrop.cn/books/\(post.shareId.dropFirst(5))/") {
+                                      webSheet = WebSheetItem(url: u)
+                                  } else {
+                                      selectedPost = post
+                                  }
+                              },
                               onUnshare: { confirmUnshare = $0 })
         }
     }

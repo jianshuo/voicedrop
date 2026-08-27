@@ -2,6 +2,16 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## VD社区书架：feed 混入全部书 + 点书卡进书架阅读页（2026-08-27）
+
+服务端（jianshuo.dev 仓 reco worker）把公开书架 97 本书混进 `/reco/feed`（kind:"book"、
+shareId "book-<slug>"、封面走 /photo/ 通道新放行的 `users/*/books/*/cover.jpg`），所有
+用户可见。书列表接口 `/voicedrop/books/?format=json` 一次 ~9s，走 SWR：feed 绝不同步
+等它，isolate 内存 + Cache API（同 colo 共享）双层缓存 10min——冷 colo 首刷无书、二刷
+即有。本仓改动只一处：社区瀑布流 onSelect 里书卡改开站内 Safari（webSheet）到
+`voicedrop.cn/books/<slug>/`，其余帖子路径不变。旧版 app 点书卡会当普通帖取分享快照
+而失败（无快照），属已知过渡代价。
+
 ## 线路改为只按 App Store 商店区域；竞速探测整体移除（2026-08-26）
 
 `APIRoute` 重写：`Storefront.current.countryCode`（启动取一次，App Group 持久化
