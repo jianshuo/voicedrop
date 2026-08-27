@@ -9,8 +9,10 @@ shareId "book-<slug>"、封面走 /photo/ 通道新放行的 `users/*/books/*/co
 用户可见。书列表接口 `/voicedrop/books/?format=json` 一次 ~9s，走 SWR：feed 绝不同步
 等它，isolate 内存 + Cache API（同 colo 共享）双层缓存 10min——冷 colo 首刷无书、二刷
 即有。本仓改动只一处：社区瀑布流 onSelect 里书卡改开站内 Safari（webSheet）到
-`voicedrop.cn/books/<slug>/`，其余帖子路径不变。旧版 app 点书卡会当普通帖取分享快照
-而失败（无快照），属已知过渡代价。
+`voicedrop.cn/books/<slug>/`，其余帖子路径不变。同日补通用版本头：`setBearer` 收口处
+所有 API 请求统一带 `X-VD-Version` / `X-VD-Build`（ClientVersion，Networking.swift），
+服务端按 build 门槛开功能——reco 只对 build ≥ 330（书卡首发版）混书，旧版看不到书、
+不存在点开失败的过渡期；这套头以后任何按版本开闸的功能都复用。
 
 ## 线路改为只按 App Store 商店区域；竞速探测整体移除（2026-08-26）
 

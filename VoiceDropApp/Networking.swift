@@ -6,10 +6,22 @@ import os
 // header, the HTTP success check, and URL-path percent-encoding each lived as
 // copy-pasted boilerplate in 30 / 24 / 8 spots. Change here once.
 
+/// Marketing version + build number, read once from Info.plist. Sent with every
+/// API request so the server can gate features by client build generically
+/// (e.g. reco only mixes book cards into the feed for builds that can open them)
+/// instead of growing per-feature capability flags.
+enum ClientVersion {
+    static let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
+    static let build = Bundle.main.infoDictionary?[kCFBundleVersionKey as String] as? String ?? "0"
+}
+
 extension URLRequest {
-    /// Set the `Authorization: Bearer <token>` header.
+    /// Set the `Authorization: Bearer <token>` header, plus the client version
+    /// headers (`X-VD-Version` / `X-VD-Build`) every API caller sends.
     mutating func setBearer(_ token: String) {
         setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        setValue(ClientVersion.short, forHTTPHeaderField: "X-VD-Version")
+        setValue(ClientVersion.build, forHTTPHeaderField: "X-VD-Build")
     }
 }
 
