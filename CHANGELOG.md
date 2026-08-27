@@ -2,6 +2,18 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 书帖转正为一等社区帖 + 书卡不出「取消分享」（2026-08-27）
+
+服务端（jianshuo.dev 仓 commit 24ff269）：书不再由 reco 在 feed 读时混入书架
+JSON（9s 慢源+SWR 双层缓存整体废除），改为**写时登记**——lab 写书/修书收尾调
+agent worker `POST /agent/book/community` 把书 upsert 进 community_posts
+（share_id "book-<slug>"、kind "book"），存量 98 本已回填。书帖的赞/回应/推荐
+排序自此与普通帖同权（旧路径永远显示 0 赞）。版本门槛只能在服务端做：reco feed
+对 build<330 的客户端把 kind='book' 行整体滤掉。社区展示索引三处写入（文章/
+提示词/书）收口到 functions/lib/community-index.js 一段代码。
+本仓：书主人现在在自己的书卡上 mine==true——contextMenu 对 kind=="book" 不出
+「取消分享」（书的下架走修书→hidden，unshare 会去删不存在的分享快照）。
+
 ## 写书页算力不够：第三条来路——订阅包月算力（2026-08-27）
 
 BookWritingSheet 的「算力不够？」攒法卡在原有两条（请朋友加油 / 邀请安装）之外加第三条：

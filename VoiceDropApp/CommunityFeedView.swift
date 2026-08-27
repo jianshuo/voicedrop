@@ -181,7 +181,10 @@ struct CommunityFeedView: View {
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
-                    if post.mine == true {
+                    // 书帖（kind:"book"）自 2026-08-27 起是写时登记的一等帖，主人也会
+                    // mine==true——但书的下架走「修书 → hidden」，不走社区取消分享
+                    // （unshare 会去删不存在的分享快照）。书卡不出这个菜单。
+                    if post.mine == true, post.kind != "book" {
                         Button(role: .destructive) { onUnshare(post) } label: {
                             Label("取消分享", systemImage: "trash")
                         }
