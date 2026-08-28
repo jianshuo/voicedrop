@@ -164,6 +164,15 @@ final class Prefs {
     private let d = UserDefaults.standard
 
     var iCloudBackup: Bool { didSet { d.set(iCloudBackup, forKey: "pref.iCloudBackup") } }
+    /// App 内语言覆盖：""=跟随系统，"zh-Hans"/"en"=固定语言。写 AppleLanguages 是
+    /// iOS 认可的按 App 覆写机制（重启 App 生效）；清空键即回到跟随系统。
+    var appLanguage: String {
+        didSet {
+            d.set(appLanguage, forKey: "pref.appLanguage")
+            if appLanguage.isEmpty { d.removeObject(forKey: "AppleLanguages") }
+            else { d.set([appLanguage], forKey: "AppleLanguages") }
+        }
+    }
     var deleteLocalAfterUpload: Bool { didSet { d.set(deleteLocalAfterUpload, forKey: "pref.deleteLocal") } }
     var highQuality: Bool { didSet { d.set(highQuality, forKey: "pref.highQuality") } }
     /// 逃生门：录音统一切到 AVAudioEngine 后端（支持随时开 AI 采访旁路）后，
@@ -173,6 +182,7 @@ final class Prefs {
 
     private init() {
         iCloudBackup = d.object(forKey: "pref.iCloudBackup") as? Bool ?? true
+        appLanguage = d.string(forKey: "pref.appLanguage") ?? ""
         deleteLocalAfterUpload = d.object(forKey: "pref.deleteLocal") as? Bool ?? true
         highQuality = d.object(forKey: "pref.highQuality") as? Bool ?? false
         classicRecorder = d.object(forKey: "pref.classicRecorder") as? Bool ?? false

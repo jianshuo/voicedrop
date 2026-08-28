@@ -2,6 +2,14 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 设置页新增语言切换（2026-08-28）
+
+「其他」卡片加「语言」行（🌐）：跟随系统 / 简体中文 / English。实现走 iOS 标准
+AppleLanguages 覆写（Prefs.appLanguage，""=跟随系统即清覆写键），重启 App 生效，
+切换后弹一次提示。新字符串英文翻译已手写进 Localizable.xcstrings；语言名
+「简体中文/English」用 verbatim 不参与本地化（语言名显示为它自己）。
+AppLanguageTests 锁契约；188 测全绿。
+
 ## 修复同一录音双传成两篇文章的竞态（2026-08-28）
 
 实锤案例：一段 2m49s 录音在服务端成了两个文档（`…-Fri-Morning` 00:52:05 /

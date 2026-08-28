@@ -392,6 +392,7 @@ struct SettingsView: View {
     @State private var showStyle = false
     @State private var showName = false
     @State private var invitePayload: SharePayload?
+    @State private var showLanguageHint = false
 
     private var shortTag: String {
         let id = AuthStore.shared.anonId          // "anon-7f3a…"
@@ -536,6 +537,24 @@ struct SettingsView: View {
                                             title: String(localized: "数据与备份"), subtitle: String(localized: "iCloud 备份 · 导出数据")) { settingsChevron }
                             }
                             settingsRowDivider
+                            // 语言切换：写 AppleLanguages 覆写（Prefs.appLanguage），重启 App 生效。
+                            // 菜单里的「简体中文/English」用 verbatim——语言名按惯例显示为它自己。
+                            SettingsRow(tileBG: Theme.tileNeutral, symbol: "globe", tileFG: Theme.secondary,
+                                        title: String(localized: "语言"), subtitle: String(localized: "重启 VoiceDrop 后生效")) {
+                                Menu {
+                                    Picker("", selection: languageBinding) {
+                                        Text(String(localized: "跟随系统")).tag("")
+                                        Text(verbatim: "简体中文").tag("zh-Hans")
+                                        Text(verbatim: "English").tag("en")
+                                    }
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Text(languageLabel).font(.system(size: 15)).foregroundStyle(Theme.ink)
+                                        settingsChevron
+                                    }
+                                }
+                            }
+                            settingsRowDivider
                             NavigationLink { AboutView(store: store) } label: {
                                 SettingsRow(tileBG: Theme.tileNeutral, symbol: "info.circle", tileFG: Theme.secondary,
                                             title: String(localized: "关于"), subtitle: String(localized: "手册 · 反馈 · 隐私 · 版本 \(Prefs.versionBuild)")) { settingsChevron }
@@ -553,6 +572,32 @@ struct SettingsView: View {
         .sheet(isPresented: $showStyle) { WritingStyleSheet(store: store) }
         .sheet(isPresented: $showName) { NameEditSheet(store: store) }
         .sheet(item: $invitePayload) { ShareSheet(items: $0.activityItems) }
+        .alert(String(localized: "语言已切换"), isPresented: $showLanguageHint) {
+            Button(String(localized: "好")) {}
+        } message: {
+            Text(String(localized: "关闭并重新打开 VoiceDrop 后生效。"))
+        }
+    }
+
+    /// 语言选择：改动写进 Prefs（内部覆写 AppleLanguages），弹一次「重启生效」提示。
+    private var languageBinding: Binding<String> {
+        Binding(
+            get: { Prefs.shared.appLanguage },
+            set: { newValue in
+                guard newValue != Prefs.shared.appLanguage else { return }
+                Prefs.shared.appLanguage = newValue
+                showLanguageHint = true
+                Analytics.capture("语言切换", ["语言": newValue.isEmpty ? "跟随系统" : newValue])
+            }
+        )
+    }
+
+    private var languageLabel: String {
+        switch Prefs.shared.appLanguage {
+        case "zh-Hans": return "简体中文"
+        case "en": return "English"
+        default: return String(localized: "跟随系统")
+        }
     }
 
     /// 邀请行副标题：双边同额且现价可得 → 带数字；否则通用文案（绝不编数字）。
