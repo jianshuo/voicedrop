@@ -1,1 +1,1 @@
-drop,voice,memo,notes,recorder,dictation,transcribe,text,ai,writing,journal,blog,article,speech
+memo,writer,writing,blog,journal,transcribe,speech,text,ai,recorder,essay,interview,diary,post
