@@ -1,4 +1,4 @@
 What's new:
-• Monthly Credits subscription: 200 credits added automatically each month; unused credits reset at month end; cancel anytime in system Subscriptions settings
-• Book covers now load reliably on slow networks: persistent cover cache with automatic retry
+• Language option: Settings → Other → Language — Follow System, 简体中文, or English (takes effect after restarting the app)
+• Fixed a rare issue where one recording could be processed twice and produce a duplicate article
 • Various polish and bug fixes
