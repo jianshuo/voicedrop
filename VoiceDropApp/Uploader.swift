@@ -89,6 +89,9 @@ final class Uploader {
             at: dir, includingPropertiesForKeys: nil)) ?? []
         return files
             .filter { RecordingName.isRecordingFile($0.lastPathComponent) }
+            // 正在等地理富名改名的 take 先不领（几秒后放行）——否则后台会话拷走旧名
+            // 上传，改名后的富名文件又被当新录音再传一遍，一条录音成两篇文章。
+            .filter { !RecordingPromoter.isHeldForEnrichment($0.lastPathComponent) }
             .filter { Self.isUploadable($0) }   // skip 0-byte / moov-less junk so it can't block the queue
             .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }

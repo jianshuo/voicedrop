@@ -2,6 +2,19 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 修复同一录音双传成两篇文章的竞态（2026-08-28）
+
+实锤案例：一段 2m49s 录音在服务端成了两个文档（`…-Fri-Morning` 00:52:05 /
+`…-Fri-Morning-Chuo-Shinkawa` 00:52:07），各挖出一篇文章。根因：promote 先落
+无地名正式名（立刻进 drain 扫描域，2026-08-26 防孤儿设计），再 await 地理编码
+改富名；旧注释断言「改名会让在飞的上传失败」，但 BackgroundTransfer 的
+URLSession 在任务创建时已拷走文件——旧名照样传成功、收尾 removeItem 静默失败，
+富名文件又被当新录音再传一遍。修法：`RecordingPromoter.enrichHolds`（内存态
+hold 集合），promote 落盘后挂住文件名、改富名结束放行，`Uploader.pendingFiles`
+扫描跳过 hold 中文件。内存态是有意的：窗口期被杀→集合蒸发→下次启动按盘上现名
+上传，最坏丢地名，录音 never lost、永不双传。新增 RecordingPromoterHoldTests
+两条契约测试；187 测全绿。（本次只改客户端；服务端按时间戳主干查重的兜底另议。）
+
 ## 书卡点击补 view 埋点（2026-08-27）
 
 书卡 onSelect 直接推 BookReaderView、不经帖子详情页，view/finish/like 三个埋点

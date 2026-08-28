@@ -8,6 +8,16 @@ enum RecordingPromoter {
     /// 不足这个时长的录音产不出文章——不进上传队列，直接丢弃。
     static let minDuration: TimeInterval = 4
 
+    /// 正在等待地理富名改名的文件名（内存态）。Uploader 的 pendingFiles 扫描跳过
+    /// 它们：无地名文件一落盘就进扫描域，若此刻被 drain 领走，随后的改富名并不会
+    /// 让那次上传失败——BackgroundTransfer 的 URLSession 在任务创建时已拷走文件，
+    /// 上传照样成功，收尾 removeItem 删旧路径静默失败，富名文件随后被当作新录音
+    /// 再传一遍：同一 take 服务端建两个文档、挖出两篇文章（2026-08-28 实锤）。
+    /// 内存态是有意的：进程在窗口期被杀，集合随之蒸发，下次启动按盘上现名正常
+    /// 上传——最坏只丢地名，录音 never lost，也永不双传。
+    @MainActor private static var enrichHolds: Set<String> = []
+    @MainActor static func isHeldForEnrichment(_ name: String) -> Bool { enrichHolds.contains(name) }
+
     /// Move `take` to its final on-disk URL and (best-effort) archive it. Returns the
     /// URL the file actually ended up at — callers attach any extra metadata to that.
     /// A take shorter than `minDuration` is deleted here and returns nil, so no
@@ -34,14 +44,17 @@ enum RecordingPromoter {
             let basic = AudioRecorder.documentsDir.appending(path: "VoiceDrop-\(RecordingName.timestamp(take.start)).m4a")
             url = (try? FileManager.default.moveItem(at: take.url, to: basic)) != nil ? basic : take.url
         }
-        // 文件已安全，地理标注只是文件名的锦上添花。极罕见竞态：这几秒里 drain 恰好
-        // 领走了旧路径，改名让那次上传失败——文件仍在盘上（新名字），下一次 drain
-        // 触发点重新入队，语义仍是 never lost。
+        // 文件已安全，地理标注只是文件名的锦上添花。挂住这次 take：改富名结束前
+        // 不让 drain 领走（否则无地名、带地名各传一次——见 enrichHolds 注释）。
+        // moveItem 与 insert 之间没有 await，主线程上原子，drain 不可能插队。
+        let heldName = url.lastPathComponent
+        enrichHolds.insert(heldName)
         if let placeTag = await place(), !placeTag.isEmpty, url != take.url {
             let enriched = AudioRecorder.documentsDir.appending(
                 path: RecordingName.make(start: take.start, duration: take.duration, place: placeTag))
             if (try? FileManager.default.moveItem(at: url, to: enriched)) != nil { url = enriched }
         }
+        enrichHolds.remove(heldName)
         if Prefs.shared.iCloudBackup {
             let toArchive = url
             await Task.detached { ICloudArchive.save(toArchive) }.value
