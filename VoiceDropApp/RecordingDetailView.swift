@@ -255,7 +255,7 @@ struct RecordingDetailView: View {
         // connected 必须复位（2026-08-26 review bug②）：插图的 fullScreenCover 会触发
         // 本视图的 onDisappear→disconnect；关闭后 .task 重跑，若 connected 还挂着 true，
         // connectIfNeeded 被 guard 挡住，编辑 socket 就永久断线（恰好插图接下来就要用它）。
-        .onDisappear { player.stop(); dictation.stop(); agent.disconnect(); connected = false }
+        .onDisappear { player.stop(); dictation.stop(); agent.disconnect(); connected = false; ReviewPrompter.articleClosed() }
         .sheet(isPresented: $showingWechatSettings, onDismiss: {
             if publishAfterSetup {
                 publishAfterSetup = false
@@ -1205,6 +1205,8 @@ struct RecordingDetailView: View {
             // Real, synchronous result now — no more "约 1 分钟后".
             showToast(created == 0 && updated > 0 ? String(localized: "已更新草稿") : String(localized: "已到草稿箱"))
             published = true
+            // 作品到了作者真正的舞台——评分请求的第二个情绪峰值（闸门在 Prompter 里）。
+            ReviewPrompter.wechatPublished { requestReview() }
             Analytics.capture("发公众号", ["新建": created, "更新": updated])
         case .notConfigured:
             publishAfterSetup = true

@@ -244,11 +244,13 @@ final class Uploader {
             // Auth 4xx is the server rejecting the request — re-enqueueing won't
             // change the outcome until the token changes; the file stays on disk.
             lastError = String(localized: "token 失效（HTTP \(status)）")
+            ReviewPrompter.noteError()
             Analytics.capture("录音上传失败", ["原因": "token失效", "网络类型": job.networkType, "口径": 3])
         } else {
             // 服务器拒绝（4xx/5xx）或 resource 窗口耗尽——文件留盘，下一次 drain
             // 触发点（前台刷新/联网恢复/下次录音）重新入队。
             lastError = errorText ?? String(localized: "上传失败 HTTP \(status)")
+            ReviewPrompter.noteError()
             Analytics.capture("录音上传失败", [
                 "原因": status > 0 ? "HTTP\(status)" : "网络中断",
                 "耗时秒": 耗时秒,
