@@ -9,12 +9,27 @@ import StoreKit
 @MainActor
 final class StoreService: ObservableObject {
     static let shared = StoreService()
-    /// 产品 ID 里写死价格（monthly_19_9 = ¥19.9/月主档）——以后加档（如 49_9）是新 ID，
-    /// 服务端按档位表（usage.js SUB_PRODUCTS）发放对应算力。各国售价在 ASC 按店面定，
-    /// ID 只是内部档位记号；界面价格永远用 product.displayPrice（自动本地货币）。
-    static let monthlyID = "com.wangjianshuo.VoiceDrop.sub.monthly_19_9"
+    /// 产品 ID 里写死价格（monthly_19_9 = ¥19.9/月主档，monthly_199_99 = ¥199.99/月高档）
+    /// ——服务端按档位表（usage.js SUB_PRODUCTS）发放对应算力，两边必须对齐。各国售价
+    /// 在 ASC 按店面定，ID 只是内部档位记号；界面价格永远用 product.displayPrice
+    /// （自动本地货币），绝不在 UI 里写死数字。
+    struct Tier: Identifiable, Hashable {
+        let id: String
+        let suanli: Int      // 每月发放算力（与服务端 SUB_PRODUCTS 同值）
+    }
+    /// 从低到高。同一个 ASC 订阅组 → 升降档由 StoreKit 按比例补差价，不必先退订。
+    static let tiers: [Tier] = [
+        Tier(id: "com.wangjianshuo.VoiceDrop.sub.monthly_19_9", suanli: 200),
+        Tier(id: "com.wangjianshuo.VoiceDrop.sub.monthly_199_99", suanli: 2000),
+    ]
+    static let monthlyID = tiers[0].id            // 主档（默认购买/展示）
+    static let proID = tiers[tiers.count - 1].id  // 高档（升档 upsell）
+    static func tier(_ id: String?) -> Tier? { tiers.first { $0.id == id } }
 
+    /// 主档商品（老调用点沿用）；全部档位在 productsByID 里。
     @Published var product: Product?
+    @Published var productsByID: [String: Product] = [:]
+    func product(_ id: String) -> Product? { productsByID[id] }
     @Published var active = false
     /// 售卖开关（服务端 R2 config/iap.json，零部署启停）。false = 算力页不显示订阅卡；
     /// 已订阅用户（active）不受开关影响，永远能看到管理入口。
@@ -27,6 +42,14 @@ final class StoreService: ObservableObject {
     /// 既不能再卖同一个订阅，也不该假装「每月自动到账」就完事。
     @Published var subSuanli: Double = 0
     @Published var monthlySuanli: Int = 200
+    /// 当前订着哪一档（服务端 iap_sub.product_id）——决定还能不能升档。
+    @Published var activeProductID: String?
+
+    /// 还能升的下一档：订着的档在 tiers 里往上还有东西就是它；没订/已在顶档 = nil。
+    var upgradeTier: Tier? {
+        guard active, let cur = Self.tiers.firstIndex(where: { $0.id == activeProductID }) else { return nil }
+        return cur + 1 < Self.tiers.count ? Self.tiers[cur + 1] : nil
+    }
 
     private var updatesTask: Task<Void, Never>?
 
@@ -43,23 +66,28 @@ final class StoreService: ObservableObject {
     }
 
     func refresh() async {
-        if product == nil {
-            product = try? await Product.products(for: [Self.monthlyID]).first
-        }
+        if productsByID.count < Self.tiers.count { await loadProducts() }
         await syncEntitlements()
         await loadStatus()
     }
 
-    func purchase() async {
+    /// 一次把所有档位拉回来（ASC 里还没建/还没过审的档位苹果不返回，就少一条，
+    /// 界面按「拿不到就不推这档」降级——绝不显示一个点了必失败的按钮）。
+    private func loadProducts() async {
+        guard let list = try? await Product.products(for: Self.tiers.map(\.id)) else { return }
+        productsByID = Dictionary(uniqueKeysWithValues: list.map { ($0.id, $0) })
+        product = productsByID[Self.monthlyID]
+    }
+
+    /// 买指定档（默认主档）。同一订阅组内买高档 = 升档，StoreKit 自动按比例补差价。
+    func purchase(_ productID: String = StoreService.monthlyID) async {
         guard !purchasing else { return }
         purchasing = true
         lastError = nil
         defer { purchasing = false }
         do {
-            if product == nil {
-                product = try await Product.products(for: [Self.monthlyID]).first
-            }
-            guard let product else {
+            if productsByID[productID] == nil { await loadProducts() }
+            guard let product = productsByID[productID] else {
                 lastError = String(localized: "商品加载失败，请稍后再试"); return
             }
             switch try await product.purchase() {
@@ -91,14 +119,14 @@ final class StoreService: ObservableObject {
 
     private func syncEntitlements() async {
         for await result in Transaction.currentEntitlements {
-            if case .verified(let txn) = result, txn.productID == Self.monthlyID {
+            if case .verified(let txn) = result, Self.tier(txn.productID) != nil {
                 await claim(txn)
             }
         }
     }
 
     private func handle(_ result: VerificationResult<Transaction>) async {
-        guard case .verified(let txn) = result, txn.productID == Self.monthlyID else { return }
+        guard case .verified(let txn) = result, Self.tier(txn.productID) != nil else { return }
         await claim(txn)
         await txn.finish()
         await loadStatus()
@@ -119,7 +147,7 @@ final class StoreService: ObservableObject {
 
     private struct Status: Decodable {
         let active: Bool; let enabled: Bool?; let expires_date: Int?
-        let sub_suanli: Double?; let monthly_suanli: Int?
+        let sub_suanli: Double?; let monthly_suanli: Int?; let product_id: String?
     }
 
     func loadStatus() async {
@@ -132,5 +160,6 @@ final class StoreService: ObservableObject {
         expiresDate = s.expires_date.map { Date(timeIntervalSince1970: Double($0) / 1000) }
         subSuanli = s.sub_suanli ?? 0
         monthlySuanli = s.monthly_suanli ?? 200
+        activeProductID = s.product_id
     }
 }

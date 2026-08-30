@@ -221,9 +221,42 @@ struct BookWritingSheet: View {
 
     /// 订着、但本月这份额度已经烧光——此前这一档什么都不显示：`showSubscribePath`
     /// 因 active 关掉，于是「算力不够怎么办」只剩加油/邀请两条，付费的路整条消失，
-    /// 用户看到的就是「买都没得买」。这里把这个状态明说出来，并给管理订阅入口
-    /// （升档/续费在系统面板里做）。
+    /// 用户看到的就是「买都没得买」。这里把这个状态明说出来。
     private var showSubscribedDryPath: Bool { store.active && store.subSuanli <= 0 }
+
+    /// 升档（upsell）——正是「钱不够」这一刻该出现的那条路。两种人看得到：
+    /// ①订着主档、当月已烧光：再买同一档 StoreKit 只会回「你已订阅」，唯一能
+    /// 再花钱的路就是升档；②还没订、且缺口大过主档每月发放量（写一本书 320，
+    /// 主档才 200）：订了也照样写不成，不如直说更高的那档。
+    /// 三个前提缺一不可：售卖开关开着、还有更高的档、那一档苹果真能拿到商品
+    /// （ASC 没建/没过审就拿不到，宁可不显示也不摆一个点了必败的按钮）。
+    private var upsellTier: StoreService.Tier? {
+        Self.upsellTier(enabled: store.enabled, active: store.active,
+                        activeProductID: store.activeProductID, subSuanli: store.subSuanli,
+                        shortOf: shortOf, sellable: { store.product($0) != nil })
+    }
+
+    /// 抽成纯函数好锁契约（同 shouldAskAuthorName 的家法）：`sellable` = 这个
+    /// 商品 ID 苹果那边真拉得到（ASC 没建/没过审就拉不到 → 不推）。
+    static func upsellTier(enabled: Bool, active: Bool, activeProductID: String?,
+                           subSuanli: Double, shortOf: Int?,
+                           tiers: [StoreService.Tier] = StoreService.tiers,
+                           sellable: (String) -> Bool) -> StoreService.Tier? {
+        guard enabled, let lowest = tiers.first else { return nil }
+        let next: StoreService.Tier?
+        if active {
+            // 订着：只有当月烧光才推，且只推「再往上一档」；已在顶档 = 无货可卖。
+            guard subSuanli <= 0, let cur = tiers.firstIndex(where: { $0.id == activeProductID }),
+                  cur + 1 < tiers.count else { return nil }
+            next = tiers[cur + 1]
+        } else {
+            // 没订：只有当主档那点额度根本盖不住缺口时才越级推最高档。
+            guard let gap = shortOf, gap > lowest.suanli else { return nil }
+            next = tiers.last
+        }
+        guard let tier = next, sellable(tier.id) else { return nil }
+        return tier
+    }
 
     private var earnSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -232,8 +265,7 @@ struct BookWritingSheet: View {
             SettingsCard {
                 VStack(alignment: .leading, spacing: 12) {
                     if let gap = shortOf {
-                        Text((showSubscribePath || showSubscribedDryPath)
-                             ? "还差 \(gap) 算力。三条来路：" : "还差 \(gap) 算力。两条来路：")
+                        Text(pathsLead(gap))
                             .font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.ink)
                     }
                     earnRow(symbol: "hands.clap.fill",
@@ -256,6 +288,15 @@ struct BookWritingSheet: View {
                                 title: String(localized: "你的包月算力本月已用完（每月 \(store.monthlySuanli)）"),
                                 sub: renewHint)
                     }
+                    if let tier = upsellTier {
+                        earnRow(symbol: "arrow.up.circle.fill",
+                                title: store.active
+                                    ? String(localized: "升级到 \(tierPrice(tier))/月——每月 \(tier.suanli) 算力，立刻到账")
+                                    : String(localized: "订阅 \(tierPrice(tier))/月——每月 \(tier.suanli) 算力，够写 \(tier.suanli / Self.price) 本书"),
+                                sub: store.active
+                                    ? String(localized: "同一订阅按比例补差价，当月额度立刻换成 \(tier.suanli)；随时可降回")
+                                    : String(localized: "主档每月 \(StoreService.tiers[0].suanli) 算力还不够写一本书（\(Self.price)），这档一次就够"))
+                    }
                     if let url = inviteURL {
                         ShareLink(item: url, message: Text("我在用 VoiceDrop 口述成文，装这个我们都得算力：")) {
                             Text("把邀请链接发给朋友")
@@ -275,7 +316,20 @@ struct BookWritingSheet: View {
                         }
                         .disabled(store.purchasing)
                     }
-                    if showSubscribedDryPath {
+                    if let tier = upsellTier {
+                        Button {
+                            Task { await store.purchase(tier.id); await loadNumbers() }
+                        } label: {
+                            Text(store.purchasing ? String(localized: "购买中…")
+                                 : store.active ? String(localized: "升级到每月 \(tier.suanli) 算力")
+                                                : String(localized: "订阅每月 \(tier.suanli) 算力"))
+                                .font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                                .frame(maxWidth: .infinity).padding(.vertical, 11)
+                                .background(Theme.accent, in: RoundedRectangle(cornerRadius: Theme.R.primary))
+                        }
+                        .disabled(store.purchasing)
+                    } else if showSubscribedDryPath {
+                        // 已经在顶档了，没得再卖——只给管理入口，别装作还能买。
                         Button { showManageSubs = true } label: {
                             Text("管理订阅")
                                 .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.accent)
@@ -284,10 +338,30 @@ struct BookWritingSheet: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    if let err = store.lastError {
+                        Text(err).font(.system(size: 12.5)).foregroundStyle(Theme.recordRed)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .padding(.horizontal, 15).padding(.vertical, 14)
             }
         }
+    }
+
+    /// 「还差 N 算力。X 条来路：」——X 得跟下面真显示出来的行数一致，别数错。
+    private func pathsLead(_ gap: Int) -> String {
+        let n = 2 + (showSubscribePath ? 1 : 0) + (upsellTier != nil ? 1 : 0)
+        switch n {
+        case 4:  return String(localized: "还差 \(gap) 算力。四条来路：")
+        case 3:  return String(localized: "还差 \(gap) 算力。三条来路：")
+        default: return String(localized: "还差 \(gap) 算力。两条来路：")
+        }
+    }
+
+    /// 档位价格永远用 StoreKit 的本地化价（自动跟随店面货币）；商品还没拉到时
+    /// 用「档」字带过，绝不在界面上写死一个人民币数字。
+    private func tierPrice(_ tier: StoreService.Tier) -> String {
+        store.product(tier.id)?.displayPrice ?? String(localized: "更高一档")
     }
 
     /// 续费提示：日期拿得到才说具体哪天到账，拿不到就只说会自动到账——不编日期。
