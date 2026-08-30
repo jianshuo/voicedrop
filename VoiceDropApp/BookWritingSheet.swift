@@ -29,6 +29,13 @@ struct BookWritingSheet: View {
     @State private var errorText: String?
     @FocusState private var seedFocused: Bool
 
+    // 署名：进场拉一次 profile.name。nil = 没拉到（网络失败/没登录，不打扰照常提交，
+    // 服务端有啥署啥）；"" = 确认没设置 → 提交前弹一次输入框，存进 profile.name。
+    @State private var authorName: String?
+    @State private var askName = false
+    @State private var nameAsked = false   // 本次 sheet 只问一次；留空确认后不再拦
+    @State private var nameDraft = ""
+
     // 价签与攒算力数据（进场拉一次；拉不到就只显示价目、CTA 交给服务端判）
     @State private var balance: Double?
     @State private var feedSuanli = 0      // 别人给我的文章加油一次 ≈ 得多少算力
@@ -74,6 +81,13 @@ struct BookWritingSheet: View {
         .background(Theme.appBG.ignoresSafeArea())
         .presentationDragIndicator(.visible)
         .task { await loadNumbers() }
+        .alert(String(localized: "署上你的名字"), isPresented: $askName) {
+            TextField(String(localized: "作者名"), text: $nameDraft)
+            Button(String(localized: "好了，开写")) { Task { await saveNameThenStart() } }
+            Button(String(localized: "取消"), role: .cancel) {}
+        } message: {
+            Text("书会署这个名字上架，以后在设置 → 名字里随时可改。留空则不署名。")
+        }
     }
 
     private var header: some View {
@@ -339,18 +353,48 @@ struct BookWritingSheet: View {
             let suanliInviter: Double?
             let suanliFeedAuthor: Double?
         }
+        struct StyleR: Decodable { let name: String? }
         async let b: Balance? = API.get(API.agentBase.appending(path: "usage/balance"), bearer: token)
         async let i: Invite? = API.get(API.agentBase.appending(path: "referral/link"), bearer: token)
+        async let s: StyleR? = API.get(API.filesBase.appending(path: "style"), bearer: token)
         if let b = await b { balance = b.suanli }
         if let i = await i {
             inviteSuanli = Int((i.suanliInviter ?? 0).rounded())
             feedSuanli = Int((i.suanliFeedAuthor ?? 0).rounded())
             inviteURL = i.url.flatMap(URL.init(string:))
         }
+        if let s = await s { authorName = s.name ?? "" }
+    }
+
+    /// 提交前要不要先问作者名：只有「拉到了 profile 且名字确实为空」才问一次。
+    /// 拉不到（nil，网络失败/没登录）不打扰——服务端有啥署啥，与老行为一致。
+    static func shouldAskAuthorName(loadedName: String?) -> Bool { loadedName == "" }
+
+    /// 输入框「好了，开写」：填了名字先存进 profile.name（PUT /style，与设置页同一端点），
+    /// 存好再提交；留空 = 不署名照常开写。本地 authorName 同步置位，本次 sheet 不再问。
+    private func saveNameThenStart() async {
+        let trimmed = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            var req = URLRequest(url: API.filesBase.appending(path: "style"))
+            req.httpMethod = "PUT"
+            req.setBearer(AuthStore.shared.bearer)
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            _ = try? await URLSession.shared.upload(
+                for: req, from: (try? JSONEncoder().encode(["name": trimmed])) ?? Data())
+            Analytics.capture("写书补署名")
+        }
+        if !trimmed.isEmpty { authorName = trimmed }
+        nameAsked = true   // 留空确认 = 明确选了不署名，别再拦第二次
+        start()
     }
 
     private func start() {
         guard canStart else { return }
+        if !nameAsked, Self.shouldAskAuthorName(loadedName: authorName) {
+            nameDraft = ""
+            askName = true
+            return
+        }
         seedFocused = false
         sending = true; errorText = nil
         Analytics.capture("写书发起")

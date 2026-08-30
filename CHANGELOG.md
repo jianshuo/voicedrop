@@ -2,6 +2,16 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 写书：没设名字先弹一次署名输入框（2026-08-30）
+
+BookWritingSheet 提交时若 profile.name **确认为空**（进场随余额一并 GET
+/style 拉到且为空），先弹原生 alert 输入框问作者名：填了就 PUT /style
+{name} 存进他名下（与设置页同端点，埋点「写书补署名」）再提交；留空确认
+= 明确不署名，照常开写且本次 sheet 不再拦（nameAsked 标记防死循环）；取消
+则不提交。名字已设置或 /style 拉不到（网络失败/没登录）都不打扰——与旧行
+为一致，服务端有啥署啥。判定抽成纯函数 shouldAskAuthorName（只有 loadedName
+== "" 才问），BookAuthorNamePromptTests 3 条锁契约；全量测试绿。
+
 ## 评分弹窗时机升级：峰值触发 + 四道闸门（2026-08-28）
 
 ReviewPrompter 从「第 3/10/30 次打开文章 2 秒后弹」升级为峰值时机系统：
