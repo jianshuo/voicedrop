@@ -92,7 +92,7 @@ struct ClaimView: View {
     private var pitchCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             row("sparkles", "一句话就够", "说个想法，AI 替你把整本书写出来——目录、章节、插图都有")
-            row("gift.fill", "一辈子送一次", "领了就是你的，写不写、什么时候写都随你")
+            row("gift.fill", "领了就是你的", "写不写、什么时候写都随你")
             row("clock.fill", "90 天内有效", "别攒着，攒着就过期了")
         }
         .padding(15)
@@ -107,7 +107,7 @@ struct ClaimView: View {
                 Text("当前算力 \(Int(balance.rounded()))")
                     .font(.system(size: 14)).foregroundStyle(Theme.secondary)
             }
-            Text(justGranted ? "去写你的第一本书吧" : "这份礼物一辈子只有一次，已经在你账上了")
+            Text(justGranted ? "去写你的第一本书吧" : "这笔算力已经在你账上了")
                 .font(.system(size: 13)).foregroundStyle(Theme.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
