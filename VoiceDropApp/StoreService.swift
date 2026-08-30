@@ -9,7 +9,7 @@ import StoreKit
 @MainActor
 final class StoreService: ObservableObject {
     static let shared = StoreService()
-    /// 产品 ID 里写死价格（monthly_19_9 = ¥19.9/月主档，monthly_199_99 = ¥199.99/月高档）
+    /// 产品 ID 里写死价格（monthly_19_9 = ¥19.9/月主档，monthly_199 = ¥199/月高档）
     /// ——服务端按档位表（usage.js SUB_PRODUCTS）发放对应算力，两边必须对齐。各国售价
     /// 在 ASC 按店面定，ID 只是内部档位记号；界面价格永远用 product.displayPrice
     /// （自动本地货币），绝不在 UI 里写死数字。
@@ -20,7 +20,7 @@ final class StoreService: ObservableObject {
     /// 从低到高。同一个 ASC 订阅组 → 升降档由 StoreKit 按比例补差价，不必先退订。
     static let tiers: [Tier] = [
         Tier(id: "com.wangjianshuo.VoiceDrop.sub.monthly_19_9", suanli: 200),
-        Tier(id: "com.wangjianshuo.VoiceDrop.sub.monthly_199_99", suanli: 2000),
+        Tier(id: "com.wangjianshuo.VoiceDrop.sub.monthly_199", suanli: 2000),
     ]
     static let monthlyID = tiers[0].id            // 主档（默认购买/展示）
     static let proID = tiers[tiers.count - 1].id  // 高档（升档 upsell）

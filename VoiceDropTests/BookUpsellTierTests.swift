@@ -27,7 +27,7 @@ final class BookUpsellTierTests: XCTestCase {
         XCTAssertEqual(main.suanli, 200)
         XCTAssertEqual(pro.suanli, 2000)
         XCTAssertTrue(main.id.hasSuffix("monthly_19_9"))
-        XCTAssertTrue(pro.id.hasSuffix("monthly_199_99"))
+        XCTAssertTrue(pro.id.hasSuffix("monthly_199"))
         XCTAssertEqual(StoreService.proID, pro.id)
     }
 
