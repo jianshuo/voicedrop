@@ -14,7 +14,6 @@ import SafariServices
 ///   voicedrop://books             写书（图书馆书架）
 ///   voicedrop://settings          设置
 ///   voicedrop://usage             算力账单（「文章被投喂」推送点开落这里）
-///   voicedrop://claim             领 320 算力写一本书（落地页 voicedrop.cn/book/ 的按钮）
 ///   voicedrop://prompt/<7位码>    提示词导入 sheet 预填该码（网页「一键收进
 ///                                 我的工具箱」按钮；同域 universal link 在
 ///                                 Safari 里不拉起 App，所以走自定义 scheme）
@@ -32,6 +31,8 @@ import SafariServices
 ///     开站内 Safari（页面本身就是完整阅读体验）
 ///   https://voicedrop.cn/book(/)              → .claim：领 320 算力写一本书。注意与
 ///     书架 /books（复数）一字之差，两条路由都在 universalLink 里显式判，别混。
+///     领取只有这一条 HTTP 入口，**没有 voicedrop://claim**——落地页的按钮靠跨域
+///     （voicedrop.cn ↔ jianshuo.dev）触发 universal link，同域 iOS 不拉 App。
 ///   https://voicedrop.cn/i/<邀请码>            → .invite：记归因（第 1 层）后落 App 主页
 ///     ——已装用户点朋友的邀请链接不该看下载页；新装用户到不了这里（没装 App）。
 ///   https://jianshuo.dev/voicedrop/<token>    → 同上（老分享链接）
@@ -80,7 +81,6 @@ final class AppRouter: ObservableObject {
         case "books", "library":       pending = .books
         case "settings", "setting":    pending = .settings
         case "usage", "billing":       pending = .usage
-        case "claim":                  pending = .claim
         case "prompt":
             // 码校验与 universal link 同款（7 位、不以 0 开头）；坏码回列表兜底。
             let code = url.pathComponents.filter { $0 != "/" }.first ?? ""
@@ -121,9 +121,13 @@ final class AppRouter: ObservableObject {
         guard let first = segs.first else { return .recordings }   // 落地页 = App 主页
         // voicedrop.cn/books（书架根）→ 原生「写书」tab；/books/<slug> 单本书仍走 .web。
         if segs.count == 1, first == "books" { return .books }
-        // voicedrop.cn/book（单数）= 领 320 算力的落地页 → 原生领取界面。判在下面
-        // 分享码正则之前只是为了读起来跟 /books 挨着——"book" 才 4 个字符，本来就
-        // 落不进 {6,16} 那条规则。/book/<别的> 仍走 .web，不吞。
+        // voicedrop.cn/book（单数）= 领 320 算力 → 原生领取界面。**没有自定义
+        // scheme**：HTTP 一条路就够。落地页上的按钮指向另一个域的孪生地址
+        // （voicedrop.cn 上的页面指 jianshuo.dev/voicedrop/book，反之亦然）——
+        // iOS 不给同域链接触发 universal link，跨域才拉得起 App；没装 App 的
+        // 人则落到同一张页面的副本，不死链。判在下面分享码正则之前只是为了读
+        // 起来跟 /books 挨着——"book" 才 4 个字符，本来就落不进 {6,16} 那条规则。
+        // /book/<别的> 仍走 .web，不吞。
         if segs.count == 1, first == "book" { return .claim }
         // 7 位纯数字＝提示词魔法数字（Task 6），判在 shareLink 前面：文章分享 id 是 10 位
         // hex、社区帖 12 位，跟 7 位数字没有交集，但 shareLink 的宽正则会把纯数字也吃进去，

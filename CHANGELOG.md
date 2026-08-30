@@ -16,9 +16,14 @@ Safari 里不拉起 App），装了就直接进 App 领；没起来 1.2 秒后�
 并烧掉熔断（31 个人领一次就够）。实名闸门 `hasVerifiedBinding` 必须挂，否则「注册只送 200 <
 一本书 320」这条防线被拆，刷随机 anon token 就能无限白写书。
 
-iOS：`DeepLink.claim` + `voicedrop://claim` + universal link `/book`（与书架 `/books` 一字之差，
-两条都显式判）；`ClaimView.swift` 领取页，403 就地拉 Apple 登录再重试一次（与社区分享同款握手），
-领完「去写书」切到书架 tab。顺手修 `mintLedger` 的「今日」SQL 漏了 `kind='feed'`（referral 行
+iOS：`DeepLink.claim` + universal link `/book`（与书架 `/books` 一字之差，两条都显式判）；
+`ClaimView.swift` 领取页，403 就地拉 Apple 登录再重试一次（与社区分享同款握手），领完
+「去写书」切到书架 tab。**入口只有 HTTP，没有自定义 scheme**——初版加过 `voicedrop://claim`，
+当天按「HTTP 够用就别开第二条入口」删掉：页面按钮改成指向**另一个域**的孪生地址
+（`voicedrop.cn/book` ↔ `jianshuo.dev/voicedrop/book`），跨域才触发 universal link，同域 iOS
+不拉 App——这正是当初误以为非 scheme 不可的那一条。没装 App 的人落到同一张页面的副本，
+不死链，下载入口改成常驻（原来那套「1.2 秒没起来才亮」的探测一并删掉，点了必然导航，探测不到）。
+`testNoCustomSchemeForClaim` 锁住不许回潮。顺手修 `mintLedger` 的「今日」SQL 漏了 `kind='feed'`（referral 行
 一直在虚增后台铸币榜的今日事件数）。测试：`agent/test/claim.test.js` 9 条 + `ClaimTests.swift` 8 条，
 agent 1403 全绿 / iOS 204 全绿。
 

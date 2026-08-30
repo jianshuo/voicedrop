@@ -10,10 +10,23 @@ final class ClaimTests: XCTestCase {
 
     // MARK: - 路由
 
-    func testCustomSchemeRoutesToClaim() {
+    // 落地页的按钮走纯 HTTP：voicedrop.cn 上的页面指向 jianshuo.dev/voicedrop/book
+    // （跨域才触发 universal link——iOS 不给同域链接拉 App），反之亦然。
+    func testCrossDomainHttpLinkOpensClaim() {
+        let r = AppRouter()
+        r.handle(URL(string: "https://jianshuo.dev/voicedrop/book")!)
+        XCTAssertEqual(r.pending, .claim)
+
+        let r2 = AppRouter()
+        r2.handle(URL(string: "https://voicedrop.cn/book")!)
+        XCTAssertEqual(r2.pending, .claim)
+    }
+
+    // 领取不再有自定义 scheme：HTTP 已经够了，别留第二条入口。
+    func testNoCustomSchemeForClaim() {
         let r = AppRouter()
         r.handle(URL(string: "voicedrop://claim")!)
-        XCTAssertEqual(r.pending, .claim)
+        XCTAssertEqual(r.pending, .recordings)
     }
 
     func testUniversalLinkBookPageRoutesToClaim() {

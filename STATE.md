@@ -539,7 +539,9 @@ Spec/计划：`docs/superpowers/specs/2026-06-27-voicedrop-usage-billing-design.
   文章 DELETE 时连 `.blocked` 一起清。三处 key 一致：写入路由 = miner stale-delete = iOS/list 检测。
 - **读/admin 路由（agent worker，`handleUsageRoute`）**：`GET /agent/usage/balance`、`GET /agent/usage/ledger?limit=N`（用户自己 scope，401 无 token，D1 缺失/抛错→`degraded` 不崩）；
   `POST /agent/usage/grant`（**admin `FILES_TOKEN`**，活动送算力的原语，`reason=campaign:*`）、`GET /agent/usage/admin/accounts`（admin，全量）。**admin 路由严格鉴权**，用户路由只读自己。
-- **一生一次领 320 算力 = 写一本书（2026-08-30）**：落地页 `voicedrop.cn/book/` →（同域 universal link 在 Safari 里不拉起 App，所以走）deep link `voicedrop://claim` → App 内 `ClaimView` → `POST /agent/usage/claim`（`agent/src/claim.js`）。
+- **一生一次领 320 算力 = 写一本书（2026-08-30）**：落地页 `voicedrop.cn/book/` → App 内 `ClaimView` → `POST /agent/usage/claim`（`agent/src/claim.js`）。
+  **入口只有 HTTP，没有自定义 scheme**：页面的「领取」按钮是一条普通链接，指向**另一个域**上的孪生地址（`voicedrop.cn/book` ↔ `jianshuo.dev/voicedrop/book`，两域都在 applinks entitlement 里），装了 App 的人被 universal link 拉进领取页，没装的落到同一张页面的副本、不死链。
+  ⚠️ 必须**跨域**：iOS 不给同域链接触发 universal link——人已经站在 `voicedrop.cn` 上，再点 `voicedrop.cn` 的链接只会刷新页面。这是这里不需要 `voicedrop://` 的全部原因（一度加过 `voicedrop://claim`，2026-08-30 当天按「HTTP 够用就别开第二条入口」删掉，`ClaimTests.testNoCustomSchemeForClaim` 锁住不许回潮）。微信内置浏览器不走 universal link，仍靠「右上角···在浏览器打开」蒙层。
   钱走 `grantBucket(..., 'campaign:book320', 90 天)`，账单页现成地归成「活动赠送」。**去重零新表**：事件就是 `mint` 表一行 `kind='claim'`、`subject_key='book320'`，
   唯一索引 `(kind,subject_key,actor_sub)` 即「一人一生一次」的执行层——先 `INSERT OR IGNORE` 抢键、`changes===1` 才付钱（与 feed/referral 同一条铁律）。
   ⚠️ **该行的金额列必须全 0**（正确性要求）：币价分母 `sumCoins7d` 与投币日熔断都是**全表无 kind 过滤**地 SUM `coins_uc` / `actor_uy+beneficiary_uy`，记真金额会同时打乱金币价格并烧掉熔断；真实发放额进 `detail` 做审计。
