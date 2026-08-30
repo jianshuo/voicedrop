@@ -22,6 +22,11 @@ final class StoreService: ObservableObject {
     @Published var expiresDate: Date?
     @Published var purchasing = false
     @Published var lastError: String?
+    /// 本月订阅桶还剩多少算力 / 每月发放量（服务端 /iap/status 一直在给，之前客户端丢掉了）。
+    /// 订着但本月已烧光（active && subSuanli == 0）是一种要单独说话的状态——
+    /// 既不能再卖同一个订阅，也不该假装「每月自动到账」就完事。
+    @Published var subSuanli: Double = 0
+    @Published var monthlySuanli: Int = 200
 
     private var updatesTask: Task<Void, Never>?
 
@@ -112,7 +117,10 @@ final class StoreService: ObservableObject {
         if r.granted == true { Analytics.capture("订阅算力到账", ["算力": r.suanli ?? 0]) }
     }
 
-    private struct Status: Decodable { let active: Bool; let enabled: Bool?; let expires_date: Int? }
+    private struct Status: Decodable {
+        let active: Bool; let enabled: Bool?; let expires_date: Int?
+        let sub_suanli: Double?; let monthly_suanli: Int?
+    }
 
     func loadStatus() async {
         var req = URLRequest(url: API.agentBase.appending(path: "iap/status"))
@@ -122,5 +130,7 @@ final class StoreService: ObservableObject {
         active = s.active
         enabled = s.enabled ?? false
         expiresDate = s.expires_date.map { Date(timeIntervalSince1970: Double($0) / 1000) }
+        subSuanli = s.sub_suanli ?? 0
+        monthlySuanli = s.monthly_suanli ?? 200
     }
 }

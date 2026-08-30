@@ -35,6 +35,7 @@ struct BookWritingSheet: View {
     @State private var askName = false
     @State private var nameAsked = false   // 本次 sheet 只问一次；留空确认后不再拦
     @State private var nameDraft = ""
+    @State private var showManageSubs = false   // 订着但本月烧光时的系统订阅面板
 
     // 价签与攒算力数据（进场拉一次；拉不到就只显示价目、CTA 交给服务端判）
     @State private var balance: Double?
@@ -80,6 +81,7 @@ struct BookWritingSheet: View {
         }
         .background(Theme.appBG.ignoresSafeArea())
         .presentationDragIndicator(.visible)
+        .manageSubscriptionsSheet(isPresented: $showManageSubs)
         .task { await loadNumbers() }
         .alert(String(localized: "署上你的名字"), isPresented: $askName) {
             TextField(String(localized: "作者名"), text: $nameDraft)
@@ -213,8 +215,15 @@ struct BookWritingSheet: View {
 
     // MARK: 算力不够 — 攒法（加油 / 邀请，数字 = 服务端现价；开着售卖开关再加第三条：包月订阅）
 
-    /// 订阅这条路显示条件：售卖开关开着且还没订（订着的人每月已在自动到账，再卖是骚扰）。
+    /// 订阅这条路显示条件：售卖开关开着且还没订（订着的人不能再买同一个订阅，
+    /// StoreKit 只会回「你已订阅」）。
     private var showSubscribePath: Bool { store.enabled && !store.active }
+
+    /// 订着、但本月这份额度已经烧光——此前这一档什么都不显示：`showSubscribePath`
+    /// 因 active 关掉，于是「算力不够怎么办」只剩加油/邀请两条，付费的路整条消失，
+    /// 用户看到的就是「买都没得买」。这里把这个状态明说出来，并给管理订阅入口
+    /// （升档/续费在系统面板里做）。
+    private var showSubscribedDryPath: Bool { store.active && store.subSuanli <= 0 }
 
     private var earnSection: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -223,7 +232,8 @@ struct BookWritingSheet: View {
             SettingsCard {
                 VStack(alignment: .leading, spacing: 12) {
                     if let gap = shortOf {
-                        Text(showSubscribePath ? "还差 \(gap) 算力。三条来路：" : "还差 \(gap) 算力。两条来路：")
+                        Text((showSubscribePath || showSubscribedDryPath)
+                             ? "还差 \(gap) 算力。三条来路：" : "还差 \(gap) 算力。两条来路：")
                             .font(.system(size: 14, weight: .semibold)).foregroundStyle(Theme.ink)
                     }
                     earnRow(symbol: "hands.clap.fill",
@@ -240,6 +250,11 @@ struct BookWritingSheet: View {
                         earnRow(symbol: "arrow.triangle.2.circlepath",
                                 title: String(localized: "订阅包月算力——\(store.product?.displayPrice ?? "¥19.9")/月，每月自动充入 200 算力"),
                                 sub: String(localized: "当月没用完月底清零，随时可在系统「订阅」里取消"))
+                    }
+                    if showSubscribedDryPath {
+                        earnRow(symbol: "bolt.badge.clock",
+                                title: String(localized: "你的包月算力本月已用完（每月 \(store.monthlySuanli)）"),
+                                sub: renewHint)
                     }
                     if let url = inviteURL {
                         ShareLink(item: url, message: Text("我在用 VoiceDrop 口述成文，装这个我们都得算力：")) {
@@ -260,10 +275,27 @@ struct BookWritingSheet: View {
                         }
                         .disabled(store.purchasing)
                     }
+                    if showSubscribedDryPath {
+                        Button { showManageSubs = true } label: {
+                            Text("管理订阅")
+                                .font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.accent)
+                                .frame(maxWidth: .infinity).padding(.vertical, 11)
+                                .background(Theme.accentSoft, in: RoundedRectangle(cornerRadius: Theme.R.primary))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 .padding(.horizontal, 15).padding(.vertical, 14)
             }
         }
+    }
+
+    /// 续费提示：日期拿得到才说具体哪天到账，拿不到就只说会自动到账——不编日期。
+    private var renewHint: String {
+        if let d = store.expiresDate {
+            return String(localized: "\(DateFormatter.zh("M月d日").string(from: d)) 续费时自动充入下一个月的额度；也可在系统「订阅」里查看或调整")
+        }
+        return String(localized: "下次续费时自动充入下一个月的额度；也可在系统「订阅」里查看或调整")
     }
 
     /// 「≈ 再来 N 次/个就够」——只有差额和现价都知道才说，绝不编数字。
