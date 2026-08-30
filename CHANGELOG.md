@@ -2,6 +2,26 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 一生一次领 320 算力写一本书（2026-08-30）
+
+新落地页 `voicedrop.cn/book/`（`~/code/jianshuo.dev/voicedrop/book/index.html`）：320 算力
+= 写一本书的一口价，一辈子送一次。按钮走 `voicedrop://claim`（同域 universal link 在
+Safari 里不拉起 App），装了就直接进 App 领；没起来 1.2 秒后亮出下载入口（不自动跳商店，
+误判会把老用户莫名送去 App Store）；微信内沿用 apk 页的「右上角···在浏览器打开」蒙层。
+
+服务端 `agent/src/claim.js` + `POST|GET /agent/usage/claim`：**零新表**——领取事件就是 `mint`
+表一行 `kind='claim'`，唯一索引 `(kind,subject_key,actor_sub)` 就是「一人一生一次」的执行层，
+先 `INSERT OR IGNORE` 抢键、成功才 `grantBucket('campaign:book320', 90 天)`。该行金额列**全填 0**
+是正确性要求：币价分母与投币日熔断都全表无 kind 过滤地 SUM 那几列，记真金额会打乱金币价格
+并烧掉熔断（31 个人领一次就够）。实名闸门 `hasVerifiedBinding` 必须挂，否则「注册只送 200 <
+一本书 320」这条防线被拆，刷随机 anon token 就能无限白写书。
+
+iOS：`DeepLink.claim` + `voicedrop://claim` + universal link `/book`（与书架 `/books` 一字之差，
+两条都显式判）；`ClaimView.swift` 领取页，403 就地拉 Apple 登录再重试一次（与社区分享同款握手），
+领完「去写书」切到书架 tab。顺手修 `mintLedger` 的「今日」SQL 漏了 `kind='feed'`（referral 行
+一直在虚增后台铸币榜的今日事件数）。测试：`agent/test/claim.test.js` 9 条 + `ClaimTests.swift` 8 条，
+agent 1403 全绿 / iOS 204 全绿。
+
 ## 订阅加高档 ¥199/月 → 2000 算力 + 写书页升档 upsell（2026-08-30）
 
 承上条：付费死角补成「不再是死胡同」之后，真正能卖的货也补上了——同一订阅组

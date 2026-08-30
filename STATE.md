@@ -539,6 +539,13 @@ Spec/计划：`docs/superpowers/specs/2026-06-27-voicedrop-usage-billing-design.
   文章 DELETE 时连 `.blocked` 一起清。三处 key 一致：写入路由 = miner stale-delete = iOS/list 检测。
 - **读/admin 路由（agent worker，`handleUsageRoute`）**：`GET /agent/usage/balance`、`GET /agent/usage/ledger?limit=N`（用户自己 scope，401 无 token，D1 缺失/抛错→`degraded` 不崩）；
   `POST /agent/usage/grant`（**admin `FILES_TOKEN`**，活动送算力的原语，`reason=campaign:*`）、`GET /agent/usage/admin/accounts`（admin，全量）。**admin 路由严格鉴权**，用户路由只读自己。
+- **一生一次领 320 算力 = 写一本书（2026-08-30）**：落地页 `voicedrop.cn/book/` →（同域 universal link 在 Safari 里不拉起 App，所以走）deep link `voicedrop://claim` → App 内 `ClaimView` → `POST /agent/usage/claim`（`agent/src/claim.js`）。
+  钱走 `grantBucket(..., 'campaign:book320', 90 天)`，账单页现成地归成「活动赠送」。**去重零新表**：事件就是 `mint` 表一行 `kind='claim'`、`subject_key='book320'`，
+  唯一索引 `(kind,subject_key,actor_sub)` 即「一人一生一次」的执行层——先 `INSERT OR IGNORE` 抢键、`changes===1` 才付钱（与 feed/referral 同一条铁律）。
+  ⚠️ **该行的金额列必须全 0**（正确性要求）：币价分母 `sumCoins7d` 与投币日熔断都是**全表无 kind 过滤**地 SUM `coins_uc` / `actor_uy+beneficiary_uy`，记真金额会同时打乱金币价格并烧掉熔断；真实发放额进 `detail` 做审计。
+  ⚠️ **必须挂实名闸门 `hasVerifiedBinding`**（Apple/微信）：匿名身份是客户端自己生成随机串换来的，无闸门会拆掉「注册只送 200 < 一本书 320」这条既有防线（见 book-charge 注释），脚本刷 token 即可无限白写书。
+  `identities` 表 first-write-wins、登录只读它找回既有 scope ⇒ 同一 Apple ID/微信号一辈子一个 scope ⇒「换手机再领一次」不成立，这是「一生一次」成立的根据。
+  路由：`/book`（单数）= 领取页，`/books`（复数）= 书架，AppRouter 里两条都显式判。spec `docs/superpowers/specs/2026-08-30-book320-claim-design.md`。
 - **防滥用硬闸**（独立于余额）：单条录音 ≤3 小时、单篇编辑 ≤100 次（真实编辑数）。¥10 量级余额通常先触发，这俩只拦极端。
 - **iOS**：`UsageView.swift`（算力余额 + 明细 + "无现金价值"说明，从 `/agent/usage/balance|ledger` 读）；入口在 `AccountView.swift` 账户卡；
   `Library.swift`/`LibraryView.swift` 加 `.blocked` 检测 → 徽标 **余额不足 / 录音过长**（`.json/.empty` 优先）；`AgentSession.swift` 把编辑错误送进 `replyBubble`。
