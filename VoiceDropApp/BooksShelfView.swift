@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import WebKit
+import ImageIO
 
 // MARK: - 「写书」tab · 图书馆（设计稿 Books.dc.html ①）
 //
@@ -66,7 +67,10 @@ final class BooksShelfStore {
             if !bearer.isEmpty { req.setBearer(bearer) }
             let (data, resp) = try await URLSession.shared.data(for: req)
             guard resp.isOK else { throw URLError(.badServerResponse) }
-            books = try JSONDecoder().decode(Index.self, from: data).books
+            // 内容没变就不赋值：赋值会让整个书架视图树无效重建（几十本书一帧内
+            // 重排 = 打开后几秒的整屏卡死），而绝大多数刷新书单其实没变。
+            let fresh = try JSONDecoder().decode(Index.self, from: data).books
+            if fresh != books { books = fresh }
             error = nil
             UserDefaults.standard.set(data, forKey: Self.cacheKey)
         } catch {
@@ -86,7 +90,9 @@ struct BooksShelfView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 8) {
+            // LazyVStack：书多了以后只构建可见的几排（每格有渐变/Canvas/阴影/封面图，
+            // 全量构建 + 全量起封面加载任务是整屏卡死的主因之一），滚到哪建到哪。
+            LazyVStack(spacing: 8) {
                 ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                     HStack(alignment: .top, spacing: 22) {
                         ForEach(row) { cell in
@@ -238,7 +244,7 @@ struct BooksShelfView: View {
 
         static func load(_ book: ShelfBook) async -> UIImage? {
             let name = "cover-\(book.slug)-\(Int64(book.coverAt ?? 0)).jpg"
-            if let d = DiskCache.loadData(name), let img = UIImage(data: d) { return img }
+            if let d = DiskCache.loadData(name), let img = decoded(d) { return img }
             guard let url = book.coverURL else { return nil }
             for attempt in 0..<4 {
                 if Task.isCancelled { return nil }   // 划走的格子别白费流量
@@ -248,12 +254,27 @@ struct BooksShelfView: View {
                 if attempt >= 2 { req.cachePolicy = .reloadIgnoringLocalCacheData }
                 if let (data, resp) = try? await URLSession.shared.data(for: req),
                    (resp as? HTTPURLResponse)?.statusCode == 200,
-                   let img = UIImage(data: data) {
+                   let img = decoded(data) {
                     DiskCache.saveData(data, name)
                     return img
                 }
             }
             return nil
+        }
+
+        /// ImageIO 降采样 + 立即解码：`UIImage(data:)` 只包壳，真正的 JPEG 解码
+        /// 拖到主线程首次渲染那一刻——几十本封面一起到齐就是整屏冻住 1-2 秒。
+        /// 这里在后台线程按显示尺寸（格宽 ~170pt，640px 富余）出预解码位图，
+        /// 主线程只画现成像素。
+        private static func decoded(_ data: Data) -> UIImage? {
+            guard let src = CGImageSourceCreateWithData(data as CFData,
+                    [kCGImageSourceShouldCache: false] as CFDictionary) else { return nil }
+            let opts = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                        kCGImageSourceCreateThumbnailWithTransform: true,
+                        kCGImageSourceShouldCacheImmediately: true,
+                        kCGImageSourceThumbnailMaxPixelSize: 640] as CFDictionary
+            guard let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts) else { return nil }
+            return UIImage(cgImage: cg)
         }
     }
 

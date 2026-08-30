@@ -2,6 +2,23 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 书架卡顿修复：书多了每 7 秒冻 2 秒（2026-08-30）
+
+书架打开约 7 秒后整屏卡死 1-2 秒，滚一屏后再犯。三处叠加，逐个拆掉：
+① **无条件重建**——`BooksShelfStore.load()` 原来无条件 `books = 解码结果`，
+即便书单一字未变，`@Observable` 也判定变化，整棵视图树重建（每格含渐变 ×2、
+Canvas 页口纹理、双层阴影），几十本在一帧内重排就是那 1-2 秒；改成
+`if fresh != books` 才赋值（ShelfBook 本就 Equatable，零成本）。
+② **VStack 全量构建**——屏外的书也全建，且每本 CoverImage 立刻起一个 .task
+拉封面；换 `LazyVStack`，滚到哪建到哪。
+③ **主线程解码封面**——`UIImage(data:)` 只包壳，JPEG 真解码拖到主线程首次
+渲染那刻，几十张同时到齐即冻屏；改 ImageIO `CGImageSourceCreateThumbnailAtIndex`
+（maxPixelSize 640，配格宽 ~170pt 的 Retina 余量）在后台线程降采样并
+`ShouldCacheImmediately` 预解码，主线程只画现成像素。
+**没有加分页**：`/books/?format=json` 是服务端一次性返回全量的单个 JSON，
+分页要连服务端一起改；而瓶颈在渲染不在传输（几百本也就几十 KB），LazyVStack
+已解决。书量涨到上千本再议服务端分页。全量 196 条测试绿。
+
 ## 写书：没设名字先弹一次署名输入框（2026-08-30）
 
 BookWritingSheet 提交时若 profile.name **确认为空**（进场随余额一并 GET
