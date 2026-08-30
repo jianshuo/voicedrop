@@ -28,7 +28,6 @@ struct LibraryView: View {
     }
     @State private var showSettings = false
     @State private var showUsage = false   // 算力账单直达（「文章被投喂」推送深链）
-    @State private var showClaim = false   // 领 320 算力写书（落地页 voicedrop.cn/book/ 深链）
     @State private var selectedRec: Recording?
     @State private var selectedPost: CommunityPost?
     @State private var openFeedBook: ShelfBook?   // 社区书卡 → 推入书架同款 BookReaderView
@@ -208,9 +207,6 @@ struct LibraryView: View {
         }
         .navigationDestination(isPresented: $showSettings) { SettingsView(libraryStore: store) }
         .navigationDestination(isPresented: $showUsage) { UsageView() }
-        .navigationDestination(isPresented: $showClaim) {
-            ClaimView(onWriteBook: { showClaim = false; tab = .books })
-        }
         .fullScreenCover(item: $recordLaunch) { launch in
             RecordSession(defaultTag: launch.tag ?? currentPageTag) {
                 recordLaunch = nil
@@ -281,9 +277,6 @@ struct LibraryView: View {
                 router.pending = nil
                 return
             }
-            // 领取页是独立目的地：任何新深链先把它关掉，再由 .claim 自己重新开——
-            // 省得在下面每个 case 里都补一句 showClaim = false。
-            showClaim = false
             switch link {
             case .recordings, .invite:
                 // .invite：归因已在 AppRouter 记过（第 1 层），已装用户点邀请链接落主页即可。
@@ -295,10 +288,6 @@ struct LibraryView: View {
                 tab = .books; selectedRec = nil; selectedPost = nil; showSettings = false; showUsage = false; sharedArticle = nil
             case .settings:
                 selectedRec = nil; selectedPost = nil; showSettings = true; showUsage = false; sharedArticle = nil
-            case .claim:
-                // 落地页 voicedrop.cn/book/ 点进来 → 直达领取页，不绕书架。
-                selectedRec = nil; selectedPost = nil; showSettings = false; showUsage = false; sharedArticle = nil
-                showClaim = true
             case .usage:
                 // 「文章被投喂」推送点开 → 直达算力账单，不绕设置页。
                 selectedRec = nil; selectedPost = nil; showSettings = false; sharedArticle = nil
