@@ -119,7 +119,9 @@ struct BooksShelfView: View {
         .task { await store.load() }
         .onAppear { Analytics.screen("书架") }
         .sheet(isPresented: $showBookWriting) { BookWritingSheet() }
-        .navigationDestination(item: $openBook) { book in BookReaderView(book: book) }
+        .navigationDestination(item: $openBook) { book in
+            BookReaderView(book: book, onHiddenChanged: { Task { await store.load() } })
+        }
     }
 
     // MARK: rows（第一格永远是写书入口，两格一排）
@@ -370,6 +372,9 @@ struct BooksShelfView: View {
 struct BookReaderView: View {
     @Environment(\.dismiss) private var dismiss
     let book: ShelfBook
+    /// 隐藏态改完通知书架重拉——书架的 store 在上一层，阅读页够不着。
+    var onHiddenChanged: () -> Void = {}
+    @State private var isHidden = false
     @State private var sharePayload: SharePayload?
     @State private var toast: String?
     @State private var showRevise = false
@@ -396,7 +401,7 @@ struct BookReaderView: View {
         }
         .background(Theme.appBG.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .onAppear { Analytics.screen("读书") }
+        .onAppear { Analytics.screen("读书"); isHidden = (book.hidden == true) }
         .sheet(item: $sharePayload) { ShareSheet(items: $0.activityItems) }
         .sheet(isPresented: $showRevise, onDismiss: { reloadStamp += 1 }) { BookReviseSheet(book: book) }
         .overlay(alignment: .bottom) { toastView }
@@ -417,6 +422,10 @@ struct BookReaderView: View {
             }
             Button { Task { await shareBook() } } label: {
                 Label("分享", systemImage: "square.and.arrow.up")
+            }
+            Divider()
+            Toggle(isOn: Binding(get: { isHidden }, set: { v in Task { await setHidden(v) } })) {
+                Label("隐藏本书", systemImage: "eye.slash")
             }
         } label: {
             RoundedRectangle(cornerRadius: Theme.R.nav)
@@ -502,6 +511,28 @@ struct BookReaderView: View {
 
     /// 分享（系统面板）：同样跟着 WebView 当前页走——微信拿裸链接出富卡片（有
     /// cover.jpg 就带上当缩略图），X / 复制等拿「标题 + 链接」的整段文字。
+    /// 隐藏本书 = 不在书架列表里出现（直链照样能看），与写书 skill 里绘本缺省
+    /// hidden 完全同义。真源是服务端 `_src/book.json` 的 hidden 字段（书单读的就是
+    /// 它），所以这里只 POST 一个开关，不碰任何页面产物。失败不改本地态——
+    /// 打勾必须代表服务端真的改了。
+    private func setHidden(_ v: Bool) async {
+        guard let url = URL(string: "\(API.publicWebBase)/books/\(book.slug)/hidden") else { return }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setBearer(AuthStore.shared.bearer)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["hidden": v])
+        req.timeoutInterval = 20
+        guard let (_, resp) = try? await URLSession.shared.data(for: req), resp.isOK else {
+            showToast(String(localized: "没改成，过会儿再试"))
+            return
+        }
+        isHidden = v
+        Analytics.capture("隐藏本书", ["隐藏": v, "书": book.slug])
+        showToast(v ? String(localized: "已隐藏，书架上看不到了") : String(localized: "已取消隐藏"))
+        onHiddenChanged()
+    }
+
     /// 同社区的 SharePayload 通路。
     private func shareBook() async {
         guard let target = currentShare else { return }
