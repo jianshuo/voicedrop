@@ -528,7 +528,8 @@ struct LibraryView: View {
                                           title: post.title ?? slug, main: post.title ?? slug,
                                           sub: post.preview ?? "", c: "#8A7A5A", c2: "#6E5F44",
                                           cover: post.coverPhotoKey != nil, coverAt: nil,
-                                          chapters: post.count ?? 0, author: post.author, hidden: nil)
+                                          chapters: post.count ?? 0, author: post.author, hidden: nil,
+                                          mine: nil)   // 社区来的书拿不到归属，宁可不显示主人菜单
                                   } else {
                                       selectedPost = post
                                   }

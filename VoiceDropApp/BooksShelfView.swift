@@ -28,6 +28,7 @@ struct ShelfBook: Decodable, Identifiable, Equatable, Hashable {
     let chapters: Int    // 顶层章节 html 数；单页书为 0
     let author: String?  // <meta name="author">；老缓存里没有 → optional
     let hidden: Bool?    // 自己的隐藏书（登录态下服务端才会给）；公开条目无此字段
+    let mine: Bool?      // 这本是我自己的（登录态下服务端才给）；别人的书无此字段
     var id: String { slug }
 
     /// ?v=coverAt 与网页书架同款破缓存：修书换封面 → 时间戳变 → URL 变，
@@ -411,8 +412,16 @@ struct BookReaderView: View {
     /// 顶栏右上角的 ⋯（与文章页 moreMenu 同款）：白底灰点 + 描边，展开分享。
     private var moreMenu: some View {
         Menu {
-            Button { showRevise = true } label: {
-                Label("修改这本书", systemImage: "pencil.line")
+            // 只有书的主人看得到这两项：别人的书上点了必然 403，与其事后解释
+            // 不如根本不显示（2026-08-31）。归属由服务端书单的 mine 字段给。
+            if book.mine == true {
+                Toggle(isOn: Binding(get: { isHidden }, set: { v in Task { await setHidden(v) } })) {
+                    Label("隐藏本书", systemImage: "eye.slash")
+                }
+                Button { showRevise = true } label: {
+                    Label("修改这本书", systemImage: "pencil.line")
+                }
+                Divider()
             }
             Button { Task { await shareToWechat(timeline: false) } } label: {
                 Label("分享给微信好友", systemImage: "message")
@@ -422,10 +431,6 @@ struct BookReaderView: View {
             }
             Button { Task { await shareBook() } } label: {
                 Label("分享", systemImage: "square.and.arrow.up")
-            }
-            Divider()
-            Toggle(isOn: Binding(get: { isHidden }, set: { v in Task { await setHidden(v) } })) {
-                Label("隐藏本书", systemImage: "eye.slash")
             }
         } label: {
             RoundedRectangle(cornerRadius: Theme.R.nav)
@@ -523,8 +528,13 @@ struct BookReaderView: View {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: ["hidden": v])
         req.timeoutInterval = 20
-        guard let (_, resp) = try? await URLSession.shared.data(for: req), resp.isOK else {
-            showToast(String(localized: "没改成，过会儿再试"))
+        let code = (try? await URLSession.shared.data(for: req))
+            .map { ($0.1 as? HTTPURLResponse)?.statusCode ?? 0 } ?? 0
+        guard (200...299).contains(code) else {
+            // 403 是确定性拒绝（不是你的书），别说「过会儿再试」骗人——正常情况下
+            // 菜单根本不该出现在别人的书上，走到这儿说明归属信息过期了。
+            showToast(code == 403 ? String(localized: "这不是你的书，改不了")
+                                  : String(localized: "没改成，过会儿再试"))
             return
         }
         isHidden = v
