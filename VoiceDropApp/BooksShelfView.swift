@@ -66,6 +66,9 @@ final class BooksShelfStore {
             var req = URLRequest(url: Self.indexURL)
             let bearer = AuthStore.shared.bearer
             if !bearer.isEmpty { req.setBearer(bearer) }
+            // 别吃本地 URLCache：匿名那份书单（public,max-age=60）里没有 mine/hidden，
+            // URLCache 按 URL 存、不认 Authorization，命中了就看不到自己的书是自己的。
+            req.cachePolicy = .reloadIgnoringLocalCacheData
             let (data, resp) = try await URLSession.shared.data(for: req)
             guard resp.isOK else { throw URLError(.badServerResponse) }
             // 内容没变就不赋值：赋值会让整个书架视图树无效重建（几十本书一帧内
@@ -376,6 +379,10 @@ struct BookReaderView: View {
     /// 隐藏态改完通知书架重拉——书架的 store 在上一层，阅读页够不着。
     var onHiddenChanged: () -> Void = {}
     @State private var isHidden = false
+    /// 「这本是我的吗」——开场问服务端拿权威答案。列表里的 book.mine 只当首帧
+    /// 兜底：那份数据可能来自 App 本地缓存或边缘缓存，而菜单显不显示必须是当下
+    /// 的真相（2026-08-31：自己的书上菜单也不出现）。
+    @State private var isMine = false
     @State private var sharePayload: SharePayload?
     @State private var toast: String?
     @State private var showRevise = false
@@ -402,7 +409,8 @@ struct BookReaderView: View {
         }
         .background(Theme.appBG.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .onAppear { Analytics.screen("读书"); isHidden = (book.hidden == true) }
+        .onAppear { Analytics.screen("读书") }
+        .task { await loadOwnership() }
         .sheet(item: $sharePayload) { ShareSheet(items: $0.activityItems) }
         .sheet(isPresented: $showRevise, onDismiss: { reloadStamp += 1 }) { BookReviseSheet(book: book) }
         .overlay(alignment: .bottom) { toastView }
@@ -414,7 +422,7 @@ struct BookReaderView: View {
         Menu {
             // 只有书的主人看得到这两项：别人的书上点了必然 403，与其事后解释
             // 不如根本不显示（2026-08-31）。归属由服务端书单的 mine 字段给。
-            if book.mine == true {
+            if isMine {
                 Toggle(isOn: Binding(get: { isHidden }, set: { v in Task { await setHidden(v) } })) {
                     Label("隐藏本书", systemImage: "eye.slash")
                 }
@@ -516,6 +524,23 @@ struct BookReaderView: View {
 
     /// 分享（系统面板）：同样跟着 WebView 当前页走——微信拿裸链接出富卡片（有
     /// cover.jpg 就带上当缩略图），X / 复制等拿「标题 + 链接」的整段文字。
+    /// GET /books/<slug>/hidden → {mine, hidden}。首帧先用列表里的 book.mine/hidden
+    /// 兜底（避免菜单闪现），拿到服务端答案后以它为准。拉不到就维持兜底值。
+    private func loadOwnership() async {
+        isMine = (book.mine == true)
+        isHidden = (book.hidden == true)
+        struct R: Decodable { let mine: Bool; let hidden: Bool }
+        guard let url = URL(string: "\(API.publicWebBase)/books/\(book.slug)/hidden") else { return }
+        var req = URLRequest(url: url)
+        req.setBearer(AuthStore.shared.bearer)
+        req.cachePolicy = .reloadIgnoringLocalCacheData   // 归属不许吃本地缓存
+        req.timeoutInterval = 15
+        guard let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK,
+              let r = try? JSONDecoder().decode(R.self, from: data) else { return }
+        isMine = r.mine
+        isHidden = r.hidden
+    }
+
     /// 隐藏本书 = 不在书架列表里出现（直链照样能看），与写书 skill 里绘本缺省
     /// hidden 完全同义。真源是服务端 `_src/book.json` 的 hidden 字段（书单读的就是
     /// 它），所以这里只 POST 一个开关，不碰任何页面产物。失败不改本地态——
