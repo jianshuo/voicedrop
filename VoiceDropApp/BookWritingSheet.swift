@@ -107,7 +107,7 @@ struct BookWritingSheet: View {
         .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 12)
     }
 
-    // MARK: 价签 hero — 320 算力顶格明示 + 实时余额
+    // MARK: 价签 hero — 价钱顶格明示 + 实时余额
 
     private var priceHero: some View {
         HStack(spacing: 0) {
