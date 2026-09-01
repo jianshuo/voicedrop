@@ -10,10 +10,11 @@ import SwiftUI
 ///
 /// 契约（fire-and-forget + 计费制）：`POST lab.jianshuo.dev/api/book` `{seed}` +
 /// 用户 bearer。lab 转手调 agent worker `/agent/usage/book-charge` 一口价扣
-/// **320 算力**，扣成功即 202 开写——提交完就可以关 App。402 = 算力不足（带
-/// need_suanli/suanli），401 = token 无效。
+/// **一本书的算力**（2026-09-01 起 160，真源在服务端 usage.js 的 BOOK_SUANLI；
+/// App 这头的展示价走 `Prices` 的日缓存），扣成功即 202 开写——提交完就可以关
+/// App。402 = 算力不足（带 need_suanli/suanli），401 = token 无效。
 ///
-/// 2026-08-11 重设计：去掉公开书架入口（书架就是身后的 tab）；320 算力做成
+/// 2026-08-11 重设计：去掉公开书架入口（书架就是身后的 tab）；价目做成
 /// 价签 hero + 实时余额；算力不够时给两条攒法（请朋友「加油」/ 邀请安装）——
 /// 数字来自 `GET /agent/referral/link` 的 suanliFeedAuthor / suanliInviter 现价。
 struct BookWritingSheet: View {
@@ -46,12 +47,14 @@ struct BookWritingSheet: View {
     @ObservedObject private var store = StoreService.shared
 
     private static let bookAPI = API.bookAPIBase
-    private static let price = 320   // 展示用价目；扣费真源在服务端（402 会带权威数字）
+    /// 展示用价目：来自 `Prices` 的日缓存（服务端 GET /agent/usage/prices，一天拉
+    /// 一次，拿不到就用内置兜底）。扣费真源始终在服务端——402 会带权威的 need_suanli。
+    @State private var price = Prices.book
 
     private var trimmedSeed: String { seed.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var shortOf: Int? {
         guard let b = balance else { return nil }
-        let gap = Double(Self.price) - b
+        let gap = Double(price) - b
         return gap > 0 ? Int(gap.rounded(.up)) : nil
     }
     private var canStart: Bool { (!trimmedSeed.isEmpty || seedArticle != nil) && !sending && !submitted && shortOf == nil }
@@ -111,7 +114,7 @@ struct BookWritingSheet: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Image(systemName: "bolt.fill").font(.system(size: 20)).foregroundStyle(Theme.amber)
-                    Text("\(Self.price)").font(.system(size: 34, weight: .bold)).foregroundStyle(Theme.ink)
+                    Text("\(price)").font(.system(size: 34, weight: .bold)).foregroundStyle(Theme.ink)
                     Text("算力").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.secondary)
                 }
                 Text("写一本书的价钱，提交时一次扣清")
@@ -226,8 +229,9 @@ struct BookWritingSheet: View {
 
     /// 升档（upsell）——正是「钱不够」这一刻该出现的那条路。两种人看得到：
     /// ①订着主档、当月已烧光：再买同一档 StoreKit 只会回「你已订阅」，唯一能
-    /// 再花钱的路就是升档；②还没订、且缺口大过主档每月发放量（写一本书 320，
-    /// 主档才 200）：订了也照样写不成，不如直说更高的那档。
+    /// 再花钱的路就是升档；②还没订、且缺口大过主档每月发放量：订了也照样写不成，
+    /// 不如直说更高的那档。注意 2026-09-01 写书降到 160 后，缺口最大也就 160 < 主档
+    /// 200，②这条现实中不会再触发（逻辑保留，涨价或出更贵的活儿时自动复活）。
     /// 三个前提缺一不可：售卖开关开着、还有更高的档、那一档苹果真能拿到商品
     /// （ASC 没建/没过审就拿不到，宁可不显示也不摆一个点了必败的按钮）。
     private var upsellTier: StoreService.Tier? {
@@ -292,10 +296,10 @@ struct BookWritingSheet: View {
                         earnRow(symbol: "arrow.up.circle.fill",
                                 title: store.active
                                     ? String(localized: "升级到 \(tierPrice(tier))/月——每月 \(tier.suanli) 算力，立刻到账")
-                                    : String(localized: "订阅 \(tierPrice(tier))/月——每月 \(tier.suanli) 算力，够写 \(tier.suanli / Self.price) 本书"),
+                                    : String(localized: "订阅 \(tierPrice(tier))/月——每月 \(tier.suanli) 算力，够写 \(tier.suanli / price) 本书"),
                                 sub: store.active
                                     ? String(localized: "同一订阅按比例补差价，当月额度立刻换成 \(tier.suanli)；随时可降回")
-                                    : String(localized: "主档每月 \(StoreService.tiers[0].suanli) 算力还不够写一本书（\(Self.price)），这档一次就够"))
+                                    : String(localized: "主档每月 \(StoreService.tiers[0].suanli) 算力，写一本要 \(price)——这档一次管够"))
                     }
                     if let url = inviteURL {
                         ShareLink(item: url, message: Text("我在用 VoiceDrop 口述成文，装这个我们都得算力：")) {
@@ -423,7 +427,7 @@ struct BookWritingSheet: View {
     private var ctaLabel: String {
         if sending { return String(localized: "提交中…") }
         if let gap = shortOf { return String(localized: "算力不够 · 还差 \(gap)") }
-        return String(localized: "开始写书 · \(Self.price) 算力")
+        return String(localized: "开始写书 · \(price) 算力")
     }
 
     private var submittedSection: some View {
@@ -450,6 +454,9 @@ struct BookWritingSheet: View {
     /// 余额 + 「加油/邀请值多少算力」现价。任何一路失败都静默——价签区退化成
     /// 只显示价目，CTA 不因此上锁（扣费真源永远在服务端）。
     private func loadNumbers() async {
+        // 价目：过期一天才真的发请求，其余时候这行是纯本地读取。免鉴权，所以放在
+        // token 检查前面——没登录的人看到的也是当前价，不是一个写死的旧数字。
+        price = await Prices.refreshIfNeeded().book
         await store.refresh()   // 售卖开关/订阅态/本地化价格——决定第三条来路显不显示
         let token = AuthStore.shared.bearer
         guard !token.isEmpty else { return }
@@ -528,7 +535,7 @@ struct BookWritingSheet: View {
                     let body = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
                     let have = (body?["suanli"] as? Double) ?? 0
                     balance = have
-                    errorText = String(localized: "算力不足：写一本书要 \(Self.price) 算力，你现在有 \(Int(have.rounded()))。往上看攒法。")
+                    errorText = String(localized: "算力不足：写一本书要 \(price) 算力，你现在有 \(Int(have.rounded()))。往上看攒法。")
                 case 401:
                     errorText = String(localized: "身份校验没过，请稍后重试。")
                 case let code:

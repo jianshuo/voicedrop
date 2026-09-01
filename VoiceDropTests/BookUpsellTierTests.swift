@@ -4,8 +4,11 @@ import XCTest
 // 写书页「算力不够」这一刻推不推升档、推哪一档。纯逻辑不打网络。
 //
 // 两种人看得到升档：①订着主档、当月额度烧光（再买同一档 StoreKit 只回「你已
-// 订阅」，唯一能再花钱的路就是升档）；②还没订、且缺口大过主档每月发放量
-// （写一本书 320，主档才 200 —— 订了也照样写不成）。
+// 订阅」，唯一能再花钱的路就是升档）；②还没订、且缺口大过主档每月发放量。
+//
+// 注意 2026-09-01 写书从 320 降到 160 之后，写书页的缺口最大也就 160（余额 0 时），
+// 再也大不过主档的 200 —— ②这条在写书这个场景下不会再触发。逻辑本身按缺口判断，
+// 与具体价目无关，所以原样保留（涨价、或将来出更贵的活儿时自动复活）。
 // 三个否决项：售卖开关关着、已在顶档、那档商品苹果拉不到（ASC 没建/没过审）。
 final class BookUpsellTierTests: XCTestCase {
 
@@ -51,8 +54,16 @@ final class BookUpsellTierTests: XCTestCase {
     // MARK: 没订的人
 
     func testUnsubscribedBigGapJumpsToTopTier() {
-        // 缺口 320 > 主档 200：订主档也写不成，直说高档
+        // 缺口 320 > 主档 200：订主档也写不成，直说高档。
+        // （纯逻辑契约。写书现价 160 已经产不出这么大的缺口，见下一条。）
         XCTAssertEqual(decide(active: false, shortOf: 320)?.id, pro.id)
+    }
+
+    func testBookGapCanNoLongerExceedMainTier() {
+        // 现实校准：一本书 160，余额 0 时缺口就是 160 —— 上不了「缺口 > 主档 200」
+        // 这条线，所以没订的人在写书页只会看到主档，不会被越级推高档。
+        XCTAssertLessThan(Prices.fallback.book, main.suanli)
+        XCTAssertNil(decide(active: false, shortOf: Prices.fallback.book))
     }
 
     func testUnsubscribedSmallGapKeepsMainTierOnly() {
