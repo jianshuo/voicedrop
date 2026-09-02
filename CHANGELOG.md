@@ -2,6 +2,42 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 四本 legacy 老书补上 chapters，书架不再有「0 章」的书（2026-09-02）
+
+书架上四本内容完好的老书一直显示 **0 章**：《他为什么卖给你？》《五行八字》
+《中医：它是什么》《金刚经·理工男读本》。根因在 2026-08-28 的 book.json 归口
+迁移——老书只补录了元数据（`legacy:true`、`chaptersCount:0`），而 collectBooks
+数章节的口径是 `chapters` 数组里 `status==='done'` 的个数，数组不存在就退回
+`chaptersCount`，于是恒为 0。
+
+⚠️ **「现代化」不等于重写**：查下来现代书（如 little-dragon-china）**同样是单页**，
+和老书的差别只在 book.json 有没有 `chapters` 数组。所以补元数据即可，原文一个字
+没动（四本页面字节数前后完全一致）。一开始我以为得把单页拆成多页，是错的。
+
+章节从**已发布页面**提取，四本三种形态，提取器分三路（脚本归档在
+`jianshuo.dev/claude-agent/scripts/backfill-legacy-chapters.py`）：
+| 书 | 形态 | 章数 |
+|---|---|---|
+| why-did-he-sell / bazi | 单页 `<section id="ch*">` | 14 / 9 |
+| tcm-analysis | 单页 `<section id="c1..c8">` | 8 |
+| jingangjing | **多页书**（32 品各一页），首页卡片链接 `./01/` … | 33（导读+32 品）|
+
+两个易错点：`bazi` 的开篇段没有 h2，给「引子」而不是留空标题；`jingangjing` 的
+导读卡片用 `<h2>/<p>`、其余 32 品用 `.t`/`.d`，只认后者会**少一章**（第一版就是
+32，补上导读才是 33）。
+
+⚠️ **`legacy:true` 必须保留**：`doPull` 靠它硬拒，去掉会被误当成有源稿的书去拉取，
+而这些书的 `_src` 里除元数据外空无一物。改前四本都留了备份。
+
+**同日另一件**：`quiet-giant`（《让巨兽安静下来》）是今早写书倒在 Kimi 配额上留下的
+空壳——12 章全 `planned`、一字正文没有、无封面，却因 `early-registered` 先盖了
+`createdAt`（上架条件）而挂在公开书架上。已用 hidden 下架（不删数据，直链仍 200），
+book.json 里留了 `hiddenReason` 注明是管理员因引擎中断下架、非主人操作。
+⚠️ 判据要记牢：**真空壳 = 有 chapters 数组但全部 `planned` 且非 legacy**；
+只看书架的 `chapters: 0` 会把上面四本老书一起误清（差一点就清了）。
+下架端点 `POST /books/<slug>/hidden` 严格要求 `owner === scope`，**没有 admin 后门**，
+别人的书只能直接改 R2 的 `_src/book.json`。
+
 ## 写书引擎改成三腿降级链：kimi → codex → claude（2026-09-02）
 
 承上条同日：写书从**单腿**改成**三条腿的降级链**，一条腿用不了就自动换下一条，
