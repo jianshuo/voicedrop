@@ -59,16 +59,6 @@ struct LibraryView: View {
         var code: String { id }
     }
 
-    // 语音指令 walkie-talkie: the red record button itself doubles as a
-    // library-wide press-and-hold mic that can act on any recording by its
-    // on-screen number ("删掉第二条"). Separate dictation + session instances
-    // from RecordingDetailView's article-level editing.
-    @State private var talking = false
-    @State private var willCancel = false
-    @State private var dictation = SpeechDictation()
-    @State private var command = LibraryCommandSession()
-    @State private var commandReply: AgentReply?
-    @State private var confirmPrompt: (id: String, summary: String)?
     @EnvironmentObject private var router: AppRouter
     @Environment(\.scenePhase) private var scenePhase
 
@@ -101,8 +91,7 @@ struct LibraryView: View {
     }
 
     /// The tag of the page the user is on (nil on 我的录音 / VD社区). A recording
-    /// started here default-carries this tag; voice-command numbering follows
-    /// this page's visible rows.
+    /// started here default-carries this tag.
     private var currentPageTag: String? {
         if case .tag(let t) = tab { return t }
         return nil
@@ -130,14 +119,6 @@ struct LibraryView: View {
     // independently, keeping each well under budget. Do NOT re-collapse into one chain.
     var body: some View {
         rowAlerts
-            .alert(confirmPrompt?.summary ?? String(localized: "确认操作"),
-                   isPresented: clearBinding({ confirmPrompt != nil }, { confirmPrompt = nil }),
-                   presenting: confirmPrompt) { p in
-                // 语音指令 destructive confirm (e.g. "删掉第二条") — the server asks
-                // before acting; summary is its plain-language description of the action.
-                Button("删除", role: .destructive) { command.confirm(p.id); confirmPrompt = nil }
-                Button("取消", role: .cancel) { command.cancel(p.id); confirmPrompt = nil }
-            }
     }
 
     private var rowAlerts: some View {
@@ -223,24 +204,6 @@ struct LibraryView: View {
             await refresh()
             _ = await store.ownerScope()   // 顺手触发 /whoami → Analytics.identify（匿名事件并入账号）
         }
-        .task {
-            // Library-wide voice-command session: reply bubble + list refresh after
-            // an edit lands + a destructive-action confirm prompt.
-            command.onReply = { text, ok in commandReply = AgentReply(text: text, ok: ok) }
-            command.onUpdate = { _, stems in
-                store.invalidateArticleCaches(stems: stems)
-                Task { await refresh() }
-            }
-            command.onConfirm = { id, summary in
-                confirmPrompt = (id: id, summary: summary)
-                // A destructive result can land while a hold is still active (the
-                // confirm round-trip is usually faster than a press, but not always)
-                // — drop out of "talking" so the alert isn't fighting the mic UI.
-                if talking { talking = false }
-            }
-            command.connect()
-            await dictation.requestAuth()
-        }
         // 划走 = 拒绝这次登录。以前划走只是静默置空 pending，服务端还以为配对活着，
         // 手机却已经把 pubkey 扔了 —— 无声僵死到超时。
         .sheet(item: $linkResponder.pending, onDismiss: { linkResponder.sheetDismissed() }) { p in
@@ -253,16 +216,12 @@ struct LibraryView: View {
             PromptImportSheet(prefill: item.code)
         }
         .onChange(of: scenePhase) { _, p in
-            // command 与 status 同进退：库级命令 socket 现在也有 25s 心跳，
-            // 后台不断开的话整个进程生命周期都在 ping /agent/command。
-            if p == .active { statusSession.connect(); command.connect(); Task { await refresh() } }
-            else if p == .background { statusSession.disconnect(); command.disconnect() }
+            if p == .active { statusSession.connect(); Task { await refresh() } }
+            else if p == .background { statusSession.disconnect() }
         }
         .onReceive(NotificationCenter.default.publisher(for: .vdDidAdoptAccount)) { _ in
             statusSession.disconnect()
             statusSession.connect()
-            command.disconnect()
-            command.connect()
             Task { await refresh() }
         }
         .onReceive(router.$pending.compactMap { $0 }) { link in
@@ -582,24 +541,6 @@ struct LibraryView: View {
         .overlay(RoundedRectangle(cornerRadius: Theme.R.card).stroke(Theme.borderChrome, lineWidth: 1))
         .cardChromeShadow()
         .opacity(empty ? 0.72 : 1)
-        .overlay(alignment: .topLeading) {
-            if talking, let n = commandNumber(for: rec) { numberBadge(n) }
-        }
-    }
-
-    /// Small number ("2") pinned to a row's top-left corner while holding the red
-    /// key to talk — the number the user speaks to target that recording ("删掉第
-    /// 二条"). Design: a white rounded-square chip with a tan border (Navigation.dc).
-    private func numberBadge(_ n: Int) -> some View {
-        Text("\(n)")
-            .font(.system(size: 12, weight: .bold))
-            .monospacedDigit()
-            .foregroundStyle(Color(hex: "4A4438"))
-            .frame(width: 20, height: 20)
-            .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(.white))
-            .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).stroke(Color(hex: "E4DBCB"), lineWidth: 1))
-            .shadow(color: Color(hex: "3C2D1E").opacity(0.10), radius: 4, x: 0, y: 1)
-            .offset(x: 13, y: 10)
     }
 
     /// The default row icon: a soft rounded tile with a 3-bar waveform. Unchanged
@@ -657,104 +598,50 @@ struct LibraryView: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: Record button (floats over the list — no pane; IS the walkie-talkie)
+    // MARK: Record button (floats over the list — no pane)
 
-    /// The red key itself: tap records a take (unchanged); press-and-hold turns
-    /// it into a 微信式「按住说话」 mic for library-wide 语音指令 ("删掉第二条"),
-    /// reusing the same feedback bubbles as article-level voice editing.
+    /// The red key. Tap OR hold-then-release both open the recorder — one
+    /// gesture, one meaning. It used to double as a press-and-hold 语音指令 mic
+    /// (「长按说话」), but 31 days of server logs (2026-08-15 → 09-14) showed 26 of
+    /// the 44 users who ever held it were dictating *content*, WeChat-style, and
+    /// then hunting for a recording that never existed; only 12 issued a real
+    /// command. A `Button` fires on touch-up regardless of how long the finger
+    /// stayed down, so the WeChat reflex now lands in the recorder instead of
+    /// nowhere. The library-level command agent (/agent/command) is still live
+    /// server-side; the client entry point is gone on purpose.
     private var recordButton: some View {
         VStack(spacing: 7) {
-            if talking || commandReply != nil || !command.queue.isEmpty {
-                VoiceFeedbackStack(transcript: talking ? (dictation.error.map { "⚠️ " + $0 } ?? dictation.transcript) : nil,
-                                   reply: commandReply, queue: command.queue)
-                    .padding(.horizontal, 16)
-            }
-            redCircle
-                .scaleEffect(talking ? 1.08 : 1)
-                .gesture(talkGesture)
-                .simultaneousGesture(TapGesture().onEnded { if !talking { recordLaunch = RecordLaunch(tag: nil) } })
-            Text(talking ? (willCancel ? String(localized: "上滑取消 · 松开放弃") : String(localized: "松开发送 · 上滑取消")) : String(localized: "轻点录音 · 长按说话"))
+            Button { recordLaunch = RecordLaunch(tag: nil) } label: { redCircle }
+                .buttonStyle(RecordKeyStyle())
+                .accessibilityLabel("录音")
+            Text("轻点录音")
                 .font(.system(size: 12)).tracking(1)
-                .foregroundStyle(talking ? Theme.accent : Theme.secondary)
+                .foregroundStyle(Theme.secondary)
         }
         .padding(.bottom, 8)
-        .animation(.easeInOut(duration: 0.18), value: talking)
     }
 
-    /// The pure-red circle key. Same visuals as before at rest; while `talking`
-    /// a thin accent ring adds emphasis (the `scaleEffect` bump lives in
-    /// `recordButton`, applied on top of this).
+    /// The pure-red circle key, at rest. Pressed feedback lives in `RecordKeyStyle`.
     private var redCircle: some View {
         Circle().fill(Theme.card).frame(width: 66, height: 66)
-            .overlay(Circle().stroke(talking ? Theme.recordRed.opacity(0.55) : Color(hex: "E8DECF"),
-                                      lineWidth: talking ? 2 : 1))
+            .overlay(Circle().stroke(Color(hex: "E8DECF"), lineWidth: 1))
             .overlay(
                 Circle().fill(Theme.recordRed).frame(width: 54, height: 54)
                     .shadow(color: Color(.sRGB, red: 229/255, green: 57/255, blue: 46/255, opacity: 0.40), radius: 4, x: 0, y: 2)
             )
             .shadow(color: .black.opacity(0.12), radius: 12, x: 0, y: 5)   // lift off the list
             .contentShape(Circle())
-            .accessibilityLabel("录音")
     }
 
-    /// Sequenced long-press → drag so the whole hold is ONE continuous touch:
-    /// a quick tap never engages this gesture (falls through to the sibling
-    /// `TapGesture` and records normally); holding past 0.3s starts dictation,
-    /// and sliding up cancels — mirroring `PushToTalkBar.holdGesture()`.
-    private var talkGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.3)
-            .sequenced(before: DragGesture(minimumDistance: 0))
-            .onChanged { value in
-                if case .second(true, let drag) = value {
-                    if !talking {
-                        talking = true
-                        commandReply = nil
-                        if dictation.authorized == true { dictation.start() }
-                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
-                    }
-                    willCancel = (drag?.translation.height ?? 0) < -60
-                }
-            }
-            .onEnded { value in
-                guard case .second(true, _) = value else { return }
-                let cancel = willCancel
-                talking = false; willCancel = false
-                if cancel { dictation.stop(); return }
-                Task {
-                    let text = (await dictation.stopAndGetFinal()).trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !text.isEmpty else { return }
-                    command.setRefs(currentRefs())
-                    command.enqueue(text, images: [], articleIndex: 0)
-                }
-            }
-    }
-
-    // MARK: 语音指令 refs (长按红键说话)
-
-    /// Numbered refs for the command agent, matching the on-screen circled numbers
-    /// in `rowCard` 1:1 — both are absolute positions in `store.recordings`
-    /// (newest-first). In-flight uploads/optimistic rows aren't real articles yet,
-    /// so they're not numbered and can't be targeted by a spoken command.
-    /// The recordings the user can currently see and target by spoken number —
-    /// the full server list on 我的录音, the filtered list on a tag page, so
-    /// "第2篇" always means the second row ON SCREEN.
-    private var commandTargets: [Recording] {
-        guard let t = currentPageTag else { return store.recordings }
-        return store.recordings.filter { $0.tags?.contains(t) ?? false }
-    }
-
-    private func currentRefs() -> [LibraryCommandSession.CommandRef] {
-        commandTargets.enumerated().map { i, rec in
-            .init(n: i + 1, stem: rec.stem, title: rec.rowTitle)
+    /// Press feedback for the red key: a slight shrink while the finger is down,
+    /// so a held press visibly "arms" and the release that opens the recorder
+    /// reads as the completion of one gesture.
+    private struct RecordKeyStyle: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .scaleEffect(configuration.isPressed ? 0.92 : 1)
+                .animation(.easeInOut(duration: 0.12), value: configuration.isPressed)
         }
-    }
-
-    /// The circled number to show on `rec`'s row while holding the red key to
-    /// talk, or nil if `rec` isn't a numbered target (still uploading / not yet
-    /// on the server).
-    private func commandNumber(for rec: Recording) -> Int? {
-        guard let idx = commandTargets.firstIndex(where: { $0.id == rec.id }) else { return nil }
-        return idx + 1
     }
 }
 

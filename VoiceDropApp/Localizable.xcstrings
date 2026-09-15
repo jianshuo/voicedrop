@@ -2545,16 +2545,6 @@
         }
       }
     },
-    "松开发送 · 上滑取消": {
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Release to send · Swipe up to cancel"
-          }
-        }
-      }
-    },
     "松手收纳": {},
     "标准 · AAC": {
       "localizations": {
@@ -3526,12 +3516,12 @@
         }
       }
     },
-    "轻点录音 · 长按说话": {
+    "轻点录音": {
       "localizations": {
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Tap to Record · Hold to Talk"
+            "value": "Tap to Record"
           }
         }
       }

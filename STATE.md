@@ -771,9 +771,11 @@ VoiceDrop 是 iOS 系统分享目标。从别的 app 点「分享」→ 自定�
 - **部署状态（SHIPPED 2026-07-01，2026-07-02 重构提取风格为任务流）**：两个 `feat/share-collect` 已合并 main。Worker 多次 `wrangler deploy`（含 vision 挖图 / 语料接口 / 一次起名 / **提取风格挖矿任务流 `taskSpec`+`TASK_HANDLERS`**，最新版 live，jianshuo.dev `8f0ceb2`）。Pages 已部署生产（**注意坑 2：必须 `--branch main`，游离 HEAD 会静默进 preview**）。iOS 提取风格改文件名 tag（`5d72482`）走 TestFlight 构建中。
   - **⚠️ git 坑（2026-07-02）**：`~/code/jianshuo.dev` 工作目录当时停在 `feat/paint-service`（并行 paint 会话），直接 commit 会落错分支。做法：临时 `git worktree add` 一个 `main` worktree，改代码 / 跑测试 / `wrangler deploy` 全在里面，`git push origin main` 后再删 worktree——不碰 paint 会话。worktree 无 `node_modules`，`better-sqlite3` 是原生模块、软链会失败，得在 worktree 里真跑一次 `npm install`。
 
-## 语音指令 (Voice Command) — 长按红键对文章库下语音指令（2026-07-02，SDD 建成，待真机验证）
+## 语音指令 (Voice Command) — 库级语音指令（2026-07-02 建成；**2026-09-15 客户端入口已拆除，服务端仍 live**）
 
-「我的录音」首页**长按底部红键** → 列表每篇浮圈序号 → 说一句自然语言指令（「把③和④合并」「删掉第②篇」「把①换个更口语的标题」「②③④换风格重写」「这几篇归到『上海』」）→ Claude 理解意图并对文章库执行。规格/计划：`docs/superpowers/specs/2026-07-02-voicedrop-voice-command-design.md` + `docs/superpowers/plans/2026-07-02-voicedrop-voice-command.md`。
+**现状（2026-09-15）**：红键**只做一件事——开录音**，轻点和长按松手都进正式录音页（`LibraryView.recordButton` 是一个 `Button`，touch-up 触发，不看按了多久）。「长按说话」入口、`SpeechDictation` 在首页的实例、行首序号角标、删除确认弹窗、`LibraryCommandSession.swift` 整个文件都已删除。原因见 CHANGELOG 2026-09-15：31 天日志里 44 个长按过的用户 26 个在按微信直觉口述内容，以为在录音。服务端 `/agent/command` + `LibraryAgent` DO + 命令工具集**原样保留**（无客户端调用，MCP 也没暴露），将来若要重开入口，放次要位置，别再占主按钮手势。下面是建成时的设计记录。
+
+「我的录音」首页**长按底部红键**（已拆除） → 列表每篇浮圈序号 → 说一句自然语言指令（「把③和④合并」「删掉第②篇」「把①换个更口语的标题」「②③④换风格重写」「这几篇归到『上海』」）→ Claude 理解意图并对文章库执行。规格/计划：`docs/superpowers/specs/2026-07-02-voicedrop-voice-command-design.md` + `docs/superpowers/plans/2026-07-02-voicedrop-voice-command.md`。
 
 - **复用语音编辑栈**：`SpeechDictation` + `/agent/asr` 火山代理 + `runAgentLoop` + `ArticleQueue` + 反馈气泡 原样复用；抽出共享 `PushToTalkBar`（`VoiceDropApp/PushToTalkBar.swift`，从 `RecordingDetailView` 抽）+ `VoiceAgentSession` 协议（`ArticleAgentSession` 与新 `LibraryCommandSession` 都 conform）。
 - **服务端（jianshuo.dev，已 live）**：新 `/agent/command` WS → **`LibraryAgent` DO（每用户一个**，区别于 `ArticleEditor` 每文章一个；wrangler migration **v5**）→ `runCommandTurn`（`src/command-turn.js`，编号 refs→stem + 命令工具子集 `toolDefsFor(COMMAND_TOOL_NAMES)`）→ 库级工具（`src/tools.js`）：`merge_articles`（Claude 揉成新一篇、**另存+留原文**、写静音 `.m4a` 锚点才进列表）、`delete_article`（**破坏性→暂存 pending，不在 loop 内删**）、`restyle_article`、`tag_article` + 复用 `list/read_article`、`read/write_style`。计费 `meteredCommandGate`（余额门，无每篇上限，reason `"command"`）。

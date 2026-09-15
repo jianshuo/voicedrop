@@ -2,6 +2,20 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 红键去掉「长按说话」，长按和轻点都直接开录音（2026-09-15）
+
+**问题**：首页红键原来是「轻点录音 · 长按说话（库级语音指令）」两个语义。查 D1 ledger（`reason='edit'` 且 `stem=''` 即库级指令）对上 R2 `llmlogs/` 里的 `meta.instruction` 原文，2026-08-15 → 09-14 这 31 天：长按送出 138 轮、44 个用户，其中 **26 个用户在按微信「按住说话」的直觉口述内容**（约 46 轮），11 个人事后追问「我刚才的录音呢 / 帮我保存」，有人连按 20 条最后骂着走；真下指令的只有 12 人（22 轮）。全时段（07-02 起）723 轮 / 138 用户，按比例估计约 80 人踩过。按钮下面那行「长按说话」的小字挡不住十年的肌肉记忆。
+
+**改法（根治，不做过渡层）**：
+- `LibraryView.recordButton`：红键改成 `Button`（配 `RecordKeyStyle` 按下缩 0.92 的反馈），touch-up 即 `recordLaunch`，按多久都一样进正式录音页。提示文案改「轻点录音」（en `Tap to Record`）。
+- 删除：`talkGesture`（LongPress→Drag 序列手势）、首页的 `SpeechDictation` 实例与 `requestAuth`、`talking/willCancel/commandReply/confirmPrompt` 状态、行首 `numberBadge` 序号角标、语音指令删除确认 `.alert`、`command.connect/disconnect` 随 scenePhase 的连接管理、`commandTargets/currentRefs/commandNumber`。
+- `VoiceDropApp/LibraryCommandSession.swift` 整文件删除（只有 LibraryView 用它；`VoiceAgentSession` 协议、`PushToTalkBar`、`VoiceFeedbackStack` 留给文章详情页的语音编辑，未动）。xcodegen 已重跑。
+- 本地化：删 key「轻点录音 · 长按说话」「松开发送 · 上滑取消」，加「轻点录音」。「上滑取消 · 松开放弃」PushToTalkBar 还在用，保留。
+
+**没动的**：服务端 `/agent/command`、`LibraryAgent` DO、`command-turn.js`、命令工具集、`meteredCommandGate` 全部原样；`prompts/command.js` 系统提示词第一句还写着「长按红键」，现在没有客户端会打到它，暂不改、不部署（避免只改代码不部署的半截状态）。
+
+**给未来 agent**：不要把语音指令重新挂回红键长按。要重开入口，放红键旁边的小图标或列表行菜单。验证误用率是否归零可以继续用同一条查询：ledger 里 `stem=''` 的 edit 行应从此不再增长。
+
 ## 四本 legacy 老书补上 chapters，书架不再有「0 章」的书（2026-09-02）
 
 书架上四本内容完好的老书一直显示 **0 章**：《他为什么卖给你？》《五行八字》
