@@ -600,25 +600,43 @@ struct LibraryView: View {
 
     // MARK: Record button (floats over the list — no pane)
 
-    /// The red key. Tap OR hold-then-release both open the recorder — one
-    /// gesture, one meaning. It used to double as a press-and-hold 语音指令 mic
-    /// (「长按说话」), but 31 days of server logs (2026-08-15 → 09-14) showed 26 of
-    /// the 44 users who ever held it were dictating *content*, WeChat-style, and
-    /// then hunting for a recording that never existed; only 12 issued a real
-    /// command. A `Button` fires on touch-up regardless of how long the finger
-    /// stayed down, so the WeChat reflex now lands in the recorder instead of
-    /// nowhere. The library-level command agent (/agent/command) is still live
-    /// server-side; the client entry point is gone on purpose.
+    /// The red key. Tap opens the recorder on touch-up; holding past
+    /// `holdToRecordSeconds` opens it *while the finger is still down* (with a
+    /// haptic), so the WeChat 「按住说话」 reflex lands in a live recording instead
+    /// of waiting for a release the user may never think to do. It used to double
+    /// as a press-and-hold 语音指令 mic (「长按说话」), but 31 days of server logs
+    /// (2026-08-15 → 09-14) showed 26 of the 44 users who ever held it were
+    /// dictating *content* and then hunting for a recording that never existed;
+    /// only 12 issued a real command. The library-level command agent
+    /// (/agent/command) is still live server-side; the client entry point is
+    /// gone on purpose. Both paths funnel through `launchRecorder()`, which is
+    /// re-entrancy guarded: after the hold fires, the eventual touch-up may still
+    /// deliver the Button action, and it must not stack a second recorder.
     private var recordButton: some View {
         VStack(spacing: 7) {
-            Button { recordLaunch = RecordLaunch(tag: nil) } label: { redCircle }
+            Button { launchRecorder() } label: { redCircle }
                 .buttonStyle(RecordKeyStyle())
+                .simultaneousGesture(
+                    LongPressGesture(minimumDuration: Self.holdToRecordSeconds, maximumDistance: 24)
+                        .onEnded { _ in launchRecorder(haptic: true) }
+                )
                 .accessibilityLabel("录音")
             Text("轻点录音")
                 .font(.system(size: 12)).tracking(1)
                 .foregroundStyle(Theme.secondary)
         }
         .padding(.bottom, 8)
+    }
+
+    /// How long a hold on the red key waits before opening the recorder on its
+    /// own. Long enough that a slow tap doesn't trip it, short enough that a
+    /// WeChat-style hold starts recording before the user begins talking.
+    private static let holdToRecordSeconds: Double = 0.4
+
+    private func launchRecorder(haptic: Bool = false) {
+        guard recordLaunch == nil else { return }
+        if haptic { UIImpactFeedbackGenerator(style: .medium).impactOccurred() }
+        recordLaunch = RecordLaunch(tag: nil)
     }
 
     /// The pure-red circle key, at rest. Pressed feedback lives in `RecordKeyStyle`.

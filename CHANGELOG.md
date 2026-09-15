@@ -7,7 +7,7 @@
 **问题**：首页红键原来是「轻点录音 · 长按说话（库级语音指令）」两个语义。查 D1 ledger（`reason='edit'` 且 `stem=''` 即库级指令）对上 R2 `llmlogs/` 里的 `meta.instruction` 原文，2026-08-15 → 09-14 这 31 天：长按送出 138 轮、44 个用户，其中 **26 个用户在按微信「按住说话」的直觉口述内容**（约 46 轮），11 个人事后追问「我刚才的录音呢 / 帮我保存」，有人连按 20 条最后骂着走；真下指令的只有 12 人（22 轮）。全时段（07-02 起）723 轮 / 138 用户，按比例估计约 80 人踩过。按钮下面那行「长按说话」的小字挡不住十年的肌肉记忆。
 
 **改法（根治，不做过渡层）**：
-- `LibraryView.recordButton`：红键改成 `Button`（配 `RecordKeyStyle` 按下缩 0.92 的反馈），touch-up 即 `recordLaunch`，按多久都一样进正式录音页。提示文案改「轻点录音」（en `Tap to Record`）。
+- `LibraryView.recordButton`：红键改成 `Button`（配 `RecordKeyStyle` 按下缩 0.92 的反馈），轻点抬手即 `recordLaunch`；再叠一个 `LongPressGesture(minimumDuration: 0.4)`（`holdToRecordSeconds`），**按住 0.4s 手指还没抬就震一下直接开录音页**（录音页 `.task` 开页即录，所以用户开口时已经在录）。两条路都走 `launchRecorder()`，`recordLaunch == nil` 防重入——按住触发后抬手 Button 可能再送一次 action，不能叠第二个录音页。提示文案改「轻点录音」（en `Tap to Record`）。
 - 删除：`talkGesture`（LongPress→Drag 序列手势）、首页的 `SpeechDictation` 实例与 `requestAuth`、`talking/willCancel/commandReply/confirmPrompt` 状态、行首 `numberBadge` 序号角标、语音指令删除确认 `.alert`、`command.connect/disconnect` 随 scenePhase 的连接管理、`commandTargets/currentRefs/commandNumber`。
 - `VoiceDropApp/LibraryCommandSession.swift` 整文件删除（只有 LibraryView 用它；`VoiceAgentSession` 协议、`PushToTalkBar`、`VoiceFeedbackStack` 留给文章详情页的语音编辑，未动）。xcodegen 已重跑。
 - 本地化：删 key「轻点录音 · 长按说话」「松开发送 · 上滑取消」，加「轻点录音」。「上滑取消 · 松开放弃」PushToTalkBar 还在用，保留。

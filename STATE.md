@@ -773,7 +773,7 @@ VoiceDrop 是 iOS 系统分享目标。从别的 app 点「分享」→ 自定�
 
 ## 语音指令 (Voice Command) — 库级语音指令（2026-07-02 建成；**2026-09-15 客户端入口已拆除，服务端仍 live**）
 
-**现状（2026-09-15）**：红键**只做一件事——开录音**，轻点和长按松手都进正式录音页（`LibraryView.recordButton` 是一个 `Button`，touch-up 触发，不看按了多久）。「长按说话」入口、`SpeechDictation` 在首页的实例、行首序号角标、删除确认弹窗、`LibraryCommandSession.swift` 整个文件都已删除。原因见 CHANGELOG 2026-09-15：31 天日志里 44 个长按过的用户 26 个在按微信直觉口述内容，以为在录音。服务端 `/agent/command` + `LibraryAgent` DO + 命令工具集**原样保留**（无客户端调用，MCP 也没暴露），将来若要重开入口，放次要位置，别再占主按钮手势。下面是建成时的设计记录。
+**现状（2026-09-15）**：红键**只做一件事——开录音**：轻点抬手进录音页；按住 0.4s（`holdToRecordSeconds`）不抬手也直接进，带震动（`LibraryView.recordButton` = `Button` + simultaneous `LongPressGesture`，共用防重入的 `launchRecorder()`）。「长按说话」入口、`SpeechDictation` 在首页的实例、行首序号角标、删除确认弹窗、`LibraryCommandSession.swift` 整个文件都已删除。原因见 CHANGELOG 2026-09-15：31 天日志里 44 个长按过的用户 26 个在按微信直觉口述内容，以为在录音。服务端 `/agent/command` + `LibraryAgent` DO + 命令工具集**原样保留**（无客户端调用，MCP 也没暴露），将来若要重开入口，放次要位置，别再占主按钮手势。下面是建成时的设计记录。
 
 「我的录音」首页**长按底部红键**（已拆除） → 列表每篇浮圈序号 → 说一句自然语言指令（「把③和④合并」「删掉第②篇」「把①换个更口语的标题」「②③④换风格重写」「这几篇归到『上海』」）→ Claude 理解意图并对文章库执行。规格/计划：`docs/superpowers/specs/2026-07-02-voicedrop-voice-command-design.md` + `docs/superpowers/plans/2026-07-02-voicedrop-voice-command.md`。
 
