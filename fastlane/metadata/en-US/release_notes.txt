@@ -1,4 +1,6 @@
 What's new:
-• Language option: Settings → Other → Language — Follow System, 简体中文, or English (takes effect after restarting the app)
-• Fixed a rare issue where one recording could be processed twice and produce a duplicate article
+• Bookshelf: browse by category (Business / Investing / AI / Science / Humanities / Mind & Body / Life / Stories), search titles, authors and chapters, and a "Mine" filter for the books you wrote
+• Record key: tap or hold — either starts recording right away
+• Book writing: you'll be asked for an author name once if none is set; a higher subscription tier; the shelf no longer stutters
+• Hide your own book from the shelf via the book page menu, and unhide to put it back
 • Various polish and bug fixes
