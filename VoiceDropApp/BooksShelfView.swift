@@ -29,6 +29,7 @@ struct ShelfBook: Decodable, Identifiable, Equatable, Hashable {
     let author: String?  // <meta name="author">；老缓存里没有 → optional
     let hidden: Bool?    // 自己的隐藏书（登录态下服务端才会给）；公开条目无此字段
     let mine: Bool?      // 这本是我自己的（登录态下服务端才给）；别人的书无此字段
+    let category: String? // 类目（八词之一，服务端 book.json 自报；没类目 = "" 或缺）
     var id: String { slug }
 
     /// ?v=coverAt 与网页书架同款破缓存：修书换封面 → 时间戳变 → URL 变，
@@ -82,44 +83,136 @@ final class BooksShelfStore {
             if books.isEmpty { self.error = error.localizedDescription }
         }
     }
+
+    // MARK: 搜索索引（?format=search）
+
+    /// 章节级搜索索引：副标题 / 导读 / 每章标题 + 一句 brief。书名、作者、类目页面
+    /// 上已有，只有搜章节才需要它，所以第一次打字才拉，拉一次整个会话复用。
+    struct SearchEntry: Decodable {
+        struct Chapter: Decodable { let t: String; let b: String }
+        let slug: String
+        let sub: String
+        let intro: String
+        let toc: [Chapter]
+    }
+    var searchIndex: [String: SearchEntry]?
+    var searchIndexLoading = false
+    private static var searchURL: URL { URL(string: "\(API.publicWebBase)/books/?format=search")! }
+    private struct SearchIndex: Decodable { let books: [SearchEntry] }
+
+    func loadSearchIndex() async {
+        if searchIndex != nil || searchIndexLoading { return }
+        searchIndexLoading = true
+        defer { searchIndexLoading = false }
+        do {
+            var req = URLRequest(url: Self.searchURL)
+            let bearer = AuthStore.shared.bearer
+            if !bearer.isEmpty { req.setBearer(bearer) }   // 自己的 hidden 书也进索引
+            req.cachePolicy = .reloadIgnoringLocalCacheData
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            guard resp.isOK else { throw URLError(.badServerResponse) }
+            let entries = try JSONDecoder().decode(SearchIndex.self, from: data).books
+            searchIndex = Dictionary(entries.map { ($0.slug, $0) }, uniquingKeysWith: { a, _ in a })
+        } catch {
+            // 拉不到就只按书名/作者/类目搜——下次打字再试一次。
+        }
+    }
+}
+
+// MARK: - 书架筛选（全部 / 我的 / 类目）
+
+enum ShelfFilter: Hashable {
+    case all
+    case mine
+    case category(String)
+
+    /// 类目顺序与网页书架、服务端 lib/books-shelf.js 的 CATEGORY_ORDER 一致。
+    static let categoryOrder = ["商业", "投资", "AI", "科学", "人文", "身心", "生活", "故事"]
+
+    /// 书架上实际有书的类目，按固定顺序（没书的类目不出 tab）。
+    static func present(in books: [ShelfBook]) -> [String] {
+        let have = Set(books.compactMap { $0.category }.filter { !$0.isEmpty })
+        return categoryOrder.filter { have.contains($0) }
+    }
+
+    func matches(_ book: ShelfBook) -> Bool {
+        switch self {
+        case .all: return true
+        case .mine: return book.mine == true
+        case .category(let c): return book.category == c
+        }
+    }
+}
+
+/// 书架搜索的纯逻辑（可单测）：先书名/主副题/作者/类目，再落到章节索引；
+/// 返回 nil = 不匹配，"" = 书名等直接命中，非空 = 只在章节里命中，值是命中的章题
+/// （书名下提示一行）。中文子串不用分词，大小写不敏感。
+enum ShelfSearch {
+    static func hit(_ book: ShelfBook, query: String, index: BooksShelfStore.SearchEntry?) -> String? {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        if q.isEmpty { return "" }
+        let direct = [book.title, book.main, book.sub, book.author ?? "", book.category ?? ""]
+        if direct.contains(where: { $0.localizedCaseInsensitiveContains(q) }) { return "" }
+        guard let e = index else { return nil }
+        if e.sub.localizedCaseInsensitiveContains(q) || e.intro.localizedCaseInsensitiveContains(q) { return "" }
+        for ch in e.toc where ch.t.localizedCaseInsensitiveContains(q) || ch.b.localizedCaseInsensitiveContains(q) {
+            return ch.t.isEmpty ? "" : ch.t
+        }
+        return nil
+    }
 }
 
 struct BooksShelfView: View {
     @State private var store = BooksShelfStore()
     @State private var showBookWriting = false
     @State private var openBook: ShelfBook?
+    // 筛选条（全部 / 我的 / 类目）+ 搜索态，与网页书架、社区 tabRow 同一套交互。
+    @State private var filter: ShelfFilter = .all
+    @State private var searching = false
+    @State private var query = ""
+    @FocusState private var searchFocused: Bool
 
     /// 封面文字用的奶油白（布面书封上的烫字）。
     private static let cream = Color(hex: "F7F1DF")
 
     var body: some View {
-        ScrollView {
-            // LazyVStack：书多了以后只构建可见的几排（每格有渐变/Canvas/阴影/封面图，
-            // 全量构建 + 全量起封面加载任务是整屏卡死的主因之一），滚到哪建到哪。
-            LazyVStack(spacing: 8) {
-                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
-                    HStack(alignment: .top, spacing: 22) {
-                        ForEach(row) { cell in
-                            cellView(cell)
+        VStack(spacing: 0) {
+            filterRow
+            ScrollView {
+                // LazyVStack：书多了以后只构建可见的几排（每格有渐变/Canvas/阴影/封面图，
+                // 全量构建 + 全量起封面加载任务是整屏卡死的主因之一），滚到哪建到哪。
+                LazyVStack(spacing: 8) {
+                    ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                        HStack(alignment: .top, spacing: 22) {
+                            ForEach(row) { cell in
+                                cellView(cell)
+                            }
+                            if row.count == 1 {
+                                Color.clear.frame(maxWidth: .infinity)
+                            }
                         }
-                        if row.count == 1 {
-                            Color.clear.frame(maxWidth: .infinity)
-                        }
+                        shelfBar
                     }
-                    shelfBar
+                    if store.loading && store.books.isEmpty {
+                        ProgressView().tint(Theme.recordRed).padding(.top, 24)
+                    } else if let err = store.error, store.books.isEmpty {
+                        Text("书架没加载出来：\(err)")
+                            .font(.system(size: 13)).foregroundStyle(Theme.secondary)
+                            .padding(.top, 18)
+                    } else if let hint = emptyHint {
+                        Text(hint)
+                            .font(.system(size: 14)).foregroundStyle(Theme.metaChrome)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 44)
+                    }
                 }
-                if store.loading && store.books.isEmpty {
-                    ProgressView().tint(Theme.recordRed).padding(.top, 24)
-                } else if let err = store.error, store.books.isEmpty {
-                    Text("书架没加载出来：\(err)")
-                        .font(.system(size: 13)).foregroundStyle(Theme.secondary)
-                        .padding(.top, 18)
-                }
+                .padding(.top, 6).padding(.horizontal, 20).padding(.bottom, 20)
             }
-            .padding(.top, 6).padding(.horizontal, 20).padding(.bottom, 20)
+            .contentMargins(.bottom, 24, for: .scrollContent)
+            .refreshable { await store.load() }
+            .scrollDismissesKeyboard(.immediately)
         }
-        .contentMargins(.bottom, 24, for: .scrollContent)
-        .refreshable { await store.load() }
         .task { await store.load() }
         .onAppear { Analytics.screen("书架") }
         .sheet(isPresented: $showBookWriting) { BookWritingSheet() }
@@ -128,28 +221,160 @@ struct BooksShelfView: View {
         }
     }
 
-    // MARK: rows（第一格永远是写书入口，两格一排）
+    // MARK: 筛选条（全部 / 我的 / 类目 … + 右侧搜索）
+
+    /// 网页书架同款：只列实际有书的类目；「我的」始终在（没登录/没书时给一句提示）。
+    @ViewBuilder private var filterRow: some View {
+        if searching {
+            searchRow
+        } else {
+            HStack(spacing: 0) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 18) {
+                        filterLabel(String(localized: "全部"), .all)
+                        filterLabel(String(localized: "我的"), .mine)
+                        ForEach(ShelfFilter.present(in: store.books), id: \.self) { c in
+                            filterLabel(c, .category(c))   // 类目词是服务端数据，不走本地化
+                        }
+                    }
+                    .padding(.horizontal, 20)
+                }
+                Button {
+                    searching = true
+                    searchFocused = true
+                    Analytics.capture("书架搜索")
+                } label: {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Theme.metaChrome)
+                        .frame(width: 32, height: 28)   // 补足热区
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 12)
+                .accessibilityLabel("搜索")
+            }
+            .padding(.top, 2)
+            .padding(.bottom, 10)
+        }
+    }
+
+    private func filterLabel(_ title: String, _ f: ShelfFilter) -> some View {
+        Button {
+            filter = f
+            Analytics.capture("书架筛选", ["tab": filterAnalyticsName(f)])
+        } label: {
+            Text(title)
+                .font(.system(size: 15, weight: filter == f ? .semibold : .regular))
+                .foregroundStyle(filter == f ? Theme.ink : Theme.metaChrome)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func filterAnalyticsName(_ f: ShelfFilter) -> String {
+        switch f {
+        case .all: return "全部"
+        case .mine: return "我的"
+        case .category(let c): return c
+        }
+    }
+
+    /// 搜索态的顶行：胶囊输入框 + 取消（与社区搜索同款）。第一次打字才拉章节索引。
+    private var searchRow: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Theme.metaChrome)
+                TextField(String(localized: "搜书名、作者、章节"), text: $query)
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.ink)
+                    .focused($searchFocused)
+                    .submitLabel(.search)
+                    .autocorrectionDisabled()
+                    .onChange(of: query) { _, q in
+                        if !q.trimmingCharacters(in: .whitespaces).isEmpty { Task { await store.loadSearchIndex() } }
+                    }
+                if !query.isEmpty {
+                    Button { query = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(Theme.metaChrome)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("清空")
+                }
+            }
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(Theme.card, in: Capsule())
+            .overlay(Capsule().stroke(Theme.borderRead, lineWidth: 1))
+            Button {
+                searching = false
+                query = ""
+                searchFocused = false
+            } label: {
+                Text("取消")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Theme.ink)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 2)
+        .padding(.bottom, 10)
+    }
+
+    // MARK: rows（第一格永远是写书入口，两格一排；搜索时只出结果）
 
     private enum Cell: Identifiable {
         case write
-        case book(ShelfBook)
+        case book(ShelfBook, hit: String)   // hit = 只在章节里命中时的章题，否则 ""
         var id: String {
             switch self {
             case .write: return "·write·"
-            case .book(let b): return b.id
+            case .book(let b, _): return b.id
             }
         }
     }
 
+    private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var isSearching: Bool { searching && !trimmedQuery.isEmpty }
+
+    /// 先按筛选条过滤，再按搜索词过滤（两者叠加）。
+    private var visible: [(ShelfBook, String)] {
+        let base = store.books.filter { filter.matches($0) }
+        if !isSearching { return base.map { ($0, "") } }
+        let q = trimmedQuery
+        return base.compactMap { b in
+            ShelfSearch.hit(b, query: q, index: store.searchIndex?[b.slug]).map { (b, $0) }
+        }
+    }
+
     private var rows: [[Cell]] {
-        let cells: [Cell] = [.write] + store.books.map { .book($0) }
+        let books: [Cell] = visible.map { .book($0.0, hit: $0.1) }
+        let cells: [Cell] = isSearching ? books : [.write] + books
         return stride(from: 0, to: cells.count, by: 2).map { Array(cells[$0..<min($0 + 2, cells.count)]) }
+    }
+
+    /// 筛完/搜完一本都没有时的提示；正常有书时 nil。
+    private var emptyHint: String? {
+        guard !store.books.isEmpty, visible.isEmpty else { return nil }
+        if isSearching {
+            return store.searchIndexLoading
+                ? String(localized: "正在翻章节…")
+                : String(localized: "没有找到「\(trimmedQuery)」")
+        }
+        if filter == .mine {
+            return AuthStore.shared.bearer.isEmpty
+                ? String(localized: "登录后这里是你写的书")
+                : String(localized: "还没有你的书，点「写书」开始")
+        }
+        return nil
     }
 
     @ViewBuilder private func cellView(_ cell: Cell) -> some View {
         switch cell {
         case .write: writeEntry
-        case .book(let b): bookCell(b)
+        case .book(let b, let hit): bookCell(b, hit: hit)
         }
     }
 
@@ -187,22 +412,25 @@ struct BooksShelfView: View {
 
     // MARK: 一本书
 
-    private func bookCell(_ book: ShelfBook) -> some View {
+    private func bookCell(_ book: ShelfBook, hit: String = "") -> some View {
         Button {
             openBook = book
         } label: {
             VStack(alignment: .leading, spacing: 9) {
                 bookCover(book)
-                caption(title: book.main, meta: metaLine(book))
+                caption(title: book.main, meta: hit.isEmpty ? metaLine(book) : hit)
             }
         }
         .buttonStyle(.plain)
     }
 
+    /// 「12 章 · 科学」：章数 + 类目（网页书架是章数 + 小胶囊标签，这里一行文字够了）。
     private func metaLine(_ book: ShelfBook) -> String {
-        if book.chapters > 0 { return String(localized: "\(book.chapters) 章") }
-        if !book.sub.isEmpty { return book.sub }
-        return " "
+        var parts: [String] = []
+        if book.chapters > 0 { parts.append(String(localized: "\(book.chapters) 章")) }
+        else if !book.sub.isEmpty { parts.append(book.sub) }
+        if let c = book.category, !c.isEmpty { parts.append(c) }
+        return parts.isEmpty ? " " : parts.joined(separator: " · ")
     }
 
     @ViewBuilder private func bookCover(_ book: ShelfBook) -> some View {

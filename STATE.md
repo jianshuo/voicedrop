@@ -309,9 +309,13 @@ SwiftUI 按 Theme 原生排版，顶部章节 chips 跳转。**内容真源 = ji
 原地推入 `BookReaderView`（同一导航栈：返回键+宋体书名顶栏，内嵌 WKWebView 显示
 `voicedrop.cn/books/<slug>/`，章节跳转留在 WebView 内）。数据 = **`GET voicedrop.cn/books/
 ?format=json`**（jianshuo.dev Pages `functions/voicedrop/books/[[path]].js`，公开
-无鉴权 60s 缓存）：`{books:[{slug,title,main,sub,c,c2,cover,chapters}]}`，chapters =
-顶层章节 html 数（index/intro 不算，单页书 0 → App 回落显示副题）。UserDefaults 缓存
-上次响应离线先画。深链 `voicedrop://books`（alias `library`）、universal link
+无鉴权 60s 缓存）：`{books:[{slug,title,main,sub,c,c2,cover,chapters,category,author,
+hidden?,mine?}]}`，chapters = done 的章节数（单页书 0 → App 回落显示副题），category =
+八词类目之一（服务端真源，App 不映射）。UserDefaults 缓存上次响应离线先画。
+**筛选条 + 搜索（2026-09-16）**：书架顶部横滚 `全部 · 我的 · <有书的类目>` + 右侧放大镜
+（`ShelfFilter`，样式同社区 tabRow）；「我的」= `mine == true`；搜索先匹配书名/作者/
+类目，再查章节索引 `?format=search`（第一次打字才拉、会话内复用；`ShelfSearch.hit`），
+只在章节命中时书名下显示章题。深链 `voicedrop://books`（alias `library`）、universal link
 `voicedrop.cn/books`（书架根；`/books/<slug>` 仍 .web）。红色录音键在此 tab 隐藏。
 设置页入口已撤。设计稿 = design 项目 `Books.dc.html` ①（②③④新书设置/写作中/成书
 未做，流程沿用下述 fire-and-forget + 网页阅读）。

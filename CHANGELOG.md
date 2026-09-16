@@ -2,6 +2,19 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 书架加筛选条（全部 / 我的 / 类目）和搜索（2026-09-16）
+
+服务端书架 2026-09-15 起每本书都有八词类目之一（商业 / 投资 / AI / 科学 / 人文 / 身心 / 生活 / 故事，真源 `_src/book.json` 的 `category`），网页书架同日上了类目导航和搜索框；iOS 这边补齐，外加一个网页没有的「我的」。
+
+- `ShelfBook` 新增 `category: String?`（老 UserDefaults 缓存没这个字段 → optional，正常解码）。`LibraryView` 里社区书卡手工构造 `ShelfBook` 的那处传 `category: nil`。
+- `BooksShelfView` 顶部加 **筛选条**：横滚 `全部 · 我的 · <有书的类目按固定顺序>`，右侧固定一个放大镜；样式抄社区 `CommunityFeedView.tabRow`（15pt，选中 ink semibold，未选中 metaChrome）。`ShelfFilter` 枚举 + `ShelfFilter.present(in:)`（类目顺序常量 `categoryOrder` 与服务端 `lib/books-shelf.js` 的 `CATEGORY_ORDER` 一致，改一边记得改另一边）。
+- **「我的」** = 书单里 `mine == true` 的书（服务端按 bearer 判归属，含自己的隐藏书）。空态：未登录「登录后这里是你写的书」，登录了没书「还没有你的书，点「写书」开始」。「写书」入口格在每个筛选下都在。
+- **搜索**：点放大镜切成胶囊输入框 + 取消（同社区）。`ShelfSearch.hit` 先匹配书名/主副题/作者/类目（`localizedCaseInsensitiveContains`，中文子串不分词），没中再查章节索引；只在章节里命中时书名下那行显示命中的章题。章节索引 = `GET /books/?format=search`（副标题/导读/每章标题+一句 brief，约 550KB，带 bearer 则含自己的隐藏书），**第一次打字才拉、拉一次会话内复用**（`BooksShelfStore.loadSearchIndex`），没拉到就只按书名等搜。搜索态不显示「写书」格；筛选与搜索叠加。
+- 书名下的 meta 行从「12 章」改成「12 章 · 科学」（网页是小胶囊标签，App 一行文字够了）。
+- 单测 `VoiceDropTests/ShelfSearchTests.swift`（筛选、类目顺序、直接命中 / 章节命中 / 未命中、ASCII 不分大小写）。xcodegen 已重跑。本地化补 7 条 en。
+
+**给未来 agent**：类目词表是服务端的事，App 只显示服务端给的字符串、不做本地化映射；要加类目先改服务端 `CATEGORY_ORDER` 和写书 skill，再同步 `ShelfFilter.categoryOrder`。
+
 ## 红键去掉「长按说话」，长按和轻点都直接开录音（2026-09-15）
 
 **问题**：首页红键原来是「轻点录音 · 长按说话（库级语音指令）」两个语义。查 D1 ledger（`reason='edit'` 且 `stem=''` 即库级指令）对上 R2 `llmlogs/` 里的 `meta.instruction` 原文，2026-08-15 → 09-14 这 31 天：长按送出 138 轮、44 个用户，其中 **26 个用户在按微信「按住说话」的直觉口述内容**（约 46 轮），11 个人事后追问「我刚才的录音呢 / 帮我保存」，有人连按 20 条最后骂着走；真下指令的只有 12 人（22 轮）。全时段（07-02 起）723 轮 / 138 用户，按比例估计约 80 人踩过。按钮下面那行「长按说话」的小字挡不住十年的肌肉记忆。

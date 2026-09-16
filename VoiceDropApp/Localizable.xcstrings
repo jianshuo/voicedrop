@@ -4070,7 +4070,77 @@
         }
       }
     },
-    "，用这个链接下载咱俩各得 %lld 算力": {}
+    "，用这个链接下载咱俩各得 %lld 算力": {},
+    "全部": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "All"
+          }
+        }
+      }
+    },
+    "我的": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Mine"
+          }
+        }
+      }
+    },
+    "搜书名、作者、章节": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Search titles, authors, chapters"
+          }
+        }
+      }
+    },
+    "正在翻章节…": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Searching chapters…"
+          }
+        }
+      }
+    },
+    "没有找到「%@」": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No results for “%@”"
+          }
+        }
+      }
+    },
+    "登录后这里是你写的书": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sign in to see the books you wrote"
+          }
+        }
+      }
+    },
+    "还没有你的书，点「写书」开始": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No books of yours yet — tap “Write a book” to start"
+          }
+        }
+      }
+    }
   },
   "version": "1.0"
 }
