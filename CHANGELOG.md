@@ -2,6 +2,23 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 记一笔：书架上的图一律 JPG q80，存量 673 张已转（2026-09-18）
+
+**起因**：评估「全部图书离线化」时量了体量——278 本书 1.7GB，其中图片 1.63GB，全是 48 本绘本的 AI 插图。像素并不大（1536×1024 / 1086×1448，不到 200 万像素），只是 PNG 无损把单张撑到平均 2.4MB。实测 673 张全转 JPG q80：**1567MB → 272MB（4.8 倍）**，肉眼无差。缩像素没必要，收益全在换格式。
+
+**本仓（iOS）零改动**——书走 WKWebView 读网页，页面里 `<img src>` 已由服务端改写。改动都在 jianshuo.dev（commit `b5a2666`，已部署 lab）：
+- `claude-agent/bin/paint`：不给 `--format` 就按输出扩展名定格式（`.jpg`→jpeg），jpeg/webp 默认 `compression 80`，新增 `--compression`。
+- `skills/wjs-voicedrop-writing-book/build.mjs` **硬闸**：`asset` 只收 `.jpg` 且验 JPEG 文件头；章节/导读正文引用 `.png` 拒绝发布。
+- 绘本 skill 的示例与流程全改 `pNN.jpg`（`refs.png` 是不上传的工作文件，保持 PNG）。
+- VPS 上实出一张图验过全链路：paint 任务记录 `format: jpeg, compression: 80`。
+
+**存量**：R2 `books/` 下 673 张 PNG → JPG，1328 个 HTML（发布页 + `_src/` 片段各一份）引用改写，公网 48 本逐本抽验通过后删除 PNG；VPS 上 8 个还在的书工作目录同步转码。原图全部留在 voicedrop-books 存档仓库的 git 历史里。
+
+**给未来 agent**：
+- 离线化方案（服务端 manifest + `rev`、iOS `WKURLSchemeHandler` 本地优先、文字全量自动同步 / 图片按需）**还没做**，这次只是先把体量打下来：现在全架 = 文字约 48MB + 图片约 340MB，「全部下载」一次 Wi-Fi 能拉完。
+- 别放宽 `build.mjs` 的 CTYPE 把 PNG 加回去；被闸拦住就重出成 `.jpg`。
+- paint 服务默认格式仍是 png，VoiceDrop 文章配图（`photos/*.png`）走的是另一条链，这次没动。
+
 ## 书架加筛选条（全部 / 我的 / 类目）和搜索（2026-09-16）
 
 服务端书架 2026-09-15 起每本书都有八词类目之一（商业 / 投资 / AI / 科学 / 人文 / 身心 / 生活 / 故事，真源 `_src/book.json` 的 `category`），网页书架同日上了类目导航和搜索框；iOS 这边补齐，外加一个网页没有的「我的」。
