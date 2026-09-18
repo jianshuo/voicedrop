@@ -17,7 +17,7 @@
 **给未来 agent**：
 - 离线化方案（服务端 manifest + `rev`、iOS `WKURLSchemeHandler` 本地优先、文字全量自动同步 / 图片按需）**还没做**，这次只是先把体量打下来：现在全架 = 文字约 48MB + 图片约 340MB，「全部下载」一次 Wi-Fi 能拉完。
 - 别放宽 `build.mjs` 的 CTYPE 把 PNG 加回去；被闸拦住就重出成 `.jpg`。
-- paint 服务默认格式仍是 png，VoiceDrop 文章配图（`photos/*.png`）走的是另一条链，这次没动。
+- **更正 + 追加（同日）**：上一版这里写「文章配图是 `photos/*.png`」是错的——文章配图（`edit_photo`/`new_photo`）从 2026-07-02 起就是 JPEG + `.jpg` key，只是没传压缩率，实测线上 111 张全是出图 CLI 默认的 q75。已在 Worker `postPaintJob` 与 prompt-lab 代理显式钉 `compression: 80`（jianshuo.dev `89192b5`），与书同一标准、不再吃 CLI 默认。**历史图片不动**：回调正则、`/photo` 白名单继续认 `png`。iOS 无改动（Swift 里没有任何 `.png` 假设）。
 
 ## 书架加筛选条（全部 / 我的 / 类目）和搜索（2026-09-16）
 
