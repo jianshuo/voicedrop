@@ -2,6 +2,21 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 书链接落内置阅读器，不再弹浏览器（2026-09-22）
+
+**症状**：点 `https://jianshuo.dev/voicedrop/books/dudu-koala-quarrel/`（或 `voicedrop.cn/books/<slug>/`）看到的是浏览器，不是 App 的读书视图。两条路都通向浏览器：
+1. universal link 进 App → `AppRouter.universalLink` 只认书架根 `/books` → 原生 tab，`/books/<slug>` 单本书**故意**落 `.web`（站内 `SFSafariViewController`，注释原话「单本书仍走 .web」）。
+2. App 内正文（markdown `[文字](url)`）点链接 → 全 App 没有任何 `openURL` 覆盖，默认 `UIApplication.open`；这个 universal link 归 App 自己，iOS 不会回拉起自己 → 直接跳 Safari.app，`AppRouter` 根本没被问到。
+
+**改法**：
+- `DeepLink` 新增 `.book(slug:url:)`；`universalLink` 里 `/books/<slug>/…`（slug 只认 `[A-Za-z0-9_-]`，章节页也归这本书）→ `.book`。书架根 `/books` 仍是 `.books`。
+- `LibraryView` 新增 `linkedBook: LinkedBookNav` + 对应 `navigationDestination`，`.book` 到达时 `openBookLink`：拉公开的 `/books/<slug>/_src/book.json`（写书腿真源，**hidden 的书也有**，公开书架 `?format=json` 没有）拼 `ShelfBook`；拉不到就空标题的壳子照开。
+- `BookReaderView` 加 `startURL: URL?`（章节链接从该页起读）；顶栏和分享标题在 `book.main/title` 为空时退回 WebView 的 `<title>`。
+- `VoiceDropApp` 根上挂 `.environment(\.openURL, OpenURLAction)`：凡 `AppRouter.universalLink` 认识的 URL 都走 `router.handle`（书 → 阅读器，分享 id → 原生页，其余 → 站内 Safari），不认识的才 `.systemAction`。副作用：`UsageView` 里隐私页的 `Link` 现在也开站内 Safari 而不是跳出去。
+- 新测试 `VoiceDropTests/BookLinkTests.swift`（5 条：双域名书根 / 章节页保留 URL / 书架根不变 / 怪 slug 回 `.web` / 未知域名 nil）。全量 225 条通过；模拟器 `VD_OPEN_URL` 钩子实开一次确认落 `BookReaderView`，书名从 `_src/book.json` 取到。
+
+**给未来 agent**：`BookReaderView.currentShare` 判 `u.path.hasPrefix("/books/")`，海外线路路径是 `/voicedrop/books/…`，章节分享会静默退回书根——同一个 `/books/` vs `/voicedrop/books/` 不对称，这次没顺手改。`BookWebView` 没有 `WKNavigationDelegate`，书页里指向另一本书的链接在 WebView 内就地加载，不经过路由。
+
 ## 记一笔：书架上的图一律 JPG q80，存量 673 张已转（2026-09-18）
 
 **起因**：评估「全部图书离线化」时量了体量——278 本书 1.7GB，其中图片 1.63GB，全是 48 本绘本的 AI 插图。像素并不大（1536×1024 / 1086×1448，不到 200 万像素），只是 PNG 无损把单张撑到平均 2.4MB。实测 673 张全转 JPG q80：**1567MB → 272MB（4.8 倍）**，肉眼无差。缩像素没必要，收益全在换格式。

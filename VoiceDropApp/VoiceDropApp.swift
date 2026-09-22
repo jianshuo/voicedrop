@@ -20,6 +20,15 @@ struct VoiceDropApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(router)
+                // App 内点到自家链接（文章正文 markdown 里的书链接 / 分享链接 / Link 视图）：
+                // 默认 openURL 是 UIApplication.open，而这些 universal link 归 App 自己，
+                // iOS 不会回拉起自己 → 直接跳 Safari.app。凡 AppRouter 认识的都走路由
+                // （书 → 阅读器，分享 id → 原生页，其余 → 站内 Safari），不认识的才交给系统。
+                .environment(\.openURL, OpenURLAction { url in
+                    guard AppRouter.universalLink(url) != nil else { return .systemAction }
+                    router.handle(url)
+                    return .handled
+                })
                 // 订阅：挂 Transaction.updates 监听 + 把当前有效订阅逐笔 claim
                 // （服务端幂等）——续费到账不依赖用户打开算力页。
                 .task { StoreService.shared.start() }

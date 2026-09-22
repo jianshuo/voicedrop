@@ -31,6 +31,17 @@ struct LibraryView: View {
     @State private var selectedRec: Recording?
     @State private var selectedPost: CommunityPost?
     @State private var openFeedBook: ShelfBook?   // 社区书卡 → 推入书架同款 BookReaderView
+    // 书链接（voicedrop.cn/books/<slug>/…，universal link 或正文里点到的）→ 同一个
+    // BookReaderView，从被点的那一页起读。书的元数据来自 /books/<slug>/_src/book.json
+    // （公开可取，hidden 的书也在），拿不到就只带 slug 进去，顶栏用网页 <title> 顶上。
+    @State private var linkedBook: LinkedBookNav?
+    private struct LinkedBookNav: Identifiable, Hashable {
+        let id = UUID()
+        let book: ShelfBook
+        let startURL: URL
+        static func == (l: Self, r: Self) -> Bool { l.id == r.id }
+        func hash(into h: inout Hasher) { h.combine(id) }
+    }
     // Universal-link web fallback (/help/ 等无原生对应的页面) — in-app Safari.
     @State private var webSheet: WebSheetItem?
     private struct WebSheetItem: Identifiable {
@@ -183,6 +194,7 @@ struct LibraryView: View {
             CommunityPostView(store: community, post: post, onRecordFinished: responseRecorded)
         }
         .navigationDestination(item: $openFeedBook) { book in BookReaderView(book: book) }
+        .navigationDestination(item: $linkedBook) { nav in BookReaderView(book: nav.book, startURL: nav.startURL) }
         .navigationDestination(item: $sharedArticle) { nav in
             SharedArticleView(store: community, shared: nav.shared, articleIndex: nav.index)
         }
@@ -245,6 +257,11 @@ struct LibraryView: View {
                 tab = .community; selectedRec = nil; selectedPost = nil; showSettings = false; showUsage = false; sharedArticle = nil
             case .books:
                 tab = .books; selectedRec = nil; selectedPost = nil; showSettings = false; showUsage = false; sharedArticle = nil
+            case .book(let slug, let url):
+                // https://voicedrop.cn/books/<slug>/… — 内置阅读器，不是浏览器。元数据异步
+                // 拉，拉不到也照开（只是顶栏先空着等网页标题）。
+                selectedRec = nil; selectedPost = nil; showSettings = false; showUsage = false; sharedArticle = nil
+                Task { await openBookLink(slug, url: url) }
             case .settings:
                 selectedRec = nil; selectedPost = nil; showSettings = true; showUsage = false; sharedArticle = nil
             case .usage:
@@ -325,6 +342,33 @@ struct LibraryView: View {
             return
         }
         webSheet = WebSheetItem(url: fallback)
+    }
+
+    /// 书链接 → BookReaderView。书名/作者/封面取自公开的 /books/<slug>/_src/book.json
+    /// （写书腿的真源，hidden 的书也有）；c/c2 只有书架封面用，这里随便给。
+    /// 请求失败 → 空标题的壳子照样开：阅读器顶栏用网页 <title> 顶上，正文不受影响。
+    private func openBookLink(_ slug: String, url: URL) async {
+        struct Src: Decodable {
+            let title: String?; let subtitle: String?; let author: String?
+            let cover: Bool?; let coverAt: Double?; let hidden: Bool?
+            let chapters: [Chapter]?
+            struct Chapter: Decodable {}
+        }
+        var src: Src?
+        if let u = URL(string: "\(API.publicWebBase)/books/\(slug)/_src/book.json") {
+            var req = URLRequest(url: u)
+            req.timeoutInterval = 15
+            if let (data, resp) = try? await URLSession.shared.data(for: req), resp.isOK {
+                src = try? JSONDecoder().decode(Src.self, from: data)
+            }
+        }
+        let title = src?.title ?? ""
+        let book = ShelfBook(slug: slug, title: title, main: title, sub: src?.subtitle ?? "",
+                             c: "#8A7A5A", c2: "#6E5F44",
+                             cover: src?.cover ?? false, coverAt: src?.coverAt,
+                             chapters: src?.chapters?.count ?? 0, author: src?.author,
+                             hidden: src?.hidden, mine: nil, category: nil)   // 归属由阅读器自己问 /hidden
+        linkedBook = LinkedBookNav(book: book, startURL: url)
     }
 
     private func checkPendingReplies(_ recs: [Recording]) {

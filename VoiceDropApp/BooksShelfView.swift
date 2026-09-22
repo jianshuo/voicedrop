@@ -604,6 +604,8 @@ struct BooksShelfView: View {
 struct BookReaderView: View {
     @Environment(\.dismiss) private var dismiss
     let book: ShelfBook
+    /// 从哪一页开始读：书链接深链带过来的章节页；nil = 书根页。
+    var startURL: URL? = nil
     /// 隐藏态改完通知书架重拉——书架的 store 在上一层，阅读页够不着。
     var onHiddenChanged: () -> Void = {}
     @State private var isHidden = false
@@ -622,14 +624,15 @@ struct BookReaderView: View {
         VStack(spacing: 0) {
             HStack(spacing: 14) {
                 NavSquare(systemName: "chevron.left") { dismiss() }.accessibilityLabel("返回")
-                Text(book.main)
+                // 深链来的书拿不到元数据时 main 是空的，用网页 <title> 顶上（KVO 跟着页面变）。
+                Text(book.main.isEmpty ? (pageTitle ?? "") : book.main)
                     .font(.custom("Songti SC", size: 21).weight(.semibold))
                     .foregroundStyle(Theme.ink).lineLimit(1)
                 Spacer()
                 moreMenu
             }
             .padding(.horizontal, 20).padding(.top, 6).padding(.bottom, 10)
-            if let url = book.pageURL {
+            if let url = startURL ?? book.pageURL {
                 BookWebView(url: url, pageURL: $pageURL, pageTitle: $pageTitle)
                     .id(reloadStamp)   // 修改 sheet 关掉后换实例重载，立刻看到新版
                     .ignoresSafeArea(edges: .bottom)
@@ -687,7 +690,8 @@ struct BookReaderView: View {
     private var currentShare: (url: URL, title: String, isChapter: Bool)? {
         guard let root = book.pageURL else { return nil }
         let byline = (book.author?.isEmpty == false) ? " — \(book.author!)" : ""
-        let bookTitle = "《\(book.title)》\(byline)"
+        // 深链壳子没书名时退回网页标题，别分享出「《》」。
+        let bookTitle = book.title.isEmpty ? (pageTitle ?? "") : "《\(book.title)》\(byline)"
         guard let u = pageURL, u.path.hasPrefix("/books/"), u.path != root.path else {
             return (root, bookTitle, false)
         }
