@@ -22,6 +22,26 @@ final class BookLinkTests: XCTestCase {
         XCTAssertEqual(AppRouter.universalLink(ch), .book(slug: "dudu-koala-quarrel", url: ch))
     }
 
+    func testBookAssetPathsStayWeb() {
+        // 封面图 / PDF / print 视图不是「读书」，别拿阅读器壳子去套一张图。
+        for path in ["/books/dudu-koala-quarrel/cover.jpg", "/books/dudu-koala-quarrel/print",
+                     "/books/dudu-koala-quarrel/book.pdf", "/books/audiobook/dudu-koala-quarrel/01"] {
+            let u = URL(string: "https://voicedrop.cn" + path)!
+            XCTAssertEqual(AppRouter.universalLink(u), .web(u), path)
+        }
+    }
+
+    func testCommunityAndManualRouteNatively() {
+        // 网站的社区宣传页 / 使用手册页，App 里都有原生对应物。
+        XCTAssertEqual(AppRouter.universalLink(URL(string: "https://voicedrop.cn/community/")!), .community)
+        XCTAssertEqual(AppRouter.universalLink(URL(string: "https://jianshuo.dev/voicedrop/community")!), .community)
+        XCTAssertEqual(AppRouter.universalLink(URL(string: "https://voicedrop.cn/help/manual/")!), .manual)
+        XCTAssertEqual(AppRouter.universalLink(URL(string: "https://jianshuo.dev/voicedrop/help/manual/")!), .manual)
+        // 帮助中心首页没有原生页，照旧站内 Safari。
+        let help = URL(string: "https://voicedrop.cn/help/")!
+        XCTAssertEqual(AppRouter.universalLink(help), .web(help))
+    }
+
     func testShelfRootStillNativeTab() {
         XCTAssertEqual(AppRouter.universalLink(URL(string: "https://voicedrop.cn/books/")!), .books)
         XCTAssertEqual(AppRouter.universalLink(URL(string: "https://jianshuo.dev/voicedrop/books")!), .books)

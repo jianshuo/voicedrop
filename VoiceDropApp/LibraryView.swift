@@ -69,6 +69,8 @@ struct LibraryView: View {
         let id: String   // 码本身即可当 id：同一个码不会有两份并存的 item
         var code: String { id }
     }
+    // voicedrop.cn/help/manual/ universal link → 从根上弹内置使用手册（设置里那份同款）。
+    @State private var showManualSheet = false
 
     @EnvironmentObject private var router: AppRouter
     @Environment(\.scenePhase) private var scenePhase
@@ -227,6 +229,7 @@ struct LibraryView: View {
         .sheet(item: $promptImportPrefill) { item in
             PromptImportSheet(prefill: item.code)
         }
+        .sheet(isPresented: $showManualSheet) { HelpManualSheet() }
         .onChange(of: scenePhase) { _, p in
             if p == .active { statusSession.connect(); Task { await refresh() } }
             else if p == .background { statusSession.disconnect() }
@@ -262,6 +265,8 @@ struct LibraryView: View {
                 // 拉，拉不到也照开（只是顶栏先空着等网页标题）。
                 selectedRec = nil; selectedPost = nil; showSettings = false; showUsage = false; sharedArticle = nil
                 Task { await openBookLink(slug, url: url) }
+            case .manual:
+                showManualSheet = true
             case .settings:
                 selectedRec = nil; selectedPost = nil; showSettings = true; showUsage = false; sharedArticle = nil
             case .usage:

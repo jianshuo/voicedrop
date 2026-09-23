@@ -33,13 +33,17 @@ import SafariServices
 ///     ——已装用户点朋友的邀请链接不该看下载页；新装用户到不了这里（没装 App）。
 ///   https://jianshuo.dev/voicedrop/<token>    → 同上（老分享链接）
 ///   https://voicedrop.cn/books/<slug>/…       → .book：内置阅读器 BookReaderView（章节页
-///     也归这本书，从该页起读）。2026-09-22 前单本书故意走 .web，用户看到的是浏览器。
+///     也归这本书，从该页起读；cover.jpg / print 等资源路径不算）。2026-09-22 前单本书
+///     故意走 .web，用户看到的是浏览器。
+///   https://voicedrop.cn/community/           → .community：VD社区 tab（网页只是宣传页）
+///   https://voicedrop.cn/help/manual/         → .manual：内置使用手册（HelpManualSheet）
 ///   其余路径（/help/ 等）                      → .web：站内 Safari 兜底，绝不死链
 enum DeepLink: Equatable {
     case recordings
     case community
     case books
     case book(slug: String, url: URL)
+    case manual
     case settings
     case usage
     case record(tag: String?)
@@ -119,10 +123,14 @@ final class AppRouter: ObservableObject {
         guard let first = segs.first else { return .recordings }   // 落地页 = App 主页
         // voicedrop.cn/books（书架根）→ 原生「写书」tab；/books/<slug>/… 单本书 → 内置阅读器。
         if segs.count == 1, first == "books" { return .books }
-        if segs.count >= 2, first == "books",
+        // 只认书根（/books/<slug>/）和章节页（/books/<slug>/<x>.html）；cover.jpg、print、
+        // audiobook/… 这些不是「读书」，站内 Safari 兜底。
+        if (segs.count == 2 || (segs.count == 3 && segs[2].hasSuffix(".html"))), first == "books",
            segs[1].range(of: "^[A-Za-z0-9_-]+$", options: .regularExpression) != nil {
             return .book(slug: segs[1], url: url)
         }
+        if segs.count == 1, first == "community" { return .community }
+        if segs.count == 2, first == "help", segs[1] == "manual" { return .manual }
         // 7 位纯数字＝提示词魔法数字（Task 6），判在 shareLink 前面：文章分享 id 是 10 位
         // hex、社区帖 12 位，跟 7 位数字没有交集，但 shareLink 的宽正则会把纯数字也吃进去，
         // 所以窄的先判。jianshuo.dev/voicedrop/<7位码> 也有意在此识别，与服务端落地页路由对齐。

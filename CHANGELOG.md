@@ -15,6 +15,15 @@
 - `VoiceDropApp` 根上挂 `.environment(\.openURL, OpenURLAction)`：凡 `AppRouter.universalLink` 认识的 URL 都走 `router.handle`（书 → 阅读器，分享 id → 原生页，其余 → 站内 Safari），不认识的才 `.systemAction`。副作用：`UsageView` 里隐私页的 `Link` 现在也开站内 Safari 而不是跳出去。
 - 新测试 `VoiceDropTests/BookLinkTests.swift`（5 条：双域名书根 / 章节页保留 URL / 书架根不变 / 怪 slug 回 `.web` / 未知域名 nil）。全量 225 条通过；模拟器 `VD_OPEN_URL` 钩子实开一次确认落 `BookReaderView`，书名从 `_src/book.json` 取到。
 
+**同日追加：把网站全部人会点的 URL 和路由对了一遍**（网站清单见 jianshuo.dev `functions/voicedrop/*`、`voicedrop/*/index.html`），再补三处：
+- `/community/`（网页只是宣传页）→ `.community` 社区 tab。
+- `/help/manual/` → 新 `DeepLink.manual` → `LibraryView` 从根上弹 `HelpManualSheet`（设置里那份同款，原生排版离线可读）。`/help/` 首页没有原生页，照旧 `.web`。
+- `.book` 收紧：只认书根 `/books/<slug>/` 与章节页 `/books/<slug>/<x>.html`；`cover.jpg` / `print` / `book.pdf` / `audiobook/…` 回 `.web`，别拿阅读器壳子套一张图。
+- 顺带：「书写好了」推送的 link 就是 `https://voicedrop.cn/books/<slug>/`，之前点开也是 Safari sheet，随书链接一起修好。
+- 测试 `BookLinkTests` 7 条，全量 227 条通过。
+
+**没动、但该记的**：提示词魔法数字服务端已改成 **4 位起步、占满升位**（jianshuo.dev `agent/src/prompt-share.js:2`，校验 `^[1-9][0-9]{3,15}$`，落地页认 4–9 位），而 App 整条链还写死 7 位：`AppRouter` 两处 `^[1-9][0-9]{6}$`、`PromptImportSheet` 「输够 7 位自动查预览」、`PromptLogic.extractShareCode / mergeCodeInput` 封顶 7 位、UI 文案「输入 7 位魔法数字」。新铸的短码 `voicedrop.cn/1234` 进 App 走 `.web`（4–5 位）或 `.shareLink` 404 回落网页（6 位），不弹导入 sheet；即使弹了，sheet 也不会为非 7 位码查预览。改起来要先定「变长码什么时候算输完」（防抖自动查 vs 显式按钮），是独立一刀。注意别把上限放到 10 位：文章分享 id 是 10 位 hex，全数字的约有 0.9%，会被误判成提示词码——跟落地页一样止步 9 位。
+
 **给未来 agent**：`BookReaderView.currentShare` 判 `u.path.hasPrefix("/books/")`，海外线路路径是 `/voicedrop/books/…`，章节分享会静默退回书根——同一个 `/books/` vs `/voicedrop/books/` 不对称，这次没顺手改。`BookWebView` 没有 `WKNavigationDelegate`，书页里指向另一本书的链接在 WebView 内就地加载，不经过路由。
 
 ## 记一笔：书架上的图一律 JPG q80，存量 673 张已转（2026-09-18）
