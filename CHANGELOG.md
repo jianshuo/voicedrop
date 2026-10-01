@@ -2,6 +2,22 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 写书引擎：绘本出图改并发 paint-batch（2026-10-01）
+
+**起因**：量了最近几本书的文件时间戳——《嘟嘟说再见》16 页，字 08:55 一次写完，之后 p01→p16 一张接一张画，每张约 2 分 15 秒，光画图 39 分钟；而 paint 服务早就 `MAX_CONCURRENCY=3`，额度一直空着 2/3。串行是三处一起锁死的：引擎 preamble 让所有腿「自己串行扮演」、绘本 skill 要求「一张一张在前台画完」、agent 每次只提交 1 张。
+
+**本仓（iOS）零改动**。改动都在 jianshuo.dev `claude-agent`（commit `6dc7b0e`，已部署 lab）：
+- 新增 `bin/paint-batch 清单.json`：内部 3 并发调 `bin/paint`，失败重试 2 次（429/额度类退避更久，paint 与 codex 写书腿共用 ChatGPT 额度池），已存在的图跳过（`--force` 重画），一张失败不拖垮整批（退出码 1）。**命令本身前台阻塞到整批画完**——不违反《一封一封的写》事故后「不许把 paint 丢后台」的铁律。单测 `test/paint-batch.test.mjs`（假 paint 验并发峰值/重试/跳过）。
+- 绘本 skill 新节拍：字全部写完过审（先不 done，`done` 不查图会出裂图）→ refs.png 验收 → 每批 ≤6 张（3 并发两轮约 5 分钟，避开单条命令 10 分钟超时），**封面进第一批** → 逐张校字、错的小清单 `--force` 重画 → asset → done。
+- 通用写书 skill 加「多张图一起画」小节；引擎 `CODEX_BOOK_PREAMBLE` 与续写提示 `continueHint` 点名 paint-batch。
+- VPS 实测：3 张 low 质量同批 42 秒（单张 37–42 秒），重跑同清单全部 skip。
+
+**预估**：16 页绘本出图 ~39 分钟 → ~13 分钟，整本 40+ 分钟 → 15 分钟左右。真实数字待下一本绘本跑完对时间戳。
+
+**给未来 agent**：
+- 还没做：写字的真并行（kimi/claude 腿可以开写手子代理，但三腿共用一份「串行扮演」preamble，要拆腿分提示；codex 腿只能串行）；科普书封面提前到大纲后画。
+- codex 腿的 shell 命令超时由模型自己给，若发现 paint-batch 被它中途砍掉，把每批降到 3 张。
+
 ## 书链接落内置阅读器，不再弹浏览器（2026-09-22）
 
 **症状**：点 `https://jianshuo.dev/voicedrop/books/dudu-koala-quarrel/`（或 `voicedrop.cn/books/<slug>/`）看到的是浏览器，不是 App 的读书视图。两条路都通向浏览器：
