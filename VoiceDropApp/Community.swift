@@ -499,6 +499,7 @@ func communityDate(_ ms: Double?) -> String {
 // MARK: - Community post view
 
 struct CommunityPostView: View {
+    @AppStorage(ReadingFont.key) private var readingScale = 1.0
     let store: CommunityStore
     let post: CommunityPost
     /// Called after the user finishes recording a response (trigger library refresh + upload).
@@ -548,7 +549,7 @@ struct CommunityPostView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         if let a = articles[safe: articleIndex] {
                             Text(a.title)
-                                .font(.system(size: 23, weight: .semibold)).foregroundStyle(Theme.inkRead)
+                                .font(.system(size: 23 * readingScale, weight: .semibold)).foregroundStyle(Theme.inkRead)
                                 .lineSpacing(5).fixedSize(horizontal: false, vertical: true)
                                 .padding(.top, 18)
                             HStack(spacing: 8) {
@@ -679,6 +680,7 @@ struct CommunityPostView: View {
                 Button { Task { await sharePost() } } label: {
                     Label("分享", systemImage: "square.and.arrow.up")
                 }
+                ReadingFontMenu()
                 Button(role: .destructive) { showReportConfirm = true } label: {
                     Label("举报", systemImage: "flag")
                 }
@@ -1189,6 +1191,7 @@ struct SharedArticle: Decodable {
 /// 指向他人文章时的原生落地。与 CommunityPostView 同一套阅读排版（标题/章节
 /// chips/正文段落/内嵌照片），但没有任何社区动作（投币/回应/举报都不适用）。
 struct SharedArticleView: View {
+    @AppStorage(ReadingFont.key) private var readingScale = 1.0
     let store: CommunityStore      // 只用它取照片（公共 photo 端点）
     let shared: SharedArticle
     @State var articleIndex: Int   // 初值 = 分享链接的 ?s=<i>（分享者当时选中的那篇）
@@ -1202,6 +1205,12 @@ struct SharedArticleView: View {
                 NavSquare(systemName: "chevron.left", stroke: Theme.inkRead, border: Theme.borderRead) { dismiss() }
                     .accessibilityLabel("返回")
                 Spacer()
+                Menu { ReadingFontMenu() } label: {
+                    Image(systemName: "textformat.size")
+                        .font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.inkRead)
+                        .frame(width: 38, height: 38)
+                }
+                .accessibilityLabel("字号")
             }
             .padding(.horizontal, 16).padding(.vertical, 8)
             if articles.isEmpty {
@@ -1213,7 +1222,7 @@ struct SharedArticleView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         if let a = articles[safe: articleIndex] {
                             Text(a.title)
-                                .font(.system(size: 23, weight: .semibold)).foregroundStyle(Theme.inkRead)
+                                .font(.system(size: 23 * readingScale, weight: .semibold)).foregroundStyle(Theme.inkRead)
                                 .lineSpacing(5).fixedSize(horizontal: false, vertical: true)
                                 .padding(.top, 10)
                             if articles.count > 1 { chipRow.padding(.top, 16) }

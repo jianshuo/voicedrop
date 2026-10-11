@@ -619,6 +619,7 @@ struct BookReaderView: View {
     @State private var reloadStamp = 0   // 修改 sheet 关掉后 +1，强制 WebView 重载看最新版
     @State private var pageURL: URL?     // WebView 当前页（章节跳转跟着变）
     @State private var pageTitle: String?
+    @AppStorage(ReadingFont.key) private var readingScale = 1.0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -633,7 +634,7 @@ struct BookReaderView: View {
             }
             .padding(.horizontal, 20).padding(.top, 6).padding(.bottom, 10)
             if let url = startURL ?? book.pageURL {
-                BookWebView(url: url, pageURL: $pageURL, pageTitle: $pageTitle)
+                BookWebView(url: url, zoom: readingScale, pageURL: $pageURL, pageTitle: $pageTitle)
                     .id(reloadStamp)   // 修改 sheet 关掉后换实例重载，立刻看到新版
                     .ignoresSafeArea(edges: .bottom)
             }
@@ -671,6 +672,8 @@ struct BookReaderView: View {
             Button { Task { await shareBook() } } label: {
                 Label("分享", systemImage: "square.and.arrow.up")
             }
+            Divider()
+            ReadingFontMenu()
         } label: {
             RoundedRectangle(cornerRadius: Theme.R.nav)
                 .fill(Theme.card)
@@ -816,6 +819,7 @@ struct BookReaderView: View {
 
 private struct BookWebView: UIViewRepresentable {
     let url: URL
+    let zoom: Double               // 阅读字号档位 → pageZoom（浏览器式缩放，文字重排）
     @Binding var pageURL: URL?     // 当前浏览到的页面（章节跳转跟着变）——分享分享的是它
     @Binding var pageTitle: String?
 
@@ -824,6 +828,7 @@ private struct BookWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let wv = WKWebView()
         wv.allowsBackForwardNavigationGestures = true
+        wv.pageZoom = zoom
         wv.isOpaque = false
         wv.backgroundColor = UIColor(Theme.appBG)   // 加载间隙透出暖纸色，不闪白
         wv.scrollView.backgroundColor = UIColor(Theme.appBG)
@@ -840,7 +845,9 @@ private struct BookWebView: UIViewRepresentable {
         return wv
     }
 
-    func updateUIView(_ wv: WKWebView, context: Context) {}
+    func updateUIView(_ wv: WKWebView, context: Context) {
+        if wv.pageZoom != zoom { wv.pageZoom = zoom }
+    }
 
     final class Coordinator {
         var urlObs: NSKeyValueObservation?

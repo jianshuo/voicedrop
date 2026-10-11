@@ -390,6 +390,7 @@ struct SettingsView: View {
     @State private var store = SettingsStore()
     @State private var showWechat = false
     @State private var showStyle = false
+    @AppStorage(ReadingFont.key) private var readingScale = 1.0
     @State private var showName = false
     @State private var invitePayload: SharePayload?
     @State private var showLanguageHint = false
@@ -550,6 +551,21 @@ struct SettingsView: View {
                                 } label: {
                                     HStack(spacing: 8) {
                                         Text(languageLabel).font(.system(size: 15)).foregroundStyle(Theme.ink)
+                                        settingsChevron
+                                    }
+                                }
+                            }
+                            settingsRowDivider
+                            // 阅读字号：社区文章 + 书架里的书共用一个档位（ReadingFont.swift）。
+                            SettingsRow(tileBG: Theme.tileNeutral, symbol: "textformat.size", tileFG: Theme.secondary,
+                                        title: String(localized: "阅读字号"), subtitle: String(localized: "社区文章和书的正文大小")) {
+                                Menu {
+                                    Picker("", selection: $readingScale) {
+                                        ForEach(ReadingFont.levels, id: \.scale) { Text($0.label).tag($0.scale) }
+                                    }
+                                } label: {
+                                    HStack(spacing: 8) {
+                                        Text(ReadingFont.label(for: readingScale)).font(.system(size: 15)).foregroundStyle(Theme.ink)
                                         settingsChevron
                                     }
                                 }

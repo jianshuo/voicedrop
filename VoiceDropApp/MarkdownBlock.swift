@@ -82,39 +82,40 @@ enum MarkdownBlock {
 struct MarkdownRowView: View {
     let text: String
     var attributed: (String) -> AttributedString = MarkdownBlock.inline
+    @Environment(\.readingScale) private var k
 
     var body: some View {
         let (kind, content) = MarkdownBlock.classify(text)
         switch kind {
         case .h1:
             Text(attributed(content))
-                .font(.system(size: 22, weight: .bold))
-                .foregroundStyle(Theme.inkRead).lineSpacing(6)
+                .font(.system(size: 22 * k, weight: .bold))
+                .foregroundStyle(Theme.inkRead).lineSpacing(6 * k)
         case .h2:
             Text(attributed(content))
-                .font(.system(size: 19, weight: .semibold))
-                .foregroundStyle(Theme.inkRead).lineSpacing(6)
+                .font(.system(size: 19 * k, weight: .semibold))
+                .foregroundStyle(Theme.inkRead).lineSpacing(6 * k)
         case .h3:
             Text(attributed(content))
-                .font(.system(size: 17, weight: .semibold))
-                .foregroundStyle(Theme.inkRead).lineSpacing(7)
+                .font(.system(size: 17 * k, weight: .semibold))
+                .foregroundStyle(Theme.inkRead).lineSpacing(7 * k)
         case .bullet:
             HStack(alignment: .firstTextBaseline, spacing: 9) {
-                Text("•").font(.system(size: 16, weight: .semibold)).foregroundStyle(Theme.accent)
+                Text("•").font(.system(size: 16 * k, weight: .semibold)).foregroundStyle(Theme.accent)
                 Text(attributed(content))
-                    .font(.system(size: 16)).foregroundStyle(Theme.bodyRead).lineSpacing(9)
+                    .font(.system(size: 16 * k)).foregroundStyle(Theme.bodyRead).lineSpacing(9 * k)
             }
         case .ordered(let n):
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("\(n).")
-                    .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                    .font(.system(size: 15 * k, weight: .semibold).monospacedDigit())
                     .foregroundStyle(Theme.accent)
                 Text(attributed(content))
-                    .font(.system(size: 16)).foregroundStyle(Theme.bodyRead).lineSpacing(9)
+                    .font(.system(size: 16 * k)).foregroundStyle(Theme.bodyRead).lineSpacing(9 * k)
             }
         case .quote:
             Text(attributed(content))
-                .font(.system(size: 16)).foregroundStyle(Theme.metaRead).lineSpacing(9)
+                .font(.system(size: 16 * k)).foregroundStyle(Theme.metaRead).lineSpacing(9 * k)
                 .padding(.leading, 13)
                 .overlay(alignment: .leading) {
                     RoundedRectangle(cornerRadius: 1.5)
@@ -126,7 +127,7 @@ struct MarkdownRowView: View {
                 .padding(.vertical, 2)
         case .plain:
             Text(attributed(text))
-                .font(.system(size: 16)).foregroundStyle(Theme.bodyRead).lineSpacing(9)
+                .font(.system(size: 16 * k)).foregroundStyle(Theme.bodyRead).lineSpacing(9 * k)
         }
     }
 }
@@ -135,6 +136,7 @@ struct MarkdownRowView: View {
 /// 文章详情页有自己的 bodyRows 逐行结构，直接用 MarkdownRowView。
 struct MarkdownTextBlock: View {
     let text: String
+    @AppStorage(ReadingFont.key) private var readingScale = 1.0
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -144,6 +146,7 @@ struct MarkdownTextBlock: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
+        .environment(\.readingScale, readingScale)
     }
 
     private var lines: [String] {
