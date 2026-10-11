@@ -307,7 +307,7 @@ SwiftUI 按 Theme 原生排版，顶部章节 chips 跳转。**内容真源 = ji
 （虚线封面 + 红加号）→ 弹 `BookWritingSheet`；后面是公开书架的书——有 cover.jpg
 铺图，没有就布面缺省封面（宋体主/副题 + slug 哈希配色，与网页书架同源）。点书 →
 原地推入 `BookReaderView`（同一导航栈：返回键+宋体书名顶栏，内嵌 WKWebView 显示
-`voicedrop.cn/books/<slug>/`，章节跳转留在 WebView 内）；**阅读字号**：⋯→「字号」五档，设 `pageZoom`，与社区帖共用 `ReadingFont.swift` 的全局档位，设置→其他→阅读字号同源）。数据 = **`GET voicedrop.cn/books/
+`voicedrop.cn/books/<slug>/`，章节跳转留在 WebView 内）；**阅读字号**：⋯→「字号」五档，每页 documentStart 注入 `-webkit-text-size-adjust`（**别用 pageZoom**，会横向滚动），与社区帖共用 `ReadingFont.swift` 的全局档位，设置→其他→阅读字号同源）。数据 = **`GET voicedrop.cn/books/
 ?format=json`**（jianshuo.dev Pages `functions/voicedrop/books/[[path]].js`，公开
 无鉴权 60s 缓存）：`{books:[{slug,title,main,sub,c,c2,cover,chapters,category,author,
 hidden?,mine?}]}`，chapters = done 的章节数（单页书 0 → App 回落显示副题），category =

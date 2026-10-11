@@ -2,6 +2,13 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 书的阅读字号改用 text-size-adjust，修横向滚动（2026-10-11）
+
+**起因**：TestFlight 365 上书页字号调大后出现横向滚动。
+**根因**（XCTest 里加载真书页实测）：`pageZoom` 1.5 把可视区缩成 268 CSS px，但网页仍按 402 排版（`.wrap` 等右缘到 402），contentSize 603pt > 屏宽 402。
+**修法**：`BookWebView` 不再设 pageZoom，改为 WKUserScript 在每页 documentStart 注入 `html{-webkit-text-size-adjust:N%}`，换档时 `evaluateJavaScript` 当前页立即生效。实测 150%：正文 17→25.5px，scrollWidth = clientWidth = 402，零溢出元素。
+（上一条里写的「pageZoom 不横滚」是错的，以本条为准。）
+
 ## 阅读字号：社区文章 + 书可调五档（2026-10-11）
 
 **起因**：用户反馈社区文章和写出来的书「读起来略显吃力」。

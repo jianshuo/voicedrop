@@ -819,7 +819,10 @@ struct BookReaderView: View {
 
 private struct BookWebView: UIViewRepresentable {
     let url: URL
-    let zoom: Double               // 阅读字号档位 → pageZoom（浏览器式缩放，文字重排）
+    /// 阅读字号档位 → 注入 `-webkit-text-size-adjust`，只放大文字、版面宽度不变。
+    /// 不用 pageZoom：它把可视区缩成 402/zoom 但网页仍按 402 排版，内容比屏宽，
+    /// 1.5 档实测内容 603pt 宽 → 横向滚动（2026-10-11）。
+    let zoom: Double
     @Binding var pageURL: URL?     // 当前浏览到的页面（章节跳转跟着变）——分享分享的是它
     @Binding var pageTitle: String?
 
@@ -827,8 +830,9 @@ private struct BookWebView: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView {
         let wv = WKWebView()
+        Self.installZoomScript(wv, zoom: zoom)
+        context.coordinator.zoom = zoom
         wv.allowsBackForwardNavigationGestures = true
-        wv.pageZoom = zoom
         wv.isOpaque = false
         wv.backgroundColor = UIColor(Theme.appBG)   // 加载间隙透出暖纸色，不闪白
         wv.scrollView.backgroundColor = UIColor(Theme.appBG)
@@ -846,10 +850,30 @@ private struct BookWebView: UIViewRepresentable {
     }
 
     func updateUIView(_ wv: WKWebView, context: Context) {
-        if wv.pageZoom != zoom { wv.pageZoom = zoom }
+        guard context.coordinator.zoom != zoom else { return }
+        context.coordinator.zoom = zoom
+        Self.installZoomScript(wv, zoom: zoom)          // 之后翻到的章节
+        wv.evaluateJavaScript(Self.zoomJS(zoom))        // 当前这页立即生效
+    }
+
+    /// 每页 documentStart 就挂上字号样式，翻章节不闪回原字号。
+    private static func installZoomScript(_ wv: WKWebView, zoom: Double) {
+        let ucc = wv.configuration.userContentController
+        ucc.removeAllUserScripts()
+        ucc.addUserScript(WKUserScript(source: zoomJS(zoom), injectionTime: .atDocumentStart, forMainFrameOnly: true))
+    }
+
+    private static func zoomJS(_ zoom: Double) -> String {
+        let css = "html{-webkit-text-size-adjust:\(Int((zoom * 100).rounded()))% !important}"
+        return """
+        (function(){var s=document.getElementById('vd-reading-zoom');
+        if(!s){s=document.createElement('style');s.id='vd-reading-zoom';document.documentElement.appendChild(s);}
+        s.textContent='\(css)';})();
+        """
     }
 
     final class Coordinator {
+        var zoom: Double = 1
         var urlObs: NSKeyValueObservation?
         var titleObs: NSKeyValueObservation?
     }

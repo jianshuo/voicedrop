@@ -3,7 +3,7 @@ import SwiftUI
 // 阅读字号（2026-10-11）：社区文章、分享文章、书架里的书读起来字偏小。
 // 一个全局档位存 UserDefaults，三处共用：
 //   - 社区帖 / 分享文章：MarkdownTextBlock 把档位注入 \.readingScale，MarkdownRowView 按比例放大
-//   - 书（WKWebView 网页书）：pageZoom = 档位（等同浏览器缩放，会重排不会横滚）
+//   - 书（WKWebView 网页书）：注入 -webkit-text-size-adjust = 档位%，只放大文字不改版面宽度
 // 自己文章的详情页不跟——那里的 InlineParagraphEditor 与 16pt 正文逐像素对齐，
 // 第N行定位也依赖这套排版，动它得一起动编辑器。
 
