@@ -2,6 +2,12 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 写书页：加「作者」框和「隐藏」开关，撤「怎么写成」（2026-10-24）
+
+- `BookWritingSheet`：删掉「怎么写成」四步卡和提交前「署上你的名字」弹窗；换成一张卡——作者框（预填 profile.name）+ 隐藏开关。
+- 作者框改了 = 改用户名字：提交前 PUT /style `{name}`，再 POST /api/book 带 `author`。纯函数 `nameToSave(draft:loaded:)` 锁规则（`BookAuthorNamePromptTests` 4 例，替换原 shouldAskAuthorName 3 例）。
+- 隐藏：body `hidden:true` → lab（jianshuo.dev b5fe13e）存进 InflightCreate、写进提示词，book.json 出现后确定性补 `hidden:true`。不勾 = 原默认（绘本仍缺省隐藏）。lab 已部署。
+
 ## 书的阅读字号改用 text-size-adjust，修横向滚动（2026-10-11）
 
 **起因**：TestFlight 365 上书页字号调大后出现横向滚动。

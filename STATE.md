@@ -324,7 +324,10 @@ hidden?,mine?}]}`，chapters = done 的章节数（单页书 0 → App 回落显
 320 + 实时余额，算力不够时攒法卡带现价——「加油一次约得 N」来自
 `GET /agent/referral/link` 的 `suanliFeedAuthor`、「邀请一个约得 M」来自
 `suanliInviter`，附 ShareLink 发邀请链接；种子输入引导写「中心思想」+
-四步流程卡；无公开书架链接）— 中心思想（词/句/
+**作者框 + 隐藏开关**（2026-10-24 起；「怎么写成」四步卡与提交前署名弹窗已撤）：作者框预填
+profile.name，改了提交前先 PUT /style 写回用户名字（`nameToSave`：没变不存、profile 没拉到时空框不覆盖），
+非空则随 body 带 `author`；隐藏 → body `hidden:true` → lab 写进在飞登记、提示词，并在 book.json
+出现后确定性补 `hidden:true`（只主人看得到）；不勾则沿用默认（绘本仍缺省隐藏）；无公开书架链接）— 中心思想（词/句/
 文章）→ **`POST lab.jianshuo.dev/api/book`**（Tokyo VPS Claude Agent SDK 服务，见
 jianshuo-memory `lab-jianshuo-dev-agent.md`）：**fire-and-forget**——扣费成功立刻 202。
 **署名 = 提交者**：lab 用 bearer 拉 `CLAUDE.json` `profile.name` 进 skill 提示词

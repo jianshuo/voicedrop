@@ -5,10 +5,11 @@ import SwiftUI
 /// 把一个「中心思想」交给 lab.jianshuo.dev 上的常驻 Claude agent，用
 /// wjs-voicedrop-writing-book skill 长成一本书：建筑师拆大纲、每章一个写手并行
 /// 写正文（费曼式白话）、独立评审过稿一章发一章，增量上架到「写书」书架
-/// （voicedrop.cn/books/）。**署名 = 设置里的「名字」**（lab 用提交者 bearer 拉
-/// CLAUDE.json profile.name；没填就不署名）。
+/// （voicedrop.cn/books/）。**署名 = 表单里的「作者」**（预填设置里的「名字」，
+/// 改了会同步写回 profile.name；留空就不署名）。勾「隐藏」= book.json hidden:true，
+/// 不上公开书架、只有主人看得到（书页 ⋯ 菜单随时可改）。
 ///
-/// 契约（fire-and-forget + 计费制）：`POST lab.jianshuo.dev/api/book` `{seed}` +
+/// 契约（fire-and-forget + 计费制）：`POST lab.jianshuo.dev/api/book` `{seed, author?, hidden}` +
 /// 用户 bearer。lab 转手调 agent worker `/agent/usage/book-charge` 一口价扣
 /// **一本书的算力**（2026-09-01 起 160，真源在服务端 usage.js 的 BOOK_SUANLI；
 /// App 这头的展示价走 `Prices` 的日缓存），扣成功即 202 开写——提交完就可以关
@@ -30,12 +31,11 @@ struct BookWritingSheet: View {
     @State private var errorText: String?
     @FocusState private var seedFocused: Bool
 
-    // 署名：进场拉一次 profile.name。nil = 没拉到（网络失败/没登录，不打扰照常提交，
-    // 服务端有啥署啥）；"" = 确认没设置 → 提交前弹一次输入框，存进 profile.name。
+    // 署名：进场拉一次 profile.name 预填作者框。nil = 没拉到（网络失败/没登录）——
+    // 这时作者框留空不算「清空名字」，绝不拿空值覆盖设置里的名字。
     @State private var authorName: String?
-    @State private var askName = false
-    @State private var nameAsked = false   // 本次 sheet 只问一次；留空确认后不再拦
     @State private var nameDraft = ""
+    @State private var hidden = false
     @State private var showManageSubs = false   // 订着但本月烧光时的系统订阅面板
 
     // 价签与攒算力数据（进场拉一次；拉不到就只显示价目、CTA 交给服务端判）
@@ -71,7 +71,7 @@ struct BookWritingSheet: View {
                         // 算力不够时，攒法紧跟价签——用户第一眼要的是「怎么办」。
                         if shortOf != nil { earnSection }
                         seedSection
-                        pipelineSection
+                        optionsSection
                         if let err = errorText {
                             Text(err).font(.system(size: 13)).foregroundStyle(Theme.recordRed)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -86,13 +86,6 @@ struct BookWritingSheet: View {
         .presentationDragIndicator(.visible)
         .manageSubscriptionsSheet(isPresented: $showManageSubs)
         .task { await loadNumbers() }
-        .alert(String(localized: "署上你的名字"), isPresented: $askName) {
-            TextField(String(localized: "作者名"), text: $nameDraft)
-            Button(String(localized: "好了，开写")) { Task { await saveNameThenStart() } }
-            Button(String(localized: "取消"), role: .cancel) {}
-        } message: {
-            Text("书会署这个名字上架，以后在设置 → 名字里随时可改。留空则不署名。")
-        }
     }
 
     private var header: some View {
@@ -183,37 +176,30 @@ struct BookWritingSheet: View {
         }
     }
 
-    // MARK: 怎么写成 — 流水线四步
+    // MARK: 作者 + 隐藏
 
-    private var pipelineSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("怎么写成").font(.system(size: 12, weight: .bold)).tracking(2)
-                .foregroundStyle(Theme.sectionLabel)
-            SettingsCard {
-                pipelineRow("1", "拆大纲", "AI 建筑师把中心思想拆成一环扣一环的章节")
-                settingsRowDivider
-                pipelineRow("2", "并行写", "每章一个写手，费曼式大白话，名词当场讲人话")
-                settingsRowDivider
-                pipelineRow("3", "独立评审", "另一个 AI 只看成稿挑错，不过就打回重写")
-                settingsRowDivider
-                pipelineRow("4", "上你的架", "过一章发一章到「写书」书架，署你的名字（设置里的「名字」）")
+    private var optionsSection: some View {
+        SettingsCard {
+            HStack(spacing: 12) {
+                Text("作者").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.ink)
+                TextField(String(localized: "留空则不署名"), text: $nameDraft)
+                    .font(.system(size: 15)).foregroundStyle(Theme.ink)
+                    .multilineTextAlignment(.trailing)
+                    .submitLabel(.done)
             }
-        }
-    }
-
-    private func pipelineRow(_ n: String, _ title: String, _ sub: String) -> some View {
-        HStack(spacing: 13) {
-            Text(n).font(.system(size: 15, weight: .bold)).foregroundStyle(Theme.accent)
-                .frame(width: 30, height: 30)
-                .background(Theme.accentSoft, in: RoundedRectangle(cornerRadius: Theme.R.tile))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.ink)
-                Text(sub).font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 15).padding(.vertical, 13)
+            settingsRowDivider
+            Toggle(isOn: $hidden) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("隐藏").font(.system(size: 15, weight: .semibold)).foregroundStyle(Theme.ink)
+                    Text("不上公开书架，只有你自己看得到；以后可在书页 ⋯ 里改")
+                        .font(.system(size: 12.5)).foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
-            Spacer(minLength: 0)
+            .tint(Theme.accent)
+            .padding(.horizontal, 15).padding(.vertical, 10)
         }
-        .padding(.horizontal, 15).padding(.vertical, 10)
     }
 
     // MARK: 算力不够 — 攒法（加油 / 邀请，数字 = 服务端现价；开着售卖开关再加第三条：包月订阅）
@@ -476,38 +462,34 @@ struct BookWritingSheet: View {
             feedSuanli = Int((i.suanliFeedAuthor ?? 0).rounded())
             inviteURL = i.url.flatMap(URL.init(string:))
         }
-        if let s = await s { authorName = s.name ?? "" }
+        if let s = await s {
+            authorName = s.name ?? ""
+            // 用户已经动过作者框就别覆盖
+            if nameDraft.isEmpty { nameDraft = authorName ?? "" }
+        }
     }
 
-    /// 提交前要不要先问作者名：只有「拉到了 profile 且名字确实为空」才问一次。
-    /// 拉不到（nil，网络失败/没登录）不打扰——服务端有啥署啥，与老行为一致。
-    static func shouldAskAuthorName(loadedName: String?) -> Bool { loadedName == "" }
+    /// 作者框要不要写回 profile.name（PUT /style，与设置页同一端点）：返回要存的名字，
+    /// nil = 不用存。没变不存；profile 没拉到（nil）时只存非空——空框不能抹掉设置里的名字。
+    static func nameToSave(draft: String, loaded: String?) -> String? {
+        let trimmed = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let loaded else { return trimmed.isEmpty ? nil : trimmed }
+        return trimmed == loaded ? nil : trimmed
+    }
 
-    /// 输入框「好了，开写」：填了名字先存进 profile.name（PUT /style，与设置页同一端点），
-    /// 存好再提交；留空 = 不署名照常开写。本地 authorName 同步置位，本次 sheet 不再问。
-    private func saveNameThenStart() async {
-        let trimmed = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty {
-            var req = URLRequest(url: API.filesBase.appending(path: "style"))
-            req.httpMethod = "PUT"
-            req.setBearer(AuthStore.shared.bearer)
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            _ = try? await URLSession.shared.upload(
-                for: req, from: (try? JSONEncoder().encode(["name": trimmed])) ?? Data())
-            Analytics.capture("写书补署名")
-        }
-        if !trimmed.isEmpty { authorName = trimmed }
-        nameAsked = true   // 留空确认 = 明确选了不署名，别再拦第二次
-        start()
+    private func saveName(_ name: String) async {
+        var req = URLRequest(url: API.filesBase.appending(path: "style"))
+        req.httpMethod = "PUT"
+        req.setBearer(AuthStore.shared.bearer)
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        _ = try? await URLSession.shared.upload(
+            for: req, from: (try? JSONEncoder().encode(["name": name])) ?? Data())
+        authorName = name
+        Analytics.capture("写书改署名")
     }
 
     private func start() {
         guard canStart else { return }
-        if !nameAsked, Self.shouldAskAuthorName(loadedName: authorName) {
-            nameDraft = ""
-            askName = true
-            return
-        }
         seedFocused = false
         sending = true; errorText = nil
         Analytics.capture("写书发起")
@@ -516,13 +498,19 @@ struct BookWritingSheet: View {
             let ask = seedText.isEmpty ? "" : "写书要求：\(seedText)\n\n"
             seedText = ask + "以下这篇文章是种子素材，把它扩展成一本完整的书：\n\n《\(a.title)》\n\n" + String(a.body.prefix(18000))
         }
+        let author = nameDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let toSave = Self.nameToSave(draft: nameDraft, loaded: authorName)
         Task {
             defer { sending = false }
+            // 先写回名字再提交：作者框清空时服务端回落拉 profile.name，得拉到的是空。
+            if let name = toSave { await saveName(name) }
             var req = URLRequest(url: Self.bookAPI)
             req.httpMethod = "POST"
             req.setValue("application/json", forHTTPHeaderField: "Content-Type")
             req.setValue("Bearer \(AuthStore.shared.bearer)", forHTTPHeaderField: "Authorization")
-            req.httpBody = try? JSONSerialization.data(withJSONObject: ["seed": seedText])
+            var payload: [String: Any] = ["seed": seedText, "hidden": hidden]
+            if !author.isEmpty { payload["author"] = author }
+            req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
             req.timeoutInterval = 30
             do {
                 let (data, resp) = try await URLSession.shared.data(for: req)
