@@ -2,6 +2,12 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 书架：有动画版的书封面叠淡播放键，加「视频」筛选（2026-10-27）
+
+- 服务端（jianshuo.dev b390b18，已部署）：书架清单带 `video:true`（book.json 有 `video.url` 才算，试看版也算）；网页书架封面正中叠 40px 淡播放键（黑 18% + 白描边 60%），导航「全部」后加「视频」tab，一本都没有就不出。
+- iOS：`ShelfBook.video`（`var … = nil`，老缓存/手拼的 ShelfBook 不受影响）、`ShelfFilter.video`、封面 `playMark` overlay（不挡点击）；「视频」tab 排在「我的」后，书架有视频书才显示。
+- 书架缓存是 R2 一份 JSON（1h TTL）：加字段后手动删了 `books-cache/shelf.json` 让它立刻重算；以后再给清单加字段同理，否则最长等一小时才生效。
+
 ## 写书页：加「作者」框和「隐藏」开关，撤「怎么写成」（2026-10-24）
 
 - `BookWritingSheet`：删掉「怎么写成」四步卡和提交前「署上你的名字」弹窗；换成一张卡——作者框（预填 profile.name）+ 隐藏开关。

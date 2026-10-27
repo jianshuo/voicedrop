@@ -30,6 +30,9 @@ struct ShelfBook: Decodable, Identifiable, Equatable, Hashable {
     let hidden: Bool?    // 自己的隐藏书（登录态下服务端才会给）；公开条目无此字段
     let mine: Bool?      // 这本是我自己的（登录态下服务端才给）；别人的书无此字段
     let category: String? // 类目（八词之一，服务端 book.json 自报；没类目 = "" 或缺）
+    /// 有动画版（book.json 的 video.url）：封面叠播放水印、「视频」筛选据此过滤。
+    /// var + 默认 nil：老缓存/别处手拼的 ShelfBook 不用跟着改。
+    var video: Bool? = nil
     var id: String { slug }
 
     /// ?v=coverAt 与网页书架同款破缓存：修书换封面 → 时间戳变 → URL 变，
@@ -119,11 +122,12 @@ final class BooksShelfStore {
     }
 }
 
-// MARK: - 书架筛选（全部 / 我的 / 类目）
+// MARK: - 书架筛选（全部 / 我的 / 视频 / 类目）
 
 enum ShelfFilter: Hashable {
     case all
     case mine
+    case video
     case category(String)
 
     /// 类目顺序与网页书架、服务端 lib/books-shelf.js 的 CATEGORY_ORDER 一致。
@@ -139,6 +143,7 @@ enum ShelfFilter: Hashable {
         switch self {
         case .all: return true
         case .mine: return book.mine == true
+        case .video: return book.video == true
         case .category(let c): return book.category == c
         }
     }
@@ -233,6 +238,9 @@ struct BooksShelfView: View {
                     HStack(spacing: 18) {
                         filterLabel(String(localized: "全部"), .all)
                         filterLabel(String(localized: "我的"), .mine)
+                        if store.books.contains(where: { $0.video == true }) {
+                            filterLabel(String(localized: "视频"), .video)
+                        }
                         ForEach(ShelfFilter.present(in: store.books), id: \.self) { c in
                             filterLabel(c, .category(c))   // 类目词是服务端数据，不走本地化
                         }
@@ -274,6 +282,7 @@ struct BooksShelfView: View {
         switch f {
         case .all: return "全部"
         case .mine: return "我的"
+        case .video: return "视频"
         case .category(let c): return c
         }
     }
@@ -445,6 +454,7 @@ struct BooksShelfView: View {
         .frame(maxWidth: .infinity)
         .overlay(alignment: .leading) { spine }
         .overlay(alignment: .trailing) { pageEdge }
+        .overlay { if book.video == true { playMark } }
         .overlay(alignment: .topTrailing) {
             if book.hidden == true {
                 Text("隐藏")
@@ -576,6 +586,19 @@ struct BooksShelfView: View {
                 .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// 有动画版的书：封面正中一枚淡淡的半透明播放键（网页书架 .play 同款）。
+    private var playMark: some View {
+        Image(systemName: "play.fill")
+            .font(.system(size: 14))
+            .foregroundStyle(.white.opacity(0.85))
+            .offset(x: 1.5)
+            .frame(width: 40, height: 40)
+            .background(.black.opacity(0.18), in: Circle())
+            .background(.ultraThinMaterial.opacity(0.5), in: Circle())
+            .overlay(Circle().stroke(.white.opacity(0.6), lineWidth: 1.2))
+            .allowsHitTesting(false)
     }
 
     /// 书封外形：书脊侧 2pt 小圆角，翻口侧 5pt——跟设计稿一致的「精装书」轮廓。

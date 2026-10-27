@@ -4081,6 +4081,16 @@
         }
       }
     },
+    "视频": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Videos"
+          }
+        }
+      }
+    },
     "我的": {
       "localizations": {
         "en": {

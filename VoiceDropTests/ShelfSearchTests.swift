@@ -20,6 +20,20 @@ final class ShelfSearchTests: XCTestCase {
 
     // MARK: 筛选
 
+    func testFilterVideo() {
+        var a = book("a", title: "熵")
+        a.video = true
+        let b = book("b", title: "钱")
+        XCTAssertEqual([a, b].filter { ShelfFilter.video.matches($0) }.map(\.slug), ["a"])
+    }
+
+    func testDecodeVideoFlag() throws {
+        let json = ##"{"slug":"a","title":"熵","main":"熵","sub":"","c":"#000","c2":"#000","cover":false,"chapters":1,"video":true}"##
+        XCTAssertEqual(try JSONDecoder().decode(ShelfBook.self, from: Data(json.utf8)).video, true)
+        let old = ##"{"slug":"a","title":"熵","main":"熵","sub":"","c":"#000","c2":"#000","cover":false,"chapters":1}"##
+        XCTAssertNil(try JSONDecoder().decode(ShelfBook.self, from: Data(old.utf8)).video)
+    }
+
     func testFilterAllMineCategory() {
         let a = book("a", title: "熵", mine: true, category: "科学")
         let b = book("b", title: "钱", category: "投资")
