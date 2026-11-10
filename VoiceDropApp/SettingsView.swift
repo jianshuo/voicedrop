@@ -1108,7 +1108,7 @@ struct WechatSettingsSheet: View {
     @State private var ipCopied = false
     @State private var showSecret = false
 
-    private let whitelistIP = "66.42.45.128"
+    private let whitelistIP = "149.28.16.135"
 
     var body: some View {
         NavigationStack {

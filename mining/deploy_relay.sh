@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Push the relay code to the Tokyo VPS and restart it.
-#   VPS_SSH=root@66.42.45.128 ./mining/deploy_relay.sh
+#   VPS_SSH=root@lab.jianshuo.dev ./mining/deploy_relay.sh
 # (Run mining/vps/provision.sh once on the box first — see mining/vps/README.md.)
 set -euo pipefail
-VPS_SSH="${VPS_SSH:-root@66.42.45.128}"
+VPS_SSH="${VPS_SSH:-root@lab.jianshuo.dev}"
 DEST="/opt/wechat-relay"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""VoiceDrop WeChat publish relay — runs on the Tokyo VPS (66.42.45.128), whose
+"""VoiceDrop WeChat publish relay — runs on the Tokyo VPS (149.28.16.135), whose
 IP is whitelisted on the 公众号 account, so it calls api.weixin.qq.com DIRECTLY
 (no proxy hop). The Cloudflare Function POSTs the article + WeChat creds here and
 awaits the REAL result, so the app can finally show success/errcode synchronously
