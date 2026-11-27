@@ -38,6 +38,15 @@ struct VoiceDropApp: App {
                 // 线路 = App Store 商店区域：中国区 → voicedrop.cn（EO），
                 // 其他区 → 直连 CF。启动取一次 Storefront 即可（区域几乎不变）。
                 .task { await Self.noteStorefront() }
+                // 书的「下载到本地」断点续传：上次下到一半被切后台杀掉 / 断网的，启动和每次回到
+                // 前台自动接着下（已经下好的文件跳过、大文件从断掉的那一块续）。见 BookOffline.swift。
+                .task {
+                    try? await Task.sleep(for: .seconds(2))   // 让线路（商店区域）先定下来
+                    await BookOfflineStore.shared.resumePending()
+                }
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active { Task { await BookOfflineStore.shared.resumePending() } }
+                }
                 .onOpenURL { url in
                     // 微信 SDK 回调（wx…:// 兜底通道）优先；不是微信的才走深链路由
                     if WeChatShare.handle(url) { return }

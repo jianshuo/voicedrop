@@ -477,6 +477,13 @@ struct BooksShelfView: View {
                 ProgressView().controlSize(.small).tint(.white)
                     .padding(6).background(.black.opacity(0.45), in: Circle())
                     .padding(6)
+            } else if BookOfflineStore.shared.isPaused(book.slug) {
+                // 下到一半停住了：回到前台 / 下次启动会自动接着下，也可以进书里点「继续下载」。
+                Image(systemName: "pause.circle.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white, .black.opacity(0.55))
+                    .padding(7)
+                    .accessibilityLabel("下载未完成")
             }
         }
         .clipShape(coverShape)
@@ -746,6 +753,14 @@ struct BookReaderView: View {
                 Button(role: .destructive) { removeDownload() } label: {
                     Label("删除本地下载", systemImage: "trash")
                 }
+            } else if offline.isPaused(book.slug) {
+                // 上次没下完（被切到后台杀掉 / 断网）：接着下，已经下好的不重下。
+                Button { Task { await downloadBook() } } label: {
+                    Label("继续下载", systemImage: "arrow.down.circle")
+                }
+                Button(role: .destructive) { removeDownload() } label: {
+                    Label("取消下载", systemImage: "xmark.circle")
+                }
             } else {
                 Button { Task { await downloadBook() } } label: {
                     Label("下载到本地", systemImage: "arrow.down.circle")
@@ -885,8 +900,9 @@ struct BookReaderView: View {
     /// 下载（或重新下载）到本地。可以离开这一页——下载在本地书库里继续，书架封面上有进度圈。
     private func downloadBook() async {
         let again = offline.isDownloaded(book.slug)
-        Analytics.capture(again ? "重新下载书" : "下载书到本地", ["书": book.slug])
-        showToast(String(localized: "开始下载，可以先接着看"))
+        let resuming = offline.isPaused(book.slug)
+        Analytics.capture(resuming ? "继续下载书" : again ? "重新下载书" : "下载书到本地", ["书": book.slug])
+        showToast(resuming ? String(localized: "接着上次的进度下载") : String(localized: "开始下载，可以先接着看"))
         let title = book.title.isEmpty ? (pageTitle ?? book.slug) : book.title
         switch await offline.download(slug: book.slug, title: title) {
         case .done(let m):
@@ -902,11 +918,12 @@ struct BookReaderView: View {
     }
 
     private func removeDownload() {
+        let wasPartial = !offline.isDownloaded(book.slug)
         offline.remove(book.slug)
-        Analytics.capture("删除本地下载", ["书": book.slug])
+        Analytics.capture(wasPartial ? "取消下载书" : "删除本地下载", ["书": book.slug])
         // 正从本地读着的话，切回线上重载——本地文件已经没了。
         if readingLocal == true { readingLocal = false; reloadStamp += 1 }
-        showToast(String(localized: "已删除本地下载"))
+        showToast(wasPartial ? String(localized: "已取消下载") : String(localized: "已删除本地下载"))
     }
 
     /// 同社区的 SharePayload 通路。

@@ -98,6 +98,38 @@ final class BookOfflineTests: XCTestCase {
         XCTAssertNil(L.byteRange("bytes=0-1", size: 0))
     }
 
+    func testResumeStartsWhereThePartFileEnds() {
+        typealias L = BookOfflineLayout
+        // 43MB 口播断在 30MB：从 30MB 续，不从头来
+        XCTAssertEqual(L.resumeOffset(partSize: 30_000_000, total: 43_654_848), 30_000_000)
+        XCTAssertEqual(L.resumeOffset(partSize: 0, total: 43_654_848), 0)
+        // .part 比整个文件还长 / 一样长 = 书被改过或上次没改名，作废重来
+        XCTAssertEqual(L.resumeOffset(partSize: 50_000_000, total: 43_654_848), 0)
+        XCTAssertEqual(L.resumeOffset(partSize: 43_654_848, total: 43_654_848), 0)
+    }
+
+    func testChunksCoverTheFileExactlyOnce() {
+        typealias L = BookOfflineLayout
+        XCTAssertEqual(L.nextChunk(offset: 0, total: 5_000_000, chunk: 2_000_000), 0...1_999_999)
+        XCTAssertEqual(L.nextChunk(offset: 2_000_000, total: 5_000_000, chunk: 2_000_000), 2_000_000...3_999_999)
+        XCTAssertEqual(L.nextChunk(offset: 4_000_000, total: 5_000_000, chunk: 2_000_000), 4_000_000...4_999_999)   // 最后一块不满
+        XCTAssertNil(L.nextChunk(offset: 5_000_000, total: 5_000_000, chunk: 2_000_000))                             // 下完了
+        XCTAssertNil(L.nextChunk(offset: 6_000_000, total: 5_000_000, chunk: 2_000_000))
+        // 从任意断点续，走到头，每个字节正好一次
+        var offset = 1_234_567, covered = offset
+        while let r = L.nextChunk(offset: offset, total: 43_654_848, chunk: 2_000_000) {
+            XCTAssertEqual(r.lowerBound, offset)
+            offset = r.upperBound + 1; covered += r.count
+        }
+        XCTAssertEqual(covered, 43_654_848)
+    }
+
+    func testJobRecordRoundTrips() throws {
+        let job = BookOfflineJob(slug: "crwv", title: "CRWV：租显卡的生意", startedAt: Date(timeIntervalSince1970: 1_795_000_000))
+        let back = try JSONDecoder().decode(BookOfflineJob.self, from: JSONEncoder().encode(job))
+        XCTAssertEqual(back, job)
+    }
+
     func testMimeTypes() {
         XCTAssertEqual(BookOfflineLayout.mimeType(forPath: "a/01.html"), "text/html; charset=utf-8")
         XCTAssertEqual(BookOfflineLayout.mimeType(forPath: "a/audio/01.mp3"), "audio/mpeg")

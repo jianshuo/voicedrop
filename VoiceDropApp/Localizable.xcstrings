@@ -4300,6 +4300,56 @@
           }
         }
       }
+    },
+    "继续下载": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resume Download"
+          }
+        }
+      }
+    },
+    "取消下载": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancel Download"
+          }
+        }
+      }
+    },
+    "下载未完成": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download incomplete"
+          }
+        }
+      }
+    },
+    "接着上次的进度下载": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resuming where it left off"
+          }
+        }
+      }
+    },
+    "已取消下载": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download cancelled"
+          }
+        }
+      }
     }
   },
   "version": "1.0"

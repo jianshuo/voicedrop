@@ -351,6 +351,8 @@ usage.js；ledger reason `book`＝「写书」）。伪造随机 token 的新账
 2. 照清单按原路径镜像到 `Application Support/OfflineBooks/<slug>/`，外加每章有声书 `audio/<章>.mp3`。
 3. 下载过的书用自定义协议 `vdbook://offline/books/<slug>/…` 打开：页面是线上原样那一份，它发出的请求（章节页、`_src/book.json`、`/books/audiobook/<slug>/<章>`、`video/…`）由 `BookOfflineSchemeHandler` 按同样的路径从本地文件应答（支持 HEAD / Range）。
 
+**断点续传**：没下完的书留在 `<slug>.downloading/`（`job.json` 记着），App 启动 / 回到前台时 `BookOfflineStore.resumePending()` 自动接着下——已完整的文件跳过，大文件从 `<文件>.part` 的长度用 Range 按 2MB 一块续。网络断了 / 被取消只中止任务、不交出缺页的书；后台不会继续下（没用 background URLSession）。
+
 全部在 `BookOffline.swift`；路径映射是纯函数 `BookOfflineLayout`（`BookOfflineTests` 钉住）。**改线上书页路由或播放器请求的地址时，必须同步看 `BookOfflineLayout.target`**——本地应答要和线上路由一一对应。新增一种属于书的资源时不用改客户端：放进这本书的 R2 文件夹，清单里就有，镜像就带上。
 
 ## Live agent Worker — voice editing + status (`agent/`, `voicedrop-agent`)
