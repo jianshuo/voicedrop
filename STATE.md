@@ -344,6 +344,15 @@ usage.js；ledger reason `book`＝「写书」）。伪造随机 token 的新账
 限制已全部移除——算力就是闸门。Caddy 对 `/api/book` 豁免 basic_auth，`/api/chat`
 网页聊天照旧密码门。测试：`agent/test/book-charge.test.js`（3 例）。
 
+### 书的「下载到本地」（2026-11-27）
+
+**一套内容、一套路径、一套机制**——不存在「离线版」书页。阅读器 ⋯ 菜单「下载到本地」：
+1. 问服务端这本书由哪些文件组成：`GET <publicWebBase>/books/<slug>/?format=files`（R2 里这本书的文件夹，含动画版 `video/`）。
+2. 照清单按原路径镜像到 `Application Support/OfflineBooks/<slug>/`，外加每章有声书 `audio/<章>.mp3`。
+3. 下载过的书用自定义协议 `vdbook://offline/books/<slug>/…` 打开：页面是线上原样那一份，它发出的请求（章节页、`_src/book.json`、`/books/audiobook/<slug>/<章>`、`video/…`）由 `BookOfflineSchemeHandler` 按同样的路径从本地文件应答（支持 HEAD / Range）。
+
+全部在 `BookOffline.swift`；路径映射是纯函数 `BookOfflineLayout`（`BookOfflineTests` 钉住）。**改线上书页路由或播放器请求的地址时，必须同步看 `BookOfflineLayout.target`**——本地应答要和线上路由一一对应。新增一种属于书的资源时不用改客户端：放进这本书的 R2 文件夹，清单里就有，镜像就带上。
+
 ## Live agent Worker — voice editing + status (`agent/`, `voicedrop-agent`)
 
 A **separate Cloudflare Worker** (Pages can't host Durable Objects), route `jianshuo.dev/agent/*` →

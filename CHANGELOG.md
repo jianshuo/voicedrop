@@ -2,6 +2,19 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## 书：下载到本地，断网也能看、能听、能播动画版（2026-11-27）
+
+- **原则：一套内容、一套路径、一套机制**（用户明确要求：不要「离线版」，多一个版本就多一份内容漂移的风险）。存下来的就是线上原样的页面——同一个「听本章」播放器、同一个动画版。
+- 服务端（jianshuo.dev 352b828，已部署）：`GET /books/<slug>/?format=files` → `{files:[{path,size}], audio:[章号], bytes}`，就是 R2 里这本书的文件夹（含 `video/` 子目录；`_src/` 只留 `book.json`）。「一本书由哪些文件组成」只在这一处回答；`audio` 与注入播放器共用同一条章节页正则 `CHAPTER_PAGE`。曾做过 `?offline=1` 的离线版书页，当天撤掉（2df650f）。
+- iOS `BookOffline.swift`（新文件）：
+  - `BookOfflineDownloader`：照清单按原路径镜像到 `Application Support/OfflineBooks/<slug>/`，每章有声书存 `audio/<章>.mp3`（线上地址 `/books/audiobook/<slug>/<章>`，没播过的首次请求服务端现场合成）。先下到 `<slug>.downloading` 再整体换上；文件 6 路并发、音频 3 路（几十路同时合成会把语音合成压超限、回空文件）；音频三次不成记 `audioMissing`，不拦整本书。
+  - `BookOfflineSchemeHandler`：自定义协议 `vdbook://offline/books/<slug>/…`，路径与线上路由一一对应（`BookOfflineLayout.target`），支持 HEAD 与 Range（206）——播放器的 HEAD 探测、`<audio>` 拖进度、动画版 43MB 口播的分段读取都靠它。
+  - `BookOfflineStore`（@Observable 单例）：`manifests` / `progress`；目录设了不进 iCloud 备份。
+- `BooksShelfView.swift`：阅读器 ⋯ 菜单加「下载到本地 / 正在下载 N% / 重新下载 / 删除本地下载」，顶栏下进度条；下载过的书进页面时走 `vdbook://`（`readingLocal` 进页面时定一次，下载完成不中途换页）；`BookWebView` 注册协议处理器，导航代理只拦本地副本里的整页跳转（「书架」链接 → 退出阅读器；本地没有的页面 → 提示）；分享时把本地地址换算回线上地址。书架封面右下角：已下载图标 / 下载中转圈。
+- 顺带：`webViewWebContentProcessDidTerminate` → 重载一次（10 秒内连崩不再重试）。模拟器上动画版脚本会让 JavaScriptCore 在垃圾回收时崩（`JSC::JSString::visitChildren`，11-25 在线看时就有同样的崩溃报告，与本地协议无关）。
+- 验证：`BookOfflineTests`（8 条纯逻辑）；另用临时测试在模拟器里真下载《CRWV》（73 个文件 + 12 章 mp3，94MB）并用 `vdbook://` 加载——目录页的动画版 iframe、动画版资源（含口播 206）、章节页播放器的三种请求、`<audio>` 读出时长 427 秒，全部通过（该测试打真网络，没有提交）。**真机上还没人点过**。
+- 已知边界：切到后台只有系统给的宽限时间，没下完的下次点「下载到本地」接着下；本地副本不会自动更新，书被修改后要手动「重新下载」；没有总占用空间的管理页。
+
 ## 书架：有动画版的书封面叠淡播放键，加「视频」筛选（2026-10-27）
 
 - 服务端（jianshuo.dev b390b18，已部署）：书架清单带 `video:true`（book.json 有 `video.url` 才算，试看版也算）；网页书架封面正中叠 40px 淡播放键（黑 18% + 白描边 60%），导航「全部」后加「视频」tab，一本都没有就不出。

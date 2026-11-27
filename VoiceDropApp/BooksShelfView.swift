@@ -465,6 +465,20 @@ struct BooksShelfView: View {
                     .padding(6)
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            // 已下载到本地（断网也能看、能听）；下载中显示转圈。
+            if BookOfflineStore.shared.isDownloaded(book.slug) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white, .black.opacity(0.55))
+                    .padding(7)
+                    .accessibilityLabel("已下载")
+            } else if BookOfflineStore.shared.isDownloading(book.slug) {
+                ProgressView().controlSize(.small).tint(.white)
+                    .padding(6).background(.black.opacity(0.45), in: Circle())
+                    .padding(6)
+            }
+        }
         .clipShape(coverShape)
         .shadow(color: Color(.sRGB, red: 60/255, green: 45/255, blue: 30/255, opacity: 0.35), radius: 8, y: 7)
         .shadow(color: Color(.sRGB, red: 60/255, green: 45/255, blue: 30/255, opacity: 0.20), radius: 2, y: 2)
@@ -643,6 +657,19 @@ struct BookReaderView: View {
     @State private var pageURL: URL?     // WebView 当前页（章节跳转跟着变）
     @State private var pageTitle: String?
     @AppStorage(ReadingFont.key) private var readingScale = 1.0
+    /// 本地书库（下载到本地）。@Observable——body 里读到的状态变了会自动重画。
+    private var offline: BookOfflineStore { .shared }
+    /// 这次打开是从本地读还是从网上读：进页面时定一次，下载完成不中途换（免得把读到一半的页面刷掉），
+    /// 删除本地副本时才切回线上。nil = 还没定。
+    @State private var readingLocal: Bool?
+
+    /// WebView 起始地址：下载过就走 vdbook:// 本地协议（同一份页面，由 App 从本地文件应答），否则走线上。
+    private var readerURL: URL? {
+        let online = startURL ?? book.pageURL
+        guard readingLocal ?? offline.isDownloaded(book.slug) else { return online }
+        if let online, let local = BookOfflineLayout.localURL(forPublic: online, slug: book.slug) { return local }
+        return BookOfflineLayout.rootURL(slug: book.slug) ?? online
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -656,15 +683,26 @@ struct BookReaderView: View {
                 moreMenu
             }
             .padding(.horizontal, 20).padding(.top, 6).padding(.bottom, 10)
-            if let url = startURL ?? book.pageURL {
-                BookWebView(url: url, zoom: readingScale, pageURL: $pageURL, pageTitle: $pageTitle)
+            if let p = offline.progress[book.slug] {
+                ProgressView(value: p)
+                    .tint(Theme.ink.opacity(0.55))
+                    .padding(.horizontal, 20).padding(.bottom, 6)
+                    .accessibilityLabel("下载进度")
+            }
+            if let url = readerURL {
+                BookWebView(url: url, zoom: readingScale, pageURL: $pageURL, pageTitle: $pageTitle,
+                            onExitToShelf: { dismiss() },
+                            onUnavailableOffline: { showToast(String(localized: "这部分没有下载到本地，联网后可以看")) })
                     .id(reloadStamp)   // 修改 sheet 关掉后换实例重载，立刻看到新版
                     .ignoresSafeArea(edges: .bottom)
             }
         }
         .background(Theme.appBG.ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .onAppear { Analytics.screen("读书") }
+        .onAppear {
+            Analytics.screen("读书")
+            if readingLocal == nil { readingLocal = offline.isDownloaded(book.slug) }
+        }
         .task { await loadOwnership() }
         .sheet(item: $sharePayload) { ShareSheet(items: $0.activityItems) }
         .sheet(isPresented: $showRevise, onDismiss: { reloadStamp += 1 }) { BookReviseSheet(book: book) }
@@ -694,6 +732,24 @@ struct BookReaderView: View {
             }
             Button { Task { await shareBook() } } label: {
                 Label("分享", systemImage: "square.and.arrow.up")
+            }
+            Divider()
+            // 下载到本地：整本书的网页和每章有声书存进手机，断网也能看、能听。
+            if let p = offline.progress[book.slug] {
+                Button {} label: {
+                    Label("正在下载 \(Int((p * 100).rounded()))%", systemImage: "arrow.down.circle.dotted")
+                }.disabled(true)
+            } else if offline.isDownloaded(book.slug) {
+                Button { Task { await downloadBook() } } label: {
+                    Label("重新下载", systemImage: "arrow.clockwise")
+                }
+                Button(role: .destructive) { removeDownload() } label: {
+                    Label("删除本地下载", systemImage: "trash")
+                }
+            } else {
+                Button { Task { await downloadBook() } } label: {
+                    Label("下载到本地", systemImage: "arrow.down.circle")
+                }
             }
             Divider()
             ReadingFontMenu()
@@ -826,6 +882,33 @@ struct BookReaderView: View {
         onHiddenChanged()
     }
 
+    /// 下载（或重新下载）到本地。可以离开这一页——下载在本地书库里继续，书架封面上有进度圈。
+    private func downloadBook() async {
+        let again = offline.isDownloaded(book.slug)
+        Analytics.capture(again ? "重新下载书" : "下载书到本地", ["书": book.slug])
+        showToast(String(localized: "开始下载，可以先接着看"))
+        let title = book.title.isEmpty ? (pageTitle ?? book.slug) : book.title
+        switch await offline.download(slug: book.slug, title: title) {
+        case .done(let m):
+            let mb = String(format: "%.0f", Double(m.bytes) / 1_048_576)
+            showToast(m.audioMissing == 0
+                ? String(localized: "已下载到本地（\(mb) MB），断网也能看和听")
+                : String(localized: "已下载到本地，有 \(m.audioMissing) 章的音频没下到，可稍后重新下载"))
+        case .failed(let why):
+            showToast(why)
+        case .busy:
+            break
+        }
+    }
+
+    private func removeDownload() {
+        offline.remove(book.slug)
+        Analytics.capture("删除本地下载", ["书": book.slug])
+        // 正从本地读着的话，切回线上重载——本地文件已经没了。
+        if readingLocal == true { readingLocal = false; reloadStamp += 1 }
+        showToast(String(localized: "已删除本地下载"))
+    }
+
     /// 同社区的 SharePayload 通路。
     private func shareBook() async {
         guard let target = currentShare else { return }
@@ -848,11 +931,22 @@ private struct BookWebView: UIViewRepresentable {
     let zoom: Double
     @Binding var pageURL: URL?     // 当前浏览到的页面（章节跳转跟着变）——分享分享的是它
     @Binding var pageTitle: String?
+    /// 本地副本里点了页面顶栏的「书架」（../）：本地没有书架页，直接退出阅读器。
+    var onExitToShelf: () -> Void = {}
+    /// 本地副本里点到了没下载的东西（动画版、PDF 等只在线上有的）。
+    var onUnavailableOffline: () -> Void = {}
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onExitToShelf: onExitToShelf, onUnavailableOffline: onUnavailableOffline)
+    }
 
     func makeUIView(context: Context) -> WKWebView {
-        let wv = WKWebView()
+        // vdbook://：下载到本地的书用它打开——页面还是线上那一份，请求由 App 从本地文件应答
+        // （见 BookOffline.swift）。线上阅读不经过它，注册了也无妨。
+        let config = WKWebViewConfiguration()
+        config.setURLSchemeHandler(BookOfflineSchemeHandler(), forURLScheme: BookOfflineLayout.scheme)
+        let wv = WKWebView(frame: .zero, configuration: config)
+        wv.navigationDelegate = context.coordinator
         Self.installZoomScript(wv, zoom: zoom)
         context.coordinator.zoom = zoom
         wv.allowsBackForwardNavigationGestures = true
@@ -860,8 +954,10 @@ private struct BookWebView: UIViewRepresentable {
         wv.backgroundColor = UIColor(Theme.appBG)   // 加载间隙透出暖纸色，不闪白
         wv.scrollView.backgroundColor = UIColor(Theme.appBG)
         // KVO 跟踪 url/title（WebKit 在主线程发）；SPA 内跳转、前进后退都会触发。
+        let webBase = API.publicWebBase
         context.coordinator.urlObs = wv.observe(\.url, options: [.initial, .new]) { wv, _ in
-            let u = wv.url
+            // 本地副本的地址换算回线上地址：分享出去的必须是别人打得开的链接。
+            let u = wv.url.map { BookOfflineLayout.publicURL(forLocal: $0, base: webBase) ?? $0 }
             Task { @MainActor in pageURL = u }
         }
         context.coordinator.titleObs = wv.observe(\.title, options: [.initial, .new]) { wv, _ in
@@ -895,9 +991,43 @@ private struct BookWebView: UIViewRepresentable {
         """
     }
 
-    final class Coordinator {
+    final class Coordinator: NSObject, WKNavigationDelegate {
         var zoom: Double = 1
         var urlObs: NSKeyValueObservation?
         var titleObs: NSKeyValueObservation?
+        let onExitToShelf: () -> Void
+        let onUnavailableOffline: () -> Void
+
+        init(onExitToShelf: @escaping () -> Void, onUnavailableOffline: @escaping () -> Void) {
+            self.onExitToShelf = onExitToShelf
+            self.onUnavailableOffline = onUnavailableOffline
+        }
+
+        /// 网页内容进程崩了（白屏）→ 重载一次。动画版的脚本很重，模拟器上见过 JavaScript 引擎
+        /// 垃圾回收时崩溃（线上、本地副本都会）；重载通常就好。10 秒内连崩两次就不再重试，免得死循环。
+        private var lastCrashReload = Date.distantPast
+        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+            guard Date().timeIntervalSince(lastCrashReload) > 10 else { return }
+            lastCrashReload = Date()
+            webView.reload()
+        }
+
+        /// 只管本地副本（vdbook://）里的整页跳转：「书架」链接 → 退出阅读器；本地没有的页面
+        /// （动画版等）→ 不跳、提示一句。线上阅读和页面内的子资源请求一律放行。
+        func webView(_ webView: WKWebView, decidePolicyFor action: WKNavigationAction) async -> WKNavigationActionPolicy {
+            guard let url = action.request.url, url.scheme == BookOfflineLayout.scheme,
+                  action.targetFrame?.isMainFrame != false else { return .allow }
+            switch BookOfflineLayout.target(forPath: url.path) {
+            case .shelf:
+                onExitToShelf()
+                return .cancel
+            case .file(let rel):
+                if FileManager.default.fileExists(atPath: BookOfflineStore.root.appending(path: rel).path) { return .allow }
+                onUnavailableOffline()
+                return .cancel
+            case .invalid:
+                return .cancel
+            }
+        }
     }
 }

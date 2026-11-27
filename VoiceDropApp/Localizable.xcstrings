@@ -4150,6 +4150,156 @@
           }
         }
       }
+    },
+    "下载到本地": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download for Offline"
+          }
+        }
+      }
+    },
+    "重新下载": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download Again"
+          }
+        }
+      }
+    },
+    "删除本地下载": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove Download"
+          }
+        }
+      }
+    },
+    "正在下载 %lld%%": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading %lld%%"
+          }
+        }
+      }
+    },
+    "已下载": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloaded"
+          }
+        }
+      }
+    },
+    "下载进度": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download progress"
+          }
+        }
+      }
+    },
+    "开始下载，可以先接着看": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloading — keep reading in the meantime"
+          }
+        }
+      }
+    },
+    "已下载到本地（%@ MB），断网也能看和听": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloaded (%@ MB). Read and listen offline."
+          }
+        }
+      }
+    },
+    "已下载到本地，有 %lld 章的音频没下到，可稍后重新下载": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Downloaded, but audio for %lld chapters is missing. Try downloading again later."
+          }
+        }
+      }
+    },
+    "已删除本地下载": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download removed"
+          }
+        }
+      }
+    },
+    "这部分没有下载到本地，联网后可以看": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This part isn't downloaded. Go online to view it."
+          }
+        }
+      }
+    },
+    "这本书下载不了": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This book can't be downloaded"
+          }
+        }
+      }
+    },
+    "下载失败：%@（%lld）": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Download failed: %@ (%lld)"
+          }
+        }
+      }
+    },
+    "这本书还没有可下载的章节": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This book has no chapters to download yet"
+          }
+        }
+      }
+    },
+    "文件清单": {
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "file list"
+          }
+        }
+      }
     }
   },
   "version": "1.0"
