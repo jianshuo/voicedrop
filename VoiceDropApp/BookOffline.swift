@@ -104,6 +104,21 @@ enum BookOfflineLayout {
         return offset...(min(offset + chunk, total) - 1)
     }
 
+    /// 服务端对一章有声书的回答（HEAD /books/audiobook/<slug>/<章>）。
+    enum RemoteAudio: Equatable, Sendable {
+        case cached(Int)    // 有成品，多大
+        case notCached      // 还没有成品（没合成过，或上次合成失败——失败的不写缓存）
+        case unreachable    // 问不到（没网）
+    }
+
+    /// 一章有声书算不算完整：**只有一条判据——服务端有成品，且本地大小与它一致**。
+    /// 现场合成的响应会被语音合成的并发上限中途掐断，而那条响应照样是「正常结束的 200」
+    /// （内容只有开头几秒），所以收到多少字节、HTTP 状态如何都不能作数。
+    static func audioIsComplete(localSize: Int, remote: RemoteAudio) -> Bool {
+        if case .cached(let n) = remote { return n > 0 && n == localSize }
+        return false
+    }
+
     /// `Range: bytes=a-b / a- / -n` → 要回的字节区间；其余（含越界、多段）返回 nil = 回整个文件。
     /// <audio> 拖进度条、边读边播全靠 206。
     static func byteRange(_ header: String?, size: Int) -> Range<Int>? {
@@ -158,6 +173,9 @@ struct BookOfflineManifest: Codable, Equatable, Sendable {
     let files: Int          // 镜像下来的文件数（网页、图片、动画版的文件）
     let audio: Int          // 下到的 mp3 数
     let audioMissing: Int   // 没下到的 mp3 数（合成失败 / 超时）；联网时这些章仍可在线听
+    /// 每章音频都和服务端成品核对过大小。旧版本（build 370/371）下的书没有这个字段——那时
+    /// 收到什么存什么，可能存了只有几秒的残缺音频；启动时会自动核对并补下。
+    var audioChecked: Bool? = nil
 }
 
 /// 没下完的任务（<slug>.downloading/job.json）。有它 = 这本书下到一半，可以接着下。
@@ -215,6 +233,22 @@ final class BookOfflineStore {
         for job in pending.values.sorted(by: { $0.startedAt < $1.startedAt }) where progress[job.slug] == nil {
             await download(slug: job.slug, title: job.title)
         }
+        await repairUncheckedAudio()
+    }
+
+    /// 旧版本下载的书：音频没和服务端核对过，里面可能有只剩几秒的残缺章节。逐本核对，
+    /// 坏的、缺的重下，好的不动。问不到服务端（没网）就留着下次再查。
+    private func repairUncheckedAudio() async {
+        for m in manifests.values.sorted(by: { $0.downloadedAt < $1.downloadedAt })
+        where m.audioChecked != true && progress[m.slug] == nil {
+            let slug = m.slug
+            progress[slug] = 0
+            let fixed = try? await BookOfflineDownloader.repairAudio(manifest: m, base: API.publicWebBase, root: Self.root) { [weak self] p in
+                Task { @MainActor in if self?.progress[slug] != nil { self?.progress[slug] = p } }
+            }
+            progress[slug] = nil
+            if let fixed { manifests[slug] = fixed }
+        }
     }
 
     enum Outcome: Equatable { case done(BookOfflineManifest), failed(String), busy }
@@ -267,6 +301,25 @@ enum BookOfflineError: LocalizedError {
         case .http(let what, let code): return String(localized: "下载失败：\(what)（\(code)）")
         case .emptyBook: return String(localized: "这本书还没有可下载的章节")
         }
+    }
+}
+
+/// 全 App 同时在取的有声书路数——**所有书共用**。没播过的章节要服务端现场合成，语音合成有
+/// 并发上限（实测十路上下）；每本书各开 3 路、同时下几本就超了，超出的会被中途掐断。
+actor BookAudioGate {
+    static let shared = BookAudioGate(limit: 3)
+    private let limit: Int
+    private var active = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    init(limit: Int) { self.limit = limit }
+
+    func enter() async {
+        if active < limit { active += 1; return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func leave() {
+        if waiters.isEmpty { active -= 1 } else { waiters.removeFirst().resume() }   // 名额直接交给下一个
     }
 }
 
@@ -343,9 +396,9 @@ enum BookOfflineDownloader {
             func add() {
                 guard let stem = it.next() else { return }
                 group.addTask {
-                    await mirror("\(base)/books/audiobook/\(slug)/\(stem)",
-                                 to: work.appending(path: "audio/\(stem).mp3"), expectSize: nil, minSize: 20_000,
-                                 guess: audioGuess, advance: advance)
+                    let r = await mirrorAudio("\(base)/books/audiobook/\(slug)/\(stem)", to: work.appending(path: "audio/\(stem).mp3"))
+                    advance(audioGuess)
+                    return r
                 }
             }
             for _ in 0..<audioConcurrency { add() }
@@ -363,7 +416,7 @@ enum BookOfflineDownloader {
         // 4. 记账 + 整体换上。到这一步就不再是「没下完」了。
         try? fm.removeItem(at: jobFile)
         let manifest = BookOfflineManifest(slug: slug, title: title, downloadedAt: Date(), bytes: directorySize(work),
-                                           files: files.count, audio: stems.count - missing, audioMissing: missing)
+                                           files: files.count, audio: stems.count - missing, audioMissing: missing, audioChecked: true)
         try JSONEncoder().encode(manifest).write(to: work.appending(path: "manifest.json"), options: .atomic)
         let final = root.appending(path: slug, directoryHint: .isDirectory)
         if fm.fileExists(atPath: final.path) { _ = try fm.replaceItemAt(final, withItemAt: work) }
@@ -384,6 +437,102 @@ enum BookOfflineDownloader {
             }
         }
         throw BookOfflineError.http(what, last)
+    }
+
+    /// 问服务端这一章有没有成品、多大。
+    private static func remoteAudio(_ u: URL) async -> BookOfflineLayout.RemoteAudio {
+        var req = URLRequest(url: u)
+        req.httpMethod = "HEAD"
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        req.timeoutInterval = 30
+        guard let (_, resp) = try? await session.data(for: req), let http = resp as? HTTPURLResponse else { return .unreachable }
+        guard http.statusCode == 200 else { return .notCached }
+        let n = Int(http.value(forHTTPHeaderField: "Content-Length") ?? "") ?? Int(http.expectedContentLength)
+        return n > 0 ? .cached(n) : .notCached
+    }
+
+    /// 取一章有声书。完整与否只认一条：服务端有成品、且本地大小与它一致（见 audioIsComplete）。
+    ///   - 本地已有：大小对得上就跳过，对不上（旧版本存下的残缺文件）就删掉重下。
+    ///   - 下载：没播过的章节服务端现场合成，那条响应可能被并发上限中途掐断却照样「正常结束」；
+    ///     所以下完回头再问一次，对不上就丢掉重来（服务端自己也会重试约两分钟，这里再给三轮）。
+    /// 全程占一个全局名额（BookAudioGate）。
+    private static func mirrorAudio(_ url: String, to dest: URL) async -> MirrorResult {
+        guard let u = URL(string: url) else { return .unavailable }
+        await BookAudioGate.shared.enter()
+        let result = await mirrorAudioGated(u, to: dest)
+        await BookAudioGate.shared.leave()
+        return result
+    }
+
+    private static func mirrorAudioGated(_ u: URL, to dest: URL) async -> MirrorResult {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let have = fileSize(dest)
+        if have > 0 {
+            let remote = await remoteAudio(u)
+            if BookOfflineLayout.audioIsComplete(localSize: have, remote: remote) { return .ok }
+            if remote == .unreachable { return .interrupted }      // 没网：核对不了，先不动它
+            try? fm.removeItem(at: dest)                           // 残缺的 / 服务端重新合成过的
+        }
+        var sawResponse = false
+        for attempt in 0..<3 {
+            if Task.isCancelled { return .interrupted }
+            if attempt > 0 { try? await Task.sleep(for: .seconds(Double(attempt) * 10)) }
+            guard let (tmp, resp) = try? await session.download(from: u) else { continue }   // 没连上 / 中途断了
+            sawResponse = true
+            guard resp.isOK else { try? fm.removeItem(at: tmp); if resp.httpStatusCode == 404 { return .unavailable }; continue }
+            let size = fileSize(tmp)
+            // 合成成功后服务端才写缓存，且写在响应结束之后——等一下再问，最多问三次。
+            var complete = false
+            for wait in [0.0, 2.0, 5.0] where size > 0 {
+                if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+                let remote = await remoteAudio(u)
+                if BookOfflineLayout.audioIsComplete(localSize: size, remote: remote) { complete = true; break }
+                if case .cached = remote { break }                 // 有成品但大小不同 = 我们手里这份是残的，别等了
+            }
+            guard complete else { try? fm.removeItem(at: tmp); continue }
+            try? fm.removeItem(at: dest)
+            if (try? fm.moveItem(at: tmp, to: dest)) != nil { return .ok }
+        }
+        return sawResponse ? .unavailable : .interrupted
+    }
+
+    /// 给已经下载好的书核对音频（旧版本下的书用）：坏的、缺的重下，好的不动，然后把清单标成已核对。
+    /// 没网就抛错——清单保持未核对，下次再查。
+    static func repairAudio(manifest old: BookOfflineManifest, base: String, root: URL,
+                            progress: @escaping @Sendable (Double) -> Void) async throws -> BookOfflineManifest {
+        let slug = old.slug
+        let dir = root.appending(path: slug, directoryHint: .isDirectory)
+        let listData = try await fetch("\(base)/books/\(slug)/?format=files", what: String(localized: "文件清单"))
+        guard let list = try? JSONDecoder().decode(FileList.self, from: listData) else { throw BookOfflineError.emptyBook }
+        let stems = list.audio.filter(BookOfflineLayout.isSafeSegment)
+        let counter = Counter()
+        var missing = 0, interrupted = false
+        await withTaskGroup(of: MirrorResult.self) { group in
+            var it = stems.makeIterator()
+            func add() {
+                guard let stem = it.next() else { return }
+                group.addTask {
+                    let r = await mirrorAudio("\(base)/books/audiobook/\(slug)/\(stem)", to: dir.appending(path: "audio/\(stem).mp3"))
+                    progress(min(0.99, Double(counter.add(1)) / Double(max(stems.count, 1))))
+                    return r
+                }
+            }
+            for _ in 0..<audioConcurrency { add() }
+            while let r = await group.next() {
+                switch r {
+                case .ok: break
+                case .unavailable: missing += 1
+                case .interrupted: interrupted = true
+                }
+                if !interrupted { add() }
+            }
+        }
+        if interrupted || Task.isCancelled { throw BookOfflineError.interrupted }
+        let fixed = BookOfflineManifest(slug: slug, title: old.title, downloadedAt: old.downloadedAt, bytes: directorySize(dir),
+                                        files: old.files, audio: stems.count - missing, audioMissing: missing, audioChecked: true)
+        try JSONEncoder().encode(fixed).write(to: dir.appending(path: "manifest.json"), options: .atomic)
+        return fixed
     }
 
     /// 大于这个尺寸、且清单给了确切大小的文件按块下（每块落盘，可续传）；小文件一次拿完。

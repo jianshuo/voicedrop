@@ -353,6 +353,8 @@ usage.js；ledger reason `book`＝「写书」）。伪造随机 token 的新账
 
 **断点续传**：没下完的书留在 `<slug>.downloading/`（`job.json` 记着），App 启动 / 回到前台时 `BookOfflineStore.resumePending()` 自动接着下——已完整的文件跳过，大文件从 `<文件>.part` 的长度用 Range 按 2MB 一块续。网络断了 / 被取消只中止任务、不交出缺页的书；后台不会继续下（没用 background URLSession）。
 
+**有声书完整性只认一条判据**：服务端有成品（`HEAD /books/audiobook/<slug>/<章>` 回 200），且本地大小等于它的 Content-Length。现场合成的响应会被语音合成的并发上限中途掐断、却照样是正常结束的 200，所以「收到了多少、状态码是什么」都不作数。App 里所有书共用 3 路合成名额（`BookAudioGate`）；清单的 `audioChecked` 为 true 才算核对过，旧版本下的书启动时自动核对修复。
+
 全部在 `BookOffline.swift`；路径映射是纯函数 `BookOfflineLayout`（`BookOfflineTests` 钉住）。**改线上书页路由或播放器请求的地址时，必须同步看 `BookOfflineLayout.target`**——本地应答要和线上路由一一对应。新增一种属于书的资源时不用改客户端：放进这本书的 R2 文件夹，清单里就有，镜像就带上。
 
 ## Live agent Worker — voice editing + status (`agent/`, `voicedrop-agent`)

@@ -130,6 +130,48 @@ final class BookOfflineTests: XCTestCase {
         XCTAssertEqual(back, job)
     }
 
+    func testAudioIsCompleteOnlyWhenItMatchesTheServerCopy() {
+        typealias L = BookOfflineLayout
+        // 正常：和服务端成品一样大
+        XCTAssertTrue(L.audioIsComplete(localSize: 3_706_536, remote: .cached(3_706_536)))
+        // 《阴谋论是怎么长出来的》：收到一条正常结束的 200，却只有 4 秒（约 32KB）——服务端根本没有成品
+        XCTAssertFalse(L.audioIsComplete(localSize: 32_000, remote: .notCached))
+        // 后来别人把这一章合成好了：本地那份残的仍然不算数
+        XCTAssertFalse(L.audioIsComplete(localSize: 32_000, remote: .cached(3_706_536)))
+        // 问不到服务端 ≠ 完整
+        XCTAssertFalse(L.audioIsComplete(localSize: 3_706_536, remote: .unreachable))
+        XCTAssertFalse(L.audioIsComplete(localSize: 0, remote: .cached(0)))
+    }
+
+    func testOldManifestsWithoutAudioCheckStillDecode() throws {
+        // build 370/371 写下的清单没有 audioChecked 字段：能读出来，且被认作「还没核对过」
+        let old = #"{"slug":"conspiracy","title":"阴谋论是怎么长出来的","downloadedAt":786000000,"bytes":900000,"files":16,"audio":12,"audioMissing":0}"#
+        let m = try JSONDecoder().decode(BookOfflineManifest.self, from: Data(old.utf8))
+        XCTAssertNil(m.audioChecked)
+        XCTAssertNotEqual(m.audioChecked, true)
+        let new = BookOfflineManifest(slug: "x", title: "x", downloadedAt: Date(timeIntervalSince1970: 0), bytes: 1, files: 1, audio: 1, audioMissing: 0, audioChecked: true)
+        XCTAssertEqual(try JSONDecoder().decode(BookOfflineManifest.self, from: JSONEncoder().encode(new)).audioChecked, true)
+    }
+
+    func testAudioGateNeverExceedsItsLimit() async {
+        let gate = BookAudioGate(limit: 3)
+        actor Peak { var now = 0, max = 0; func up() { now += 1; if now > max { max = now } }; func down() { now -= 1 } }
+        let peak = Peak()
+        await withTaskGroup(of: Void.self) { group in
+            for _ in 0..<20 {
+                group.addTask {
+                    await gate.enter()
+                    await peak.up()
+                    try? await Task.sleep(for: .milliseconds(15))
+                    await peak.down()
+                    await gate.leave()
+                }
+            }
+        }
+        let max = await peak.max
+        XCTAssertEqual(max, 3)   // 20 个任务抢 3 个名额：同时最多 3 个，且都能轮到
+    }
+
     func testMimeTypes() {
         XCTAssertEqual(BookOfflineLayout.mimeType(forPath: "a/01.html"), "text/html; charset=utf-8")
         XCTAssertEqual(BookOfflineLayout.mimeType(forPath: "a/audio/01.mp3"), "audio/mpeg")
