@@ -2,6 +2,12 @@
 
 从 STATE.md 拆出的逐日改动流水（2026-07-26 拆分；此前流水混在 STATE.md 前 960 行，把架构章节挤到了第 969 行之后）。稳定的架构 / 契约 / R2 layout 见 [STATE.md](STATE.md)。新流水往本文件顶部（本段之下）插。
 
+## CI 换 Xcode 27（iOS 27 SDK）（2026-11-28）
+
+- 起因：App Store Connect 提醒 **TMS-90725**——build 372 用 iOS 26.2 SDK 构建；2027 年 4 月起上传 / 提审必须用 iOS 27 SDK（Xcode 27+）。
+- `build.yml`：`runs-on: macos-15` → **`xcode-27`**（Xcode 27 只在这个镜像里，macos-15 / macos-26 最高 26.x），`xcode-select` → `Xcode_27.2.app`（与本机一致，本地一直在 27.2 上编译、跑单测）；`actions/checkout@v4` → `@v7`。
+- **注意**：链接 iOS 27 SDK 后，系统对「用新 SDK 构建的 App」才启用的界面 / 行为变化会开始生效。部署目标仍是 iOS 18.0，老系统照常能装。首个用新 SDK 的 TestFlight 包要过一遍主要页面再提审。
+
 ## 书的下载：有声书只剩 4 秒的事故与修复（2026-11-27）
 
 用户反馈：《阴谋论是怎么长出来的》下载到本地的音频大多只有 4 秒。

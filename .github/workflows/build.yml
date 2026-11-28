@@ -34,17 +34,20 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-15
+    # Xcode 27 只在 GitHub 的 `xcode-27` 镜像里有（macOS 27；macos-15 / macos-26 最高到 Xcode 26.x）。
+    # 2026-11-28 从 macos-15 + Xcode 26.2 换过来：App Store Connect 提醒 TMS-90725——
+    # 2027 年 4 月起上传必须用 iOS 27 SDK（Xcode 27+）构建。
+    runs-on: xcode-27
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
           token: ${{ secrets.FEEDBACK_PAT }}
 
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_26.2.app
+        run: sudo xcode-select -s /Applications/Xcode_27.2.app
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
