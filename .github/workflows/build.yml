@@ -52,7 +52,8 @@ jobs:
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: '3.2'
+          # fastlane 2.240+ 及其依赖（excon 等）要求 Ruby >= 3.3；3.2 已停止维护。3.4 是镜像里预装的。
+          ruby-version: '3.4'
           bundler-cache: true
 
       # VoiceDrop uses XcodeGen + a gitignored Secrets.xcconfig (FILES_TOKEN).

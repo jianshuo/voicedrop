@@ -6,6 +6,7 @@
 
 - 起因：App Store Connect 提醒 **TMS-90725**——build 372 用 iOS 26.2 SDK 构建；2027 年 4 月起上传 / 提审必须用 iOS 27 SDK（Xcode 27+）。
 - `build.yml`：`runs-on: macos-15` → **`xcode-27`**（Xcode 27 只在这个镜像里，macos-15 / macos-26 最高 26.x），`xcode-select` → `Xcode_27.2.app`（与本机一致，本地一直在 27.2 上编译、跑单测）；`actions/checkout@v4` → `@v7`。
+- 连带两处才跑通：**fastlane 2.236.1 → 2.242.0**（Xcode 27.2 的 altool 上传成功后会在错误流里多打一行 `CDUploaderStateInfoResumeFilePath … file doesn't exist`，旧版据此判失败——其实包已经传上去了；fastlane#30586，2.240.0 修）；**CI 的 Ruby 3.2 → 3.4**（新版 fastlane 和 excon 要求 ≥ 3.3）。以后在本机 `bundle lock --update` 后留意 CI 的 Ruby 版本够不够。
 - **注意**：链接 iOS 27 SDK 后，系统对「用新 SDK 构建的 App」才启用的界面 / 行为变化会开始生效。部署目标仍是 iOS 18.0，老系统照常能装。首个用新 SDK 的 TestFlight 包要过一遍主要页面再提审。
 
 ## 书的下载：有声书只剩 4 秒的事故与修复（2026-11-27）
